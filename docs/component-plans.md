@@ -24,9 +24,10 @@ Do not build:
 - admin UI;
 - transport.
 
-## 2. `ToolMonitoringService`
+## 2. `EventLoggingService`
 
-Goal: provide append-only audit events that every other component can depend on.
+Goal: accept redacted events from every component and expose append-only audit
+history.
 
 Build:
 
@@ -87,7 +88,7 @@ Build:
 
 - request state model;
 - state transitions;
-- orchestration across registry, policy, approval, runtime, and monitoring;
+- orchestration across registry, policy, approval, runtime, and event logging;
 - tests for denied, approved, pending, rejected, failed, and completed requests.
 
 Do not build:

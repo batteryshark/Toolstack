@@ -42,8 +42,8 @@ flowchart TB
         ComponentSecrets["Component-to-Component Secrets<br/>service tokens, signing keys, certs"]
     end
 
-    subgraph MonitoringZone["Monitoring / Audit Trust Zone"]
-        Monitoring["ToolMonitoringService<br/>append-only audit and event history"]
+    subgraph EventLoggingZone["Event Logging / Audit Trust Zone"]
+        EventLogging["EventLoggingService<br/>append-only audit and event history"]
         LogStore["Audit Event Store<br/>query, retention, export"]
     end
 
@@ -73,20 +73,20 @@ flowchart TB
     Control -.->|"manage approvals"| Approval
     Control -.->|"manage runtime instances"| Runtime
     Control -.->|"manage namespaces and component credentials"| Secrets
-    Control -.->|"view logs"| Monitoring
+    Control -.->|"view event logs"| EventLogging
 
     Profiles -.->|"component auth material"| Secrets
     Policy -.->|"component auth material"| Secrets
     Approval -.->|"component auth material"| Secrets
     Runtime -.->|"component auth material"| Secrets
-    Monitoring -.->|"component auth material"| Secrets
+    EventLogging -.->|"component auth material"| Secrets
 
-    Requests -->|"request lifecycle events"| Monitoring
-    Policy -->|"policy decision events"| Monitoring
-    Approval -->|"approval events"| Monitoring
-    Runtime -->|"runtime and execution events"| Monitoring
-    Secrets -->|"materialization and credential events"| Monitoring
-    Monitoring -->|"persist events"| LogStore
+    Requests -->|"request lifecycle events"| EventLogging
+    Policy -->|"policy decision events"| EventLogging
+    Approval -->|"approval events"| EventLogging
+    Runtime -->|"runtime and execution events"| EventLogging
+    Secrets -->|"materialization and credential events"| EventLogging
+    EventLogging -->|"persist events"| LogStore
 
     Registry -.->|"does not declare namespaces or keys"| Secrets
 ```
@@ -99,4 +99,4 @@ flowchart TB
 - `SecretsManagementService` covers both workload secrets and component-to-component credentials.
 - `ToolRegistryService` never declares secret namespaces, secret keys, or secret requirements.
 - `ToolRuntimeService` asks for secrets using the active profile/tool execution context.
-- `ToolMonitoringService` receives events from every domain but does not own mutable request state.
+- `EventLoggingService` receives events from every domain but does not own mutable request state, monitor tool health, or issue alerts.

@@ -25,16 +25,16 @@ Document the toolstack component decomposition and ownership boundaries
 - docs/message-contracts.md
 
 **Flow:**
-external client zone -> gateway -> request orchestration -> approval/runtime/secrets/monitoring zones
+external client zone -> gateway -> request orchestration -> approval/runtime/secrets/event logging zones
 
 **Timestamp:** 2026-05-27T16:51:34.761Z
 
 ## Narrative
 ### Structure
-The decomposition organizes the system into BrokerGateway, ClientProfileService, RequestService, PolicyService, ToolRegistryService, ApprovalService, Approval Surface Endpoint, ToolRuntimeService, SecretsManagementService, ToolMonitoringService, and Control Panel.
+The decomposition organizes the system into BrokerGateway, ClientProfileService, RequestService, PolicyService, ToolRegistryService, ApprovalService, Approval Surface Endpoint, ToolRuntimeService, SecretsManagementService, EventLoggingService, and Control Panel.
 
 ### Dependencies
-The architecture enforces trust-zone separation so secrets, approvals, runtime, and monitoring remain independent services with narrow contracts.
+The architecture enforces trust-zone separation so secrets, approvals, runtime, and event logging remain independent services with narrow contracts.
 
 ### Highlights
 The design is intentionally boring and explicit, with clear ownership and no direct secret path from BrokerGateway, RequestService, or ToolRegistryService.
@@ -42,6 +42,6 @@ The design is intentionally boring and explicit, with clear ownership and no dir
 ## Facts
 - **broker_gateway_allowed_peers**: BrokerGateway only talks to ClientProfileService and RequestService. [convention]
 - **request_ownership**: RequestService owns mutable request lifecycle state. [convention]
-- **monitoring_ownership**: ToolMonitoringService owns append-only audit/event history. [convention]
+- **event_logging_ownership**: EventLoggingService owns append-only audit/event history. [convention]
 - **registry_secret_awareness**: ToolRegistryService has no secret awareness. [convention]
 - **secrets_ownership**: SecretsManagementService owns secret namespaces and component-to-component credentials. [project]

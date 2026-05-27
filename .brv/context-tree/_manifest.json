@@ -1,17 +1,25 @@
 {
   "active_context": [
     {
+      "order": 3,
+      "path": "_index.md",
+      "tokens": 1784,
+      "type": "summary"
+    },
+    {
       "abstractPath": "architecture/toolstack/coding_standards/coding_standards.abstract.md",
-      "abstractTokens": 36,
+      "abstractTokens": 39,
       "importance": 50,
       "path": "architecture/toolstack/coding_standards/coding_standards.md",
-      "tokens": 36,
+      "tokens": 39,
       "type": "context"
     },
     {
+      "abstractPath": "architecture/toolstack/component_decomposition/component_decomposition.abstract.md",
+      "abstractTokens": 38,
       "importance": 50,
       "path": "architecture/toolstack/component_decomposition/component_decomposition.md",
-      "tokens": 528,
+      "tokens": 38,
       "type": "context"
     },
     {
@@ -24,16 +32,18 @@
     },
     {
       "abstractPath": "architecture/toolstack/component_io_contracts/component_i_o_contracts.abstract.md",
-      "abstractTokens": 42,
+      "abstractTokens": 35,
       "importance": 50,
       "path": "architecture/toolstack/component_io_contracts/component_i_o_contracts.md",
-      "tokens": 42,
+      "tokens": 35,
       "type": "context"
     },
     {
+      "abstractPath": "architecture/toolstack/component_plans/component_plans.abstract.md",
+      "abstractTokens": 38,
       "importance": 50,
       "path": "architecture/toolstack/component_plans/component_plans.md",
-      "tokens": 434,
+      "tokens": 38,
       "type": "context"
     },
     {
@@ -44,16 +54,18 @@
     },
     {
       "abstractPath": "architecture/toolstack/message_contracts/message_contracts.abstract.md",
-      "abstractTokens": 43,
+      "abstractTokens": 38,
       "importance": 50,
       "path": "architecture/toolstack/message_contracts/message_contracts.md",
-      "tokens": 43,
+      "tokens": 38,
       "type": "context"
     },
     {
+      "abstractPath": "architecture/toolstack/toolstack_architecture/toolstack_architecture.abstract.md",
+      "abstractTokens": 40,
       "importance": 50,
       "path": "architecture/toolstack/toolstack_architecture/toolstack_architecture.md",
-      "tokens": 731,
+      "tokens": 40,
       "type": "context"
     },
     {
@@ -72,20 +84,20 @@
     },
     {
       "abstractPath": "project_management/work_log/work_log.abstract.md",
-      "abstractTokens": 46,
+      "abstractTokens": 36,
       "importance": 50,
       "path": "project_management/work_log/work_log.md",
-      "tokens": 46,
+      "tokens": 36,
       "type": "context"
     }
   ],
-  "generated_at": "2026-05-27T16:52:46.229Z",
+  "generated_at": "2026-05-27T17:33:11.992Z",
   "lane_tokens": {
-    "contexts": 2146,
+    "contexts": 550,
     "stubs": 0,
-    "summaries": 0
+    "summaries": 1784
   },
-  "source_fingerprint": "c5d2f7111e58ccd03e1f94090350463f5f113e7ad2035ef8143f330d5e331158",
-  "total_tokens": 2146,
+  "source_fingerprint": "3bf9cf6abe49a8d194f7191bea9e22cca2f4a46a6193e297847bf6db99f96857",
+  "total_tokens": 2334,
   "version": 1
 }

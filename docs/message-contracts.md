@@ -19,7 +19,7 @@ consume/produce boundaries, see
 - Approval surfaces are external. They communicate through the `Approval Surface
   Endpoint`, not directly with request or policy state.
 - `RequestService` owns mutable request state.
-- `ToolMonitoringService` owns append-only audit/event history.
+- `EventLoggingService` owns append-only audit/event history.
 - Secret values must not appear in request, approval, registry, policy, or audit
   payloads except as redacted metadata.
 
@@ -62,7 +62,7 @@ Only these components may have direct contracts with `SecretsManagementService`:
 | `PolicyService` | Component credentials for policy backends or grant stores. |
 | `ApprovalService` | Component credentials for approval surfaces, signing, or approver integrations. |
 | `ToolRuntimeService` | Workload secret materialization for profile/tool execution contexts. |
-| `ToolMonitoringService` | Component credentials for audit storage, export, or log sinks. |
+| `EventLoggingService` | Component credentials for audit storage, export, or event log sinks. |
 | `Control Panel` | Admin management of namespaces and component credentials through normal admin authorization. |
 
 `BrokerGateway`, `RequestService`, and `ToolRegistryService` do not directly
@@ -262,7 +262,7 @@ request or receive secrets.
 
 | Item | Contract |
 |---|---|
-| Sender | `ClientProfileService`, `PolicyService`, `ApprovalService`, `ToolRuntimeService`, `ToolMonitoringService`, or admin `Control Panel` |
+| Sender | `ClientProfileService`, `PolicyService`, `ApprovalService`, `ToolRuntimeService`, `EventLoggingService`, or admin `Control Panel` |
 | Receiver | `SecretsManagementService` |
 | Purpose | Request credentials used by components to authenticate to their own backends or peers. |
 | Request fields | `component_id`, `credential_purpose`, optional `backend_ref`, optional `rotation_policy_ref` |
@@ -296,34 +296,34 @@ request or receive secrets.
 | `ManageApprovalConfig` | `Control Panel` | `ApprovalService` | Manage approval workflows and surface configuration. | `admin_id`, `operation`, approval config | changed config summary | `ok`, `denied`, `invalid`, `not_found`, `failed` | `admin.approval_config_changed` | Surface credentials are referenced, not embedded. |
 | `ManageRuntimeInstance` | `Control Panel` | `ToolRuntimeService` | Start, stop, inspect, or configure runtime instances. | `admin_id`, `operation`, tool/runtime target | runtime status summary | `ok`, `accepted`, `denied`, `invalid`, `not_found`, `unavailable`, `failed` | `admin.runtime_changed` | Runtime actions do not bypass policy for client requests. |
 | `ManageSecretNamespace` | `Control Panel` | `SecretsManagementService` | Manage namespaces, profile/tool bindings, and component credentials. | `admin_id`, `operation`, namespace/binding/credential refs | changed secret metadata summary | `ok`, `denied`, `invalid`, `not_found`, `failed` | `admin.secret_namespace_changed` | Raw secret values must not be returned except through explicit secret-entry workflows. |
-| `QueryAuditEvents` | `Control Panel` | `ToolMonitoringService` | Read audit history. | `admin_id`, filters, pagination intent | event summaries | `ok`, `denied`, `invalid`, `unavailable`, `failed` | `admin.audit_queried` | Query responses must preserve redaction rules. |
+| `QueryAuditEvents` | `Control Panel` | `EventLoggingService` | Read audit history. | `admin_id`, filters, pagination intent | event summaries | `ok`, `denied`, `invalid`, `unavailable`, `failed` | `admin.audit_queried` | Query responses must preserve redaction rules. |
 
-## Monitoring
+## Event Logging
 
 ### `AppendAuditEvent`
 
 | Item | Contract |
 |---|---|
 | Sender | Domain components |
-| Receiver | `ToolMonitoringService` |
+| Receiver | `EventLoggingService` |
 | Purpose | Append an immutable event describing a state change, decision, or failure. |
 | Request fields | `component`, `event_type`, `request_id`, optional `actor_context`, `outcome`, redacted `details`, `correlation_id` |
 | Response fields | `audit_event_id`, `accepted_at` |
 | Outcomes | `ok`, `accepted`, `invalid`, `unavailable`, `failed` |
-| Audit events | `monitoring.event_appended`, `monitoring.event_rejected` |
-| Security notes | Monitoring receives redacted details and must not become a side channel for raw secrets. |
+| Audit events | `event_logging.event_appended`, `event_logging.event_rejected` |
+| Security notes | Event logging receives redacted details and must not become a side channel for raw secrets. |
 
 ### `PersistAuditEvent`
 
 | Item | Contract |
 |---|---|
-| Sender | `ToolMonitoringService` |
+| Sender | `EventLoggingService` |
 | Receiver | Audit event store |
 | Purpose | Persist accepted audit events for query, retention, and export. |
 | Request fields | `audit_event_id`, `event_body`, `retention_class`, optional `export_hints` |
 | Response fields | `persisted`, optional `storage_ref`, optional `error` |
 | Outcomes | `ok`, `accepted`, `invalid`, `unavailable`, `failed` |
-| Audit events | `monitoring.event_persisted`, `monitoring.event_persist_failed` |
+| Audit events | `event_logging.event_persisted`, `event_logging.event_persist_failed` |
 | Security notes | Persistence must preserve immutability and redaction. |
 
 ## Acceptance Checklist

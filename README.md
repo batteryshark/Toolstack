@@ -19,7 +19,7 @@ deployment topology yet.
 - `ToolRegistryService` owns tool catalog metadata and has no secret awareness.
 - `ToolRuntimeService` owns tool execution and runtime preparation.
 - `SecretsManagementService` owns secret namespaces and profile/tool bindings.
-- `ToolMonitoringService` owns append-only audit events.
+- `EventLoggingService` owns append-only audit events.
 
 ## Implementation Status
 

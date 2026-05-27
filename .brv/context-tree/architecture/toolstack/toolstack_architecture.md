@@ -27,13 +27,6 @@ Document the overall Toolstack rebuild architecture and operational rules
 - docs/coding-standards.md
 - docs/work-log.md
 - docs/component-plans.md
-- PROJECT.md
-- docs/component-decomposition.md
-- docs/component-io-contracts.md
-- docs/message-contracts.md
-- docs/coding-standards.md
-- docs/component-plans.md
-- docs/work-log.md
 
 **Flow:**
 project restart -> define boundaries -> define IO contracts -> define message contracts -> remove all-in-one scaffold -> build next component
@@ -66,4 +59,4 @@ There is no active implementation or test suite after removing the all-in-one sc
 - **tool_registry_secret_awareness**: ToolRegistryService has no secret awareness. [convention]
 - **secrets_ownership**: SecretsManagementService owns workload namespaces plus component-to-component credentials. [project]
 - **request_ownership**: RequestService owns mutable request lifecycle. [project]
-- **monitoring_ownership**: ToolMonitoringService owns append-only audit history. [project]
+- **event_logging_ownership**: EventLoggingService owns append-only audit history. [project]
