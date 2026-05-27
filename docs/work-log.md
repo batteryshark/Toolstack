@@ -20,7 +20,7 @@ Important decisions:
 - `BrokerGateway` only talks to `ClientProfileService` and `RequestService`.
 - `BrokerGateway` has no direct secrets path.
 - `RequestService` owns mutable request lifecycle state.
-- `ToolMonitoringService` owns append-only audit/event history.
+- `EventLoggingService` owns append-only audit/event history.
 - `ToolRegistryService` has no secret awareness.
 - Profiles can bind tools to secret namespaces through `SecretsManagementService`.
 - `SecretsManagementService` also owns component-to-component credentials.
@@ -48,3 +48,4 @@ Cleanup pass:
 - Curated the corrected pre-implementation status into Byterover. Task: `af0ec935-c233-439e-bca1-8cad0f7d1843`; log: `cur-1779900640661`.
 - Removed stale `pyproject.toml` before the initial GitHub publish because no active Python package exists yet.
 - Decided to commit portable Byterover context by tracking `.brv/config.json` and `.brv/context-tree`, while leaving BRV runtime state and review backups ignored.
+- Renamed the append-only audit component to `EventLoggingService` to clarify that it does not own active tool monitoring or alerting.

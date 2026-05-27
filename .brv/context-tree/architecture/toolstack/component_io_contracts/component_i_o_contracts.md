@@ -18,7 +18,7 @@ Document component consume/produce contracts for the toolstack
 - Defined summary table of component inputs and outputs
 - Specified must-not rules for each component
 - Defined a summary table for all components
-- Separated external client, control plane, runtime, secrets, and monitoring zones
+- Separated external client, control plane, runtime, secrets, and event logging zones
 
 **Files:**
 - docs/component-io-contracts.md
@@ -41,7 +41,7 @@ These I/O contracts depend on the component decomposition as the source of truth
 The contracts make the trust boundaries explicit and preserve the rule that secret values must not leak into logs or public payloads.
 
 ### Rules
-BrokerGateway must not call SecretsManagementService, PolicyService, ToolRegistryService, ApprovalService, or ToolRuntimeService directly. ClientProfileService must not decide tool authorization or expose raw tokens. RequestService must not call SecretsManagementService or authenticate raw profile tokens. ToolRegistryService must not declare secret namespaces, secret keys, or secret requirements. ApprovalService must not decide initial tool authorization or include raw secrets in prompts. ToolRuntimeService must not decide authorization or expose raw secret material. SecretsManagementService must not receive direct requests from BrokerGateway, RequestService, or ToolRegistryService. ToolMonitoringService must not own mutable request lifecycle state or make authorization decisions.
+BrokerGateway must not call SecretsManagementService, PolicyService, ToolRegistryService, ApprovalService, or ToolRuntimeService directly. ClientProfileService must not decide tool authorization or expose raw tokens. RequestService must not call SecretsManagementService or authenticate raw profile tokens. ToolRegistryService must not declare secret namespaces, secret keys, or secret requirements. ApprovalService must not decide initial tool authorization or include raw secrets in prompts. ToolRuntimeService must not decide authorization or expose raw secret material. SecretsManagementService must not receive direct requests from BrokerGateway, RequestService, or ToolRegistryService. EventLoggingService must not own mutable request lifecycle state or make authorization decisions.
 
 ### Examples
 The summary table lists each component’s consumes and produces, such as RequestService consuming authenticated request context, policy decisions, tool metadata, approval outcomes, and runtime results while producing request state, orchestration commands, and lifecycle events.

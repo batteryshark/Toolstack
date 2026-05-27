@@ -22,7 +22,7 @@ Document the build plan and implementation sequence for each component
 - docs/component-plans.md
 
 **Flow:**
-build ClientProfileService -> monitoring -> registry -> policy -> request -> approval -> secrets -> runtime -> gateway -> control panel
+build ClientProfileService -> event logging -> registry -> policy -> request -> approval -> secrets -> runtime -> gateway -> control panel
 
 **Timestamp:** 2026-05-27T16:51:34.761Z
 
@@ -38,6 +38,6 @@ The sequence keeps the system incremental and prevents premature coupling to sec
 
 ## Facts
 - **build_order_first_component**: ClientProfileService is the first planned component. [project]
-- **monitoring_goal**: ToolMonitoringService should provide append-only audit events. [project]
+- **event_logging_goal**: EventLoggingService should provide append-only audit events. [project]
 - **registry_goal**: ToolRegistryService should catalog tools and operations without secret awareness. [project]
 - **control_panel_goal**: Control Panel is planned last and should provide admin workflows over domain services without owning primary state. [project]

@@ -1,9 +1,9 @@
 - The component decomposition defines a set of isolated services and zones, with explicit trust boundaries and allowed interactions.
 - BrokerGateway is limited to talking only to ClientProfileService and RequestService.
-- RequestService owns mutable request lifecycle state, while ToolMonitoringService owns append-only audit/event history.
+- RequestService owns mutable request lifecycle state, while EventLoggingService owns append-only audit/event history.
 - ToolRegistryService is intentionally kept free of secret awareness.
 - SecretsManagementService owns secret namespaces and component-to-component credentials.
-- The architecture is organized around zones such as external client, gateway, request orchestration, approval, runtime, secrets, monitoring, and control panel.
+- The architecture is organized around zones such as external client, gateway, request orchestration, approval, runtime, secrets, event logging, and control panel.
 - The design is described as intentionally boring and explicit, emphasizing narrow contracts and no direct secret path from gateway/request/registry services.
 - Sections cover reason, raw concept, narrative, and facts, with emphasis on allowed/forbidden relationships and service ownership.
-- Notable entities include BrokerGateway, ClientProfileService, RequestService, PolicyService, ToolRegistryService, ApprovalService, Approval Surface Endpoint, ToolRuntimeService, SecretsManagementService, ToolMonitoringService, and Control Panel.
+- Notable entities include BrokerGateway, ClientProfileService, RequestService, PolicyService, ToolRegistryService, ApprovalService, Approval Surface Endpoint, ToolRuntimeService, SecretsManagementService, EventLoggingService, and Control Panel.

@@ -3,5 +3,5 @@
 - The implementation strategy is incremental: build one component at a time, keep code boring and explicit, keep public surfaces small, and use focused tests to verify behavior and boundaries.
 - Current state: the all-in-one greenfield scaffold was removed because it bundled too many components together. The repo is pre-implementation and ready for the first isolated component.
 - Next recommended component is `ClientProfileService`.
-- Key ownership decisions include: `BrokerGateway` only talks to `ClientProfileService` and `RequestService`; `RequestService` owns mutable request lifecycle; `SecretsManagementService` owns workload namespaces and component-to-component credentials; `ToolMonitoringService` owns append-only audit history.
+- Key ownership decisions include: `BrokerGateway` only talks to `ClientProfileService` and `RequestService`; `RequestService` owns mutable request lifecycle; `SecretsManagementService` owns workload namespaces and component-to-component credentials; `EventLoggingService` owns append-only audit history.
 - Explicit prohibitions include not letting `BrokerGateway`, `RequestService`, or `ToolRegistryService` call `SecretsManagementService`, and not allowing `ToolRegistryService` to know secret namespaces, keys, or requirements.

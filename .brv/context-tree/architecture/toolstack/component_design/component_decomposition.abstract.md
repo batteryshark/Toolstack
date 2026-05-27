@@ -1,1 +1,1 @@
-Component decomposition defines the toolstack trust zones and ownership boundaries across gateway, request orchestration, approval, runtime, secrets, and monitoring.
+Component decomposition defines the toolstack trust zones and ownership boundaries across gateway, request orchestration, approval, runtime, secrets, and event logging.

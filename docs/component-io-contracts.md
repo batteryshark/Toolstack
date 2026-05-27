@@ -23,7 +23,7 @@ These are logical contracts, not deployment or transport choices.
 | `Approval Surface Endpoint` | Approval prompts, external surface decisions | Surface deliveries, normalized decision submissions |
 | `ToolRuntimeService` | Execution requests, tool definitions, secret materialization responses, tool results | Prepared invocations, runtime status, execution results |
 | `SecretsManagementService` | Namespace bindings, component credential requests, backend secret data | Workload secret materialization, component credentials, secret metadata |
-| `ToolMonitoringService` | Redacted events from components | Append-only audit history, query results, exports |
+| `EventLoggingService` | Redacted events from components | Append-only audit history, query results, exports |
 | `Control Panel` | Admin input, domain service summaries, audit views | Admin change requests, management views |
 
 ## Component Contracts
@@ -90,7 +90,7 @@ Owns:
 
 - mutable request lifecycle state;
 - request status transitions;
-- orchestration across policy, approval, registry, runtime, and monitoring.
+- orchestration across policy, approval, registry, runtime, and event logging.
 
 Consumes:
 
@@ -297,7 +297,7 @@ Must not:
 - receive direct requests from `ToolRegistryService`;
 - expose secret values in audit payloads.
 
-### `ToolMonitoringService`
+### `EventLoggingService`
 
 Owns:
 
@@ -316,7 +316,7 @@ Produces:
 - immutable audit records;
 - filtered audit views;
 - audit export streams;
-- monitoring health/status.
+- event logging health/status.
 
 Must not:
 
@@ -378,7 +378,7 @@ tool results and runtime status.
 Consumes namespace/credential requests and backend secret data. It produces
 secret material or credential references only for allowed components.
 
-### Monitoring / Audit Trust Zone
+### Event Logging / Audit Trust Zone
 
 Consumes redacted events and produces append-only history. It is not a control
 plane for changing request, policy, approval, runtime, or secret state.

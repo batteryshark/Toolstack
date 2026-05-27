@@ -6,4 +6,4 @@
 - Approval Surface Endpoint mediates approval prompts and decisions between ApprovalService and external approval surfaces.
 - Example messages include ClientActionRequest, AuthenticateProfileToken, SubmitRequest, MaterializeWorkloadSecrets, and AppendAuditEvent.
 - Sections cover shared principles, common envelopes, standard outcomes, secret-access rules, and specific logical message types.
-- Notable entities include BrokerGateway, ClientProfileService, RequestService, ToolRegistryService, ApprovalService, ToolMonitoringService, and SecretsManagementService.
+- Notable entities include BrokerGateway, ClientProfileService, RequestService, ToolRegistryService, ApprovalService, EventLoggingService, and SecretsManagementService.
