@@ -1,0 +1,91 @@
+{
+  "active_context": [
+    {
+      "abstractPath": "architecture/toolstack/coding_standards/coding_standards.abstract.md",
+      "abstractTokens": 36,
+      "importance": 50,
+      "path": "architecture/toolstack/coding_standards/coding_standards.md",
+      "tokens": 36,
+      "type": "context"
+    },
+    {
+      "importance": 50,
+      "path": "architecture/toolstack/component_decomposition/component_decomposition.md",
+      "tokens": 528,
+      "type": "context"
+    },
+    {
+      "abstractPath": "architecture/toolstack/component_design/component_decomposition.abstract.md",
+      "abstractTokens": 41,
+      "importance": 50,
+      "path": "architecture/toolstack/component_design/component_decomposition.md",
+      "tokens": 41,
+      "type": "context"
+    },
+    {
+      "abstractPath": "architecture/toolstack/component_io_contracts/component_i_o_contracts.abstract.md",
+      "abstractTokens": 42,
+      "importance": 50,
+      "path": "architecture/toolstack/component_io_contracts/component_i_o_contracts.md",
+      "tokens": 42,
+      "type": "context"
+    },
+    {
+      "importance": 50,
+      "path": "architecture/toolstack/component_plans/component_plans.md",
+      "tokens": 434,
+      "type": "context"
+    },
+    {
+      "importance": 50,
+      "path": "architecture/toolstack/context.md",
+      "tokens": 128,
+      "type": "context"
+    },
+    {
+      "abstractPath": "architecture/toolstack/message_contracts/message_contracts.abstract.md",
+      "abstractTokens": 43,
+      "importance": 50,
+      "path": "architecture/toolstack/message_contracts/message_contracts.md",
+      "tokens": 43,
+      "type": "context"
+    },
+    {
+      "importance": 50,
+      "path": "architecture/toolstack/toolstack_architecture/toolstack_architecture.md",
+      "tokens": 731,
+      "type": "context"
+    },
+    {
+      "abstractPath": "architecture/toolstack/toolstack_architecture.abstract.md",
+      "abstractTokens": 51,
+      "importance": 50,
+      "path": "architecture/toolstack/toolstack_architecture.md",
+      "tokens": 51,
+      "type": "context"
+    },
+    {
+      "importance": 50,
+      "path": "project_management/work_log/context.md",
+      "tokens": 66,
+      "type": "context"
+    },
+    {
+      "abstractPath": "project_management/work_log/work_log.abstract.md",
+      "abstractTokens": 46,
+      "importance": 50,
+      "path": "project_management/work_log/work_log.md",
+      "tokens": 46,
+      "type": "context"
+    }
+  ],
+  "generated_at": "2026-05-27T16:52:46.229Z",
+  "lane_tokens": {
+    "contexts": 2146,
+    "stubs": 0,
+    "summaries": 0
+  },
+  "source_fingerprint": "c5d2f7111e58ccd03e1f94090350463f5f113e7ad2035ef8143f330d5e331158",
+  "total_tokens": 2146,
+  "version": 1
+}

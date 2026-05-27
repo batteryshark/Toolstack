@@ -1,0 +1,7 @@
+- The component decomposition defines trust zones for External Agent/Client, Admin Operator, Core Control Plane, External Approval Surface, Tool Runtime, Secrets, and Monitoring.
+- The flow is staged as: external agent/client -> gateway -> request orchestration -> approval/runtime/secrets/monitoring.
+- `BrokerGateway` is the normal entry point for agent/client requests and is restricted to `ClientProfileService` and `RequestService`.
+- `RequestService` orchestrates policy, registry, approval, runtime, and monitoring interactions, while the approval surface remains a separate external boundary.
+- `SecretsManagementService` owns workload secrets and component-to-component credentials, and serves runtime and approved internal components.
+- `ToolRegistryService` has no secret awareness, and `ToolMonitoringService` is append-only and receives redacted events from every domain.
+- A representative path is documented: client request enters via `BrokerGateway`, gets authenticated by `ClientProfileService`, is submitted to `RequestService`, and may then flow through policy, approval, runtime, and monitoring as needed.

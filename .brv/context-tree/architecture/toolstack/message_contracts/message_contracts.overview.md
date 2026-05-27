@@ -1,0 +1,9 @@
+- Message contracts specify a transport-neutral common envelope, standard outcomes, secrets-access rules, and approved message families.
+- The common envelope should usually include message_id, correlation_id, source_component, target_component, and issued_at unless equivalent context already exists locally.
+- Standard outcomes include ok, accepted, pending_approval, denied, invalid, not_found, expired, unavailable, and failed.
+- The document stresses that messages describe expectations between components, not wire format.
+- Secret values must not appear in request, approval, registry, policy, or audit payloads except as redacted metadata.
+- Approval Surface Endpoint mediates approval prompts and decisions between ApprovalService and external approval surfaces.
+- Example messages include ClientActionRequest, AuthenticateProfileToken, SubmitRequest, MaterializeWorkloadSecrets, and AppendAuditEvent.
+- Sections cover shared principles, common envelopes, standard outcomes, secret-access rules, and specific logical message types.
+- Notable entities include BrokerGateway, ClientProfileService, RequestService, ToolRegistryService, ApprovalService, ToolMonitoringService, and SecretsManagementService.

@@ -1,0 +1,1 @@
+Toolstack is a greenfield agentic tool management rebuild with explicit component boundaries and transport-neutral contracts. The all-in-one scaffold was removed so components can be built one at a time.

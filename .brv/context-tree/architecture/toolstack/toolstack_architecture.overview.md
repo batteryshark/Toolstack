@@ -1,0 +1,7 @@
+- Toolstack is a greenfield agentic tool management rebuild centered on a restart point in `PROJECT.md` and supported by architecture docs for decomposition, I/O contracts, message contracts, coding standards, plans, and work history.
+- The architecture is intentionally transport-neutral and boundary-driven: explicit ownership boundaries come first, followed by component contracts, then isolated component implementations, and only later persistent storage or transport choices.
+- The implementation strategy is incremental: build one component at a time, keep code boring and explicit, keep public surfaces small, and use focused tests to verify behavior and boundaries.
+- Current state: the all-in-one greenfield scaffold was removed because it bundled too many components together. The repo is pre-implementation and ready for the first isolated component.
+- Next recommended component is `ClientProfileService`.
+- Key ownership decisions include: `BrokerGateway` only talks to `ClientProfileService` and `RequestService`; `RequestService` owns mutable request lifecycle; `SecretsManagementService` owns workload namespaces and component-to-component credentials; `ToolMonitoringService` owns append-only audit history.
+- Explicit prohibitions include not letting `BrokerGateway`, `RequestService`, or `ToolRegistryService` call `SecretsManagementService`, and not allowing `ToolRegistryService` to know secret namespaces, keys, or requirements.

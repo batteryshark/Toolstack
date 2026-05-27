@@ -1,0 +1,1 @@
+Message contracts define a transport-neutral envelope, standard outcomes, secret-handling rules, and the approved message families across the toolstack.

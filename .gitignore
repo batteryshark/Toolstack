@@ -1,7 +1,10 @@
 __pycache__/
 *.py[cod]
 .DS_Store
-.brv/
+.brv/*
+!.brv/config.json
+!.brv/context-tree/
+!.brv/context-tree/**
 .pytest_cache/
 .venv/
 build/

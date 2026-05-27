@@ -1,0 +1,1 @@
+Toolstack architecture resets the rebuild to a transport-neutral, one-component-at-a-time plan with no active implementation and deferred infrastructure choices.

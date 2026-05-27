@@ -1,0 +1,1 @@
+Component I/O contracts specify each service’s inputs, outputs, ownership, and prohibitions to preserve explicit trust and secret boundaries.
