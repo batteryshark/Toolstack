@@ -1,0 +1,1 @@
+The work log records the 2026-05-27 rebuild restart, removal of the old scaffold, completed architecture docs, and the next isolated component.

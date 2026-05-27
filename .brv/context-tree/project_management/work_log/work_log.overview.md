@@ -1,0 +1,8 @@
+- The work log records the 2026-05-27 restart of the greenfield Toolstack rebuild and the cleanup/migration decisions made during the session.
+- It documents removal of the earlier all-in-one scaffold as incompatible with the one-component-at-a-time rebuild approach.
+- The log preserves the sequence of completed architecture artifacts, current verification status, and the next likely implementation step.
+- The next likely step is to build ClientProfileService as the first isolated component.
+- Cleanup notes mention that a scratch decomposition file and an external clean-code reference bundle were removed after distilling the rules into local docs.
+- Trust and security rules are reiterated, including no direct secret path from BrokerGateway, RequestService, or ToolRegistryService to SecretsManagementService.
+- Structurally, the log is organized by date and includes completed work, important decisions, verification, next step, and cleanup notes.
+- Notable entities include PROJECT.md, docs/component-decomposition.md, docs/component-io-contracts.md, docs/message-contracts.md, and Approval Surface Endpoint.

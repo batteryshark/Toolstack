@@ -47,3 +47,4 @@ Cleanup pass:
 - Made `.brv/config.json` path-agnostic by changing `cwd` from an absolute machine path to `.`.
 - Curated the corrected pre-implementation status into Byterover. Task: `af0ec935-c233-439e-bca1-8cad0f7d1843`; log: `cur-1779900640661`.
 - Removed stale `pyproject.toml` before the initial GitHub publish because no active Python package exists yet.
+- Decided to commit portable Byterover context by tracking `.brv/config.json` and `.brv/context-tree`, while leaving BRV runtime state and review backups ignored.
