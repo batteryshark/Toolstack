@@ -1,1 +1,1 @@
-Toolstack is a greenfield agentic tool management rebuild with explicit component boundaries and transport-neutral contracts. The all-in-one scaffold was removed so components can be built one at a time.
+The Toolstack architecture pivots to a collapsed broker/toolyard design with approval handled in-broker, secrets kept at the workload, and a phased build starting with Phase 0 boundary validation.

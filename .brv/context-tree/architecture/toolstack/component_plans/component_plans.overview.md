@@ -1,8 +1,0 @@
-- Component plans define the intended build order and include do-not-build boundaries to prevent scope creep.
-- The planned sequence starts with ClientProfileService and proceeds through event logging, registry, policy, request, approval, secrets, runtime, gateway, and ends with the Control Panel.
-- Each component section is organized around a goal, what to build, and what explicitly not to build.
-- The build plan is meant to stay incremental and avoid premature coupling to secrets, policy, or transport concerns.
-- EventLoggingService is intended to provide append-only audit events.
-- ToolRegistryService should catalog tools and operations without being aware of secrets.
-- The Control Panel is last and is intended for admin workflows over domain services without owning primary state.
-- Notable patterns include ordered implementation, explicit scope control via do-not-build lists, and dependency-aware sequencing.

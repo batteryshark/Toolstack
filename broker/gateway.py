@@ -1,0 +1,184 @@
+"""Gateway (the ingress/egress seam): routing, body validation, correlation ids,
+authentication, and mapping request outcomes to HTTP.
+
+The boundary rule still holds: ``GET /v1/health`` is the only route open without a
+caller; everything else requires authentication and otherwise fails closed. Health
+is a liveness probe rather than a decision, so it is deliberately not audited —
+clients (including the admin app, on every page render) poll it frequently, and
+auditing it would bury the real trail.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+
+from . import policy as policy_rules
+from . import request_lifecycle as lifecycle
+from .identity import authenticate
+
+HEALTH_PATH = "/v1/health"
+ACTIONS_PREFIX = "/v1/actions/"
+REQUESTS_PREFIX = "/v1/requests/"
+TOOLS_PATH = "/v1/tools"
+TOOLS_PREFIX = "/v1/tools/"
+
+# request-lifecycle outcome -> HTTP status
+_OUTCOME_STATUS = {
+    lifecycle.OK: 200,
+    lifecycle.PENDING: 202,
+    lifecycle.DENIED: 403,
+    lifecycle.NOT_FOUND: 404,
+    lifecycle.EXPIRED: 200,  # only seen on a status query, never on submit
+    lifecycle.FAILED: 502,
+    lifecycle.UNAVAILABLE: 503,
+}
+
+# HTTP status -> audit outcome word (for the egress event)
+_AUDIT_OUTCOME = {
+    200: "ok", 202: "accepted", 400: "invalid", 401: "denied",
+    403: "denied", 404: "not_found", 429: "rate_limited", 502: "failed", 503: "unavailable",
+}
+
+
+@dataclass(frozen=True)
+class Response:
+    status: int
+    body: dict
+    correlation_id: str
+
+
+def make_correlation_id(headers: dict) -> str:
+    """Propagate a caller-supplied correlation id, or mint one. Length-capped so a
+    caller cannot smuggle a large value into our logs."""
+    supplied = (headers.get("x-correlation-id") or "").strip()
+    return supplied[:64] if supplied else uuid.uuid4().hex
+
+
+def handle(method: str, path: str, headers: dict, body, ctx) -> Response:
+    headers = {k.lower(): v for k, v in headers.items()}
+    correlation_id = make_correlation_id(headers)
+
+    # Liveness probes (GET /v1/health) are not security decisions and are polled
+    # often, so they are intentionally left out of the audit trail.
+    audited = not (method == "GET" and path == HEALTH_PATH)
+
+    if audited:
+        ctx.audit.record(
+            "gateway", "request_received", "accepted", correlation_id,
+            details={"method": method, "path": path, "has_bearer": "authorization" in headers},
+        )
+    response = _route(method, path, headers, body, ctx, correlation_id)
+    if audited:
+        ctx.audit.record(
+            "gateway", "response_returned", _AUDIT_OUTCOME.get(response.status, "failed"),
+            correlation_id, details={"status": response.status},
+        )
+    return response
+
+
+def _route(method, path, headers, body, ctx, correlation_id) -> Response:
+    if method == "GET" and path == HEALTH_PATH:
+        return Response(200, {"status": "ok"}, correlation_id)
+
+    caller = authenticate(ctx.store, headers.get("authorization"))
+    if caller is None:
+        return Response(401, {"error": "unauthorized"}, correlation_id)
+
+    if method == "POST" and path.startswith(ACTIONS_PREFIX):
+        if ctx.rate_limiter is not None and not ctx.rate_limiter.allow(caller.id):
+            return Response(429, {"error": "rate_limited"}, correlation_id)
+        return _action(path, body, ctx, caller, correlation_id)
+
+    if method == "GET" and path == TOOLS_PATH:
+        return _list_tools(ctx, caller, correlation_id)
+
+    if method == "GET" and path.startswith(TOOLS_PREFIX):
+        return _describe_tool(path, ctx, caller, correlation_id)
+
+    if method == "GET" and path.startswith(REQUESTS_PREFIX):
+        return _request_status(path, ctx, caller, correlation_id)
+
+    return Response(404, {"error": "not_found"}, correlation_id)
+
+
+def _list_tools(ctx, caller, correlation_id) -> Response:
+    """Discovery: the ops this caller may actually use (allow/review), with risk and
+    a one-line description. Denied ops are omitted (least privilege)."""
+    policy = ctx.store.policy_for(caller.id)
+    tools = []
+    for op in ctx.registry.list_ops():
+        effect = policy_rules.decide(policy, op["tool"], op["op"])
+        if effect != policy_rules.DENY:
+            tools.append({**op, "effect": effect})
+    return Response(200, {"caller": caller.name, "tools": tools}, correlation_id)
+
+
+def _describe_tool(path, ctx, caller, correlation_id) -> Response:
+    """Discovery: one op's args/description, on demand. Denied or unknown ops 404
+    (never reveal what the caller can't use)."""
+    spec = path[len(TOOLS_PREFIX):]
+    parts = spec.split(".")
+    if len(parts) != 2 or not all(parts):
+        return Response(400, {"error": "invalid",
+                              "detail": "expected /v1/tools/<tool>.<op>"}, correlation_id)
+    tool, op = parts
+    effect = policy_rules.decide(ctx.store.policy_for(caller.id), tool, op)
+    if effect == policy_rules.DENY:
+        return Response(404, {"error": "not_found"}, correlation_id)
+    described = ctx.registry.describe(tool, op)
+    if described is None:
+        return Response(404, {"error": "not_found"}, correlation_id)
+    return Response(200, {**described, "effect": effect}, correlation_id)
+
+
+def _request_status(path, ctx, caller, correlation_id) -> Response:
+    """Poll a request: drives approval resolution and returns the current outcome.
+    A status query, so it returns 200 with the status body once the caller owns it."""
+    rid = path[len(REQUESTS_PREFIX):]
+    if not rid.isdigit():
+        return Response(400, {"error": "invalid"}, correlation_id)
+    req = ctx.store.request(int(rid))
+    if req is None or req["caller_id"] != caller.id:
+        # never reveal another caller's request
+        return Response(404, {"error": "not_found"}, correlation_id)
+    outcome = lifecycle.resolve_request(ctx, int(rid))
+    return Response(200, _outcome_body(outcome), correlation_id)
+
+
+def _action(path, body, ctx, caller, correlation_id) -> Response:
+    spec = path[len(ACTIONS_PREFIX):]
+    parts = spec.split(".")
+    if len(parts) != 2 or not all(parts):
+        return Response(400, {"error": "invalid",
+                              "detail": "expected /v1/actions/<tool>.<op>"}, correlation_id)
+    tool, op = parts
+
+    if not isinstance(body, dict):
+        return Response(400, {"error": "invalid",
+                              "detail": "body must be a JSON object"}, correlation_id)
+    arguments = body.get("arguments", {})
+    if not isinstance(arguments, dict):
+        return Response(400, {"error": "invalid",
+                              "detail": "arguments must be an object"}, correlation_id)
+
+    outcome = lifecycle.submit(ctx, caller, tool, op, arguments, correlation_id,
+                               reason=body.get("reason"))
+    return Response(_OUTCOME_STATUS[outcome.status], _outcome_body(outcome), correlation_id)
+
+
+def _outcome_body(outcome) -> dict:
+    body = {"status": outcome.status}
+    if outcome.request_id is not None:
+        body["request_id"] = outcome.request_id
+    if outcome.result is not None:
+        body["result"] = outcome.result
+    if outcome.reason is not None:
+        body["reason"] = outcome.reason
+    if outcome.error is not None:
+        body["error"] = outcome.error
+    if outcome.approver is not None:
+        body["approver"] = outcome.approver
+    if outcome.note is not None:
+        body["note"] = outcome.note
+    return body
