@@ -1,30 +1,41 @@
 ---
-children_hash: 00b33a5fdfa9fede08bc8f930e6f634a807fa3ae0f91fd7d8a141813555ef1e7
-compression_ratio: 0.6163328197226502
+children_hash: 77f2e453933943c4ae85dc84d07e48e896bc41dab47f303a4ccc865e7cd511f9
+compression_ratio: 0.7030386740331491
 condensation_order: 1
 covers: [context.md, work_log.md]
-covers_token_total: 649
+covers_token_total: 724
 summary_level: d1
-token_count: 400
+token_count: 509
 type: summary
 ---
 # Work Log
 
-The `work_log` entry captures the restart of the Toolstack rebuild on 2026-05-27, with a shift from the removed all-in-one scaffold to a one-component-at-a-time rebuild strategy. It records completed architecture documentation, cleanup/migration notes, current verification status, and the next isolated component to build.
+Structural summary of the Toolstack rebuild record, spanning the original greenfield kickoff and the later architecture pivot. See **work_log.md** for the detailed history and **context.md** for the topical overview.
 
-## Core themes
-- **Work history and rebuild tracking**: `work_log.md` preserves the dated rebuild restart, progress milestones, and session decisions.
-- **Verification and cleanup**: The log documents cleanup of removed scratch/reference materials and notes the current verification state after distilling project rules into local docs.
-- **Build sequencing**: The rebuild is now planned as an incremental component rollout rather than a monolithic scaffold.
+## Scope and purpose
+- Captures rebuild progress, verification status, cleanup, and the current next step.
+- Serves as the historical record for decisions that shaped the Toolstack direction.
 
-## Key decisions and constraints
-- The earlier **all-in-one scaffold was intentionally removed** because it conflicted with the new rebuild approach.
-- The next likely implementation step is **ClientProfileService** as the first isolated component.
-- Preserved project rule: **BrokerGateway, RequestService, and ToolRegistryService must not talk directly to SecretsManagementService**.
-- **ToolRegistryService has no secret awareness**.
-- **SecretsManagementService** owns workload namespaces and component-to-component credentials.
-- Approval flows must go through an **external Approval Surface Endpoint**.
+## Major phases
+- **2026-05-27 rebuild kickoff**: the greenfield Toolstack rebuild began and initial artifacts/decisions were recorded.
+- **2026-06-13 pivot review**: the architecture was collapsed toward deployment reality, replacing the older ClientProfileService-first decomposition with **Phase 0 boundary work**.
+- **Current direction**: Phase 0 is the next step, focusing on tailnet ingress and a localhost-only broker.
+
+## Key preserved facts
+- The rebuild start date is **2026-05-27**.
+- The pivot date is **2026-06-13**.
+- On the pivot date, **docs/component-plans.md** and **docs/component-io-contracts.md** were deleted.
+- The current next step is **Phase 0: tailnet ingress plus a localhost-only broker**.
+
+## Architectural relationships and constraints
+- The work log references the canonical architecture sources in **architecture/toolstack.md** and **architecture/toolstack/toolstack_architecture.md**.
+- It preserves both the superseded service decomposition and the newer collapsed **broker/toolyard** design.
+- Superseded 2026-05-27 decisions (kept as history; these services no longer exist as separate processes — now broker module seams):
+  - BrokerGateway/RequestService/ToolRegistryService must not talk to SecretsManagementService.
+  - SecretsManagementService owned namespaces and component-to-component credentials.
+  - Approvals routed through a separate Approval Surface Endpoint.
+- Carried forward: the registry is secret-unaware and the broker is never on the secret path.
 
 ## Drill-down references
-- `context.md` — high-level overview of the work log topic and related architecture area.
-- `work_log.md` — detailed rebuild history, cleanup notes, rules, and facts.
+- **context.md** — concise topic overview, key concepts, and relation to architecture/toolstack.
+- **work_log.md** — full work history, raw concept, narrative, and facts.

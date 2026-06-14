@@ -1,7 +1,7 @@
-- Toolstack is a greenfield agentic tool management rebuild centered on a restart point in `PROJECT.md` and supported by architecture docs for decomposition, I/O contracts, message contracts, coding standards, plans, and work history.
-- The architecture is intentionally transport-neutral and boundary-driven: explicit ownership boundaries come first, followed by component contracts, then isolated component implementations, and only later persistent storage or transport choices.
-- The implementation strategy is incremental: build one component at a time, keep code boring and explicit, keep public surfaces small, and use focused tests to verify behavior and boundaries.
-- Current state: the all-in-one greenfield scaffold was removed because it bundled too many components together. The repo is pre-implementation and ready for the first isolated component.
-- Next recommended component is `ClientProfileService`.
-- Key ownership decisions include: `BrokerGateway` only talks to `ClientProfileService` and `RequestService`; `RequestService` owns mutable request lifecycle; `SecretsManagementService` owns workload namespaces and component-to-component credentials; `EventLoggingService` owns append-only audit history.
-- Explicit prohibitions include not letting `BrokerGateway`, `RequestService`, or `ToolRegistryService` call `SecretsManagementService`, and not allowing `ToolRegistryService` to know secret namespaces, keys, or requirements.
+- Toolstack architecture has pivoted from a multi-service decomposition to a deployment-reality model centered on a broker, toolyard, tool template, and an in-broker nod adapter.
+- The prior external approver process and direct proxying through toolyard were removed; nod is now the approval surface via an adapter inside the broker.
+- The build is phased: Phase 0 boundary, Phase 1 broker core vs stub tool, Phase 2 toolyard plus real tools and secrets-at-workload, Phase 3 approval via nod, and Phase 4 admin/hardening.
+- Core rules emphasize one component at a time, fail-closed behavior, secrets living with the workload, and direct broker-to-tool execution.
+- The broker is the approval authority, forwards approved calls directly to the tool container, and never holds secret-backend credentials; the registry is secret-unaware.
+- Phase 0 is specifically tailnet ingress plus a broker bound to 127.0.0.1 that serves only GET /v1/health, proving only the agent can reach it.
+- Canonical docs are now plan.md, component-decomposition.md, message-contracts.md, approval-surface-adapter.md, and PROJECT.md; superseded component plans and I/O contracts were deleted.

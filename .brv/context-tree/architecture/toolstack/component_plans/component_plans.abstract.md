@@ -1,1 +1,0 @@
-Component plans define the incremental build order from ClientProfileService to Control Panel and enforce do-not-build boundaries to prevent scope creep.

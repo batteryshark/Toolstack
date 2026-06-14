@@ -1,9 +1,0 @@
-- Toolstack rebuild is reset to a pre-implementation, transport-neutral architecture with no active source implementation yet.
-- The restart point is centered on PROJECT.md, which now acts as the hub linking architecture, coding standards, component plans, and work log docs.
-- Build strategy is explicitly one component at a time, with focused tests added only for the isolated component being built.
-- The architecture intentionally delays decisions about REST, queues, databases, sandboxing, mTLS, and deployment shape until a component actually requires them.
-- Core rules emphasize small public surfaces, explicit/boring code, and strict boundaries between services.
-- Several forbidden direct relationships are called out, especially around SecretsManagementService and secret awareness in ToolRegistryService.
-- The next suggested component is ClientProfileService; .brv/config.json was also made path-agnostic by changing cwd to dot.
-- Sections cover reason, raw concept, narrative, and facts, with emphasis on restart history, project state, rules, and next step.
-- Notable entities include PROJECT.md, BrokerGateway, RequestService, ToolRegistryService, SecretsManagementService, and ClientProfileService.

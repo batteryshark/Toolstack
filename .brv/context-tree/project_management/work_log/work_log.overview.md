@@ -1,8 +1,7 @@
-- The work log records the 2026-05-27 restart of the greenfield Toolstack rebuild and the cleanup/migration decisions made during the session.
-- It documents removal of the earlier all-in-one scaffold as incompatible with the one-component-at-a-time rebuild approach.
-- The log preserves the sequence of completed architecture artifacts, current verification status, and the next likely implementation step.
-- The next likely step is to build ClientProfileService as the first isolated component.
-- Cleanup notes mention that a scratch decomposition file and an external clean-code reference bundle were removed after distilling the rules into local docs.
-- Trust and security rules are reiterated, including no direct secret path from BrokerGateway, RequestService, or ToolRegistryService to SecretsManagementService.
-- Structurally, the log is organized by date and includes completed work, important decisions, verification, next step, and cleanup notes.
-- Notable entities include PROJECT.md, docs/component-decomposition.md, docs/component-io-contracts.md, docs/message-contracts.md, and Approval Surface Endpoint.
+- The work log records the greenfield Toolstack rebuild from its 2026-05-27 kickoff through the 2026-06-13 architecture pivot.
+- It preserves the transition from the original service-oriented plan to the collapsed deployment-reality design centered on broker/toolyard boundaries.
+- The latest direction replaces the old ClientProfileService-first approach with Phase 0 boundary work.
+- The next likely step is Phase 0: verify tailnet ingress to a localhost-only broker and confirm fail-closed behavior.
+- The log includes cleanup and migration notes, prototype removal, verification status, and key decisions from the rebuild history.
+- It explicitly warns against direct communication between BrokerGateway, RequestService, ToolRegistryService, and SecretsManagementService, and states ToolRegistryService has no secret awareness.
+- Approval surfaces are treated as external in the older model and pass through an Approval Surface Endpoint, while the newer canonical docs govern current direction.
