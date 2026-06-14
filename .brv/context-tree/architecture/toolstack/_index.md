@@ -1,141 +1,89 @@
 ---
-children_hash: e878bd37a842868b27cf180d77c03c0f659094e19062512a96f4d639fb272af4
-compression_ratio: 0.3509644064426327
+children_hash: 0785bc7274b1774542d5e6820fce96ccc4b1287ae9b481baec799f67c5da0252
+compression_ratio: 0.22481807736499426
 condensation_order: 1
-covers: [coding_standards/_index.md, component_decomposition/_index.md, component_design/_index.md, component_io_contracts/_index.md, component_plans/_index.md, context.md, message_contracts/_index.md, toolstack_architecture.md, toolstack_architecture/_index.md]
-covers_token_total: 5029
+covers: [boundary_contracts.md, coding_standards/_index.md, component_decomposition.md, toolstack_architecture.md, toolstack_architecture_pivot.md]
+covers_token_total: 5222
 summary_level: d1
-token_count: 1765
+token_count: 1174
 type: summary
 ---
-# Toolstack d1 Structural Summary
+# Toolstack Architecture d1 Overview
 
-## Architecture and rebuild posture
-The Toolstack knowledge base describes a **greenfield, pre-implementation rebuild** that starts from a restart point in **`PROJECT.md`** and proceeds **one component at a time**. The system is intentionally **transport-neutral** and defers choices like REST, queues, databases, sandboxing, mTLS, and deployment shape until a specific component needs them.
+The Toolstack knowledge at this level converges on a single **deployment-reality architecture**: a collapsed system centered on a **Broker**, **Toolyard**, **Tool template / tool containers**, and a **nod approval adapter**. The older 9-service logical decomposition is now treated as historical context, while the canonical source of truth is rooted in **PROJECT.md** and the phased build plan in **plan.md**.
 
-### Core architectural direction
-- Favor **isolated components** with explicit ownership boundaries and small public surfaces.
-- Keep implementation **boring, explicit, and behavior-focused**.
-- Test behavior and boundaries rather than transport details or incidental internals.
+## Core architectural shift
+- The old distributed service mesh has been replaced by **broker module seams** inside one process.
+- Boundary contracts are only defined where there is a real **process or trust boundary**.
+- The broker is the only addressable ingress for the agent; approved calls are forwarded directly to **localhost tool containers**.
+- **Toolyard** is not a request proxy; it starts containers and injects **per-tool secrets at container start into tmpfs**.
+- **nod** is the external approval surface, but the **broker owns approval truth**.
 
-See **`toolstack_architecture.md`** for the restart-state overview and the project-level rules.
+## Build phases and implementation direction
+- The build is explicitly phased:
+  - **Phase 0:** tailnet ingress + localhost-bound broker, health-only exposure
+  - **Phase 1:** broker core vs stub tool
+  - **Phase 2:** Toolyard + real tools + secrets-at-workload
+  - **Phase 3:** approval via nod
+  - **Phase 4:** admin + hardening
+- The working rule across the architecture is **one component at a time**, with **fail-closed** behavior and minimal public surfaces.
+- Transport, persistence, sandboxing, mTLS, queues, and other infrastructure choices are intentionally deferred until needed.
 
-## Implementation standards
-The standards in **`coding_standards.md`** act as guardrails for the rebuild:
-- Build **one component at a time**
-- Prefer **boring, explicit code** over clever abstractions
-- Keep **public surfaces small**
-- Keep tests focused on **behavior and boundaries**
-- Avoid premature commitment to infrastructure decisions
+## Boundary and security model
+- **`boundary_contracts.md`** defines the wire contracts across the real boundaries:
+  - Agent -> Broker
+  - Broker -> Tool container
+  - Toolyard -> Secret backend
+  - Tool container -> Toolyard
+  - Broker <-> nod
+- Standard outcomes include: **ok, accepted, pending_approval, denied, invalid, not_found, expired, unavailable, failed**.
+- The security model emphasizes:
+  - secrets live with the workload
+  - broker never touches secret backends or secret material
+  - arguments/results are redacted before audit or approval surfaces
+  - raw tokens are never logged
+  - nod titles/summaries must not contain sensitive content
+- Audit taxonomy spans gateway, identity, policy, request, approval, runtime, and admin event families.
 
-These standards reinforce readability, narrow interfaces, and component isolation.
+## Component relationships and ownership
+- **`component_decomposition.md`** captures the physical picture:
+  - tailnet ingress -> broker -> tool container
+  - toolyard handles container lifecycle and secret injection
+  - broker <-> nod handles approval messaging
+  - toolyard -> secret backend is the only secret-path interaction
+- The broker owns:
+  - approval truth
+  - request routing after approval
+  - the only agent-reachable surface
+- Toolyard owns:
+  - workload secret resolution
+  - container startup responsibilities
+- The registry is **secret-unaware** and the broker reads tool registry data while ignoring the secrets block.
 
-## Component decomposition and trust zones
-The decomposition in **`component_decomposition.md`** and **`component_design.md`** organizes the system into explicit trust zones:
+## Standards and design philosophy
+- **`coding_standards/_index.md`** summarizes the implementation philosophy behind the rebuild:
+  - simple, explicit, behavior-focused, transport-neutral code
+  - small public surfaces
+  - tests focused on behavior and boundaries
+  - avoid premature commitments to infrastructure shape
+- These standards underpin the architecture files and explain why the current design favors internal seams over external service boundaries.
 
-**external client zone → gateway → request orchestration → approval / runtime / secrets / event logging**
+## Historical context preserved in the architecture topic
+- **`toolstack_architecture.md`** and **`toolstack_architecture_pivot.md`** preserve the transition from the older restart-point architecture to the current canonical model.
+- The older plan emphasized:
+  - explicit ownership boundaries
+  - transport-neutral contracts
+  - incremental component delivery
+  - no early commitment to REST, queues, databases, sandboxing, or mTLS
+- The newer pivot codifies the current operational reality:
+  - broker + toolyard + tool template + approval adapter
+  - Tailscale Serve as the only ingress
+  - nod as the reference approval surface
+  - deleted superseded docs folded into **plan.md**
 
-### Main components and ownership
-- **BrokerGateway**: normal entry point for client actions
-- **ClientProfileService**: supports gateway interactions
-- **RequestService**: owns mutable request lifecycle state and orchestrates core flows
-- **PolicyService**: governs request decisions
-- **ToolRegistryService**: metadata-only registry with no secret awareness
-- **ApprovalService** / **Approval Surface Endpoint**: handle approval flows externally from the gateway path
-- **ToolRuntimeService**: executes runtime actions and materializes secrets via the secrets service
-- **SecretsManagementService**: owns workload secrets and component-to-component credentials
-- **EventLoggingService**: owns append-only audit/event history
-- **Control Panel**: admin interface over domain services
-
-### Key boundary rules
-- **BrokerGateway** only talks to **ClientProfileService** and **RequestService**
-- **BrokerGateway**, **RequestService**, and **ToolRegistryService** have **no direct secret path**
-- **ToolRegistryService** must not declare secret namespaces, secret keys, or secret requirements
-- **EventLoggingService** receives redacted events and does not own mutable request state
-
-Refer to **`component_decomposition.md`** for the full trust-zone model and **`component_design.md`** for the control-plane orchestration view.
-
-## Component I/O contracts
-**`component_io_contracts.md`** defines consume/produce boundaries and the “must-not” rules for each service.
-
-### Core contract themes
-- Each service has explicit inputs, outputs, and forbidden interactions
-- Secret values must not leak into logs or public payloads
-- Authorization, secret handling, orchestration, and event logging remain separated cleanly
-
-### Notable contract constraints
-- **RequestService** consumes authenticated request context, policy decisions, tool metadata, approval outcomes, and runtime results; it must not call **SecretsManagementService** or authenticate raw profile tokens
-- **BrokerGateway** is constrained from directly calling **PolicyService**, **ToolRegistryService**, **ApprovalService**, **ToolRuntimeService**, or **SecretsManagementService**
-- **ClientProfileService** must not decide tool authorization or expose raw tokens
-- **ToolRegistryService** is metadata-only
-- **ApprovalService** must not decide initial tool authorization or include raw secrets in prompts
-- **ToolRuntimeService** handles secret materialization, but not authorization
-- **EventLoggingService** must not own mutable request state or make authorization decisions
-
-This document aligns with **`message_contracts.md`** as the message-layer complement to I/O boundaries.
-
-## Message contracts
-**`message_contracts.md`** defines the transport-neutral message layer shared across request, approval, runtime, admin, secrets, and event logging flows.
-
-### Core structure
-- Shared envelope fields: `message_id`, `correlation_id`, `source_component`, `target_component`, `issued_at`
-- Standard outcomes include: `ok`, `accepted`, `pending_approval`, `denied`, `invalid`, `not_found`, `expired`, `unavailable`, `failed`
-- Message families cover:
-  - external client messages
-  - orchestration messages
-  - approval messages
-  - runtime messages
-  - secrets messages
-  - admin messages
-  - event logging messages
-
-### Security and routing rules
-- Secret values must not appear in request, approval, registry, policy, or audit payloads except as redacted metadata
-- **BrokerGateway** only talks to **ClientProfileService** and **RequestService**
-- **ToolRegistryService** has no secret awareness
-- Approval surfaces are external and communicate through the **Approval Surface Endpoint**
-- **RequestService** owns mutable request state
-- **EventLoggingService** owns append-only audit/event history
-
-Key message examples captured include:
-- `ClientActionRequest`
-- `AuthenticateProfileToken`
-- `SubmitRequest`
-- `MaterializeWorkloadSecrets`
-- `AppendAuditEvent`
-
-## Component build plan
-The roadmap in **`component_plans.md`** defines the intended implementation order and scope limits.
-
-### Build sequence
-**ClientProfileService → event logging → registry → policy → request → approval → secrets → runtime → gateway → control panel**
-
-### Planning structure
-Each component section includes:
-- a **goal**
-- a **build list**
-- a **do-not-build list**
-
-This prevents scope creep and premature coupling, especially around secrets, policy, and transport concerns.
-
-### Notable planning facts
-- **ClientProfileService** is the first planned component
-- **EventLoggingService** should provide append-only audit events
-- **ToolRegistryService** should catalog tools and operations without secret awareness
-- **Control Panel** comes last and should provide admin workflows without owning primary state
-
-## Overall relationship between the entries
-- **`toolstack_architecture.md`** defines the restart-point posture and project-level rules.
-- **`coding_standards.md`** defines implementation discipline.
-- **`component_decomposition.md`** and **`component_design.md`** define trust zones, component ownership, and orchestration layout.
-- **`component_io_contracts.md`** and **`message_contracts.md`** define service boundaries and transport-neutral message rules.
-- **`component_plans.md`** turns the architecture into a build order with explicit exclusions.
-
-## Drill-down references
-- **`coding_standards.md`**
-- **`component_decomposition.md`**
-- **`component_design.md`**
-- **`component_io_contracts.md`**
-- **`component_plans.md`**
-- **`message_contracts.md`**
-- **`toolstack_architecture.md`**
+## Drill-down map
+- **`boundary_contracts.md`** — exact wire outcomes, audit families, redaction rules, and secret-access constraints
+- **`component_decomposition.md`** — physical deployment picture, module seams, and ownership boundaries
+- **`toolstack_architecture.md`** — current rebuild direction, phased build order, and canonical working rules
+- **`toolstack_architecture_pivot.md`** — current architecture plus historical restart-point context
+- **`coding_standards/_index.md`** — implementation philosophy and behavior-first guardrails

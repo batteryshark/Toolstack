@@ -1,1 +1,0 @@
-Component decomposition defines isolated services, trust zones, and allowed interactions, with secrets, approvals, runtime, and event logging kept separate.

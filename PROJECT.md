@@ -1,46 +1,80 @@
 # Project Nerve Center
 
-This is the restart point for the Toolstack rebuild.
+The restart point for the Toolstack rebuild.
 
 ## Mission
 
-Build an agentic tool management system slowly, one component at a time, with
-ultra-simple code, clear ownership boundaries, and transport-neutral contracts.
+Build a brokered, action-without-access tool layer for agents — slowly, one
+component at a time, with ultra-simple code and physical trust boundaries a junior
+engineer can understand at a glance.
 
 The system should be understandable to a new reader without knowing the old
-implementation or any previous design attempts.
+implementation or any previous design attempt.
 
-## Current Shape
+## Architecture direction
 
-- Components are defined in [docs/component-decomposition.md](docs/component-decomposition.md).
-- Component consume/produce boundaries are defined in [docs/component-io-contracts.md](docs/component-io-contracts.md).
-- Message-level contracts are defined in [docs/message-contracts.md](docs/message-contracts.md).
-- Clean-code expectations are summarized in [docs/coding-standards.md](docs/coding-standards.md).
-- Work history lives in [docs/work-log.md](docs/work-log.md).
-- Component-by-component build order lives in [docs/component-plans.md](docs/component-plans.md).
+**Collapse to deployment reality** (decided 2026-06-13). A few processes with hard
+boundaries, not a mesh of logical services. The fine-grained ownership rules from
+the earlier decomposition survive as **module seams inside the broker**.
 
-## Working Rules
+## Current shape
 
-- Build one component at a time.
-- Prefer boring, explicit code over clever abstractions.
-- Keep public surfaces small.
-- Keep tests focused on behavior and boundaries.
-- Do not choose REST, queues, databases, sandboxing, mTLS, or deployment shape until a component actually needs that decision.
-- Do not let `BrokerGateway`, `RequestService`, or `ToolRegistryService` talk directly to `SecretsManagementService`.
-- Do not let `ToolRegistryService` know secret namespaces, secret keys, or secret requirements.
+- Review walkthrough (start here to re-orient): [docs/walkthrough.md](docs/walkthrough.md).
+- Buildable plan, components, and build order: [plan.md](plan.md).
+- Diagrams, broker internals, and trust boundaries: [docs/component-decomposition.md](docs/component-decomposition.md).
+- Boundary wire contracts and invariants: [docs/message-contracts.md](docs/message-contracts.md).
+- Approval-surface adapter contract ("SDK"): [docs/approval-surface-adapter.md](docs/approval-surface-adapter.md).
+- How an agent connects and calls tools: [client/SKILL.md](client/SKILL.md).
+- Operator control panel (run the broker, manage clients/tools, watch audit): [admin/README.md](admin/README.md).
+- Clean-code expectations: [docs/coding-standards.md](docs/coding-standards.md).
+- Work history: [docs/work-log.md](docs/work-log.md).
+- Proven detail to port from the previous build (`toolstack-old/`, kept locally —
+  not part of this repo).
 
-## Current Status
+## Working rules
 
-The whole-system proof scaffold was intentionally removed because it bundled
-too many components together. The repo is now in a pre-implementation planning
-state, ready to build one component at a time.
+- Build one component at a time; each phase ends in something you can run.
+- Boring, explicit code over clever abstraction; keep public surfaces small.
+- Fail closed everywhere.
+- Secrets live with the workload. The broker holds no secret-backend credential and
+  is never on the secret path.
+- The registry is secret-unaware: the broker reads tool/op/risk/port from
+  `toolyard.toml` and ignores the `[[secrets]]` block.
+- The broker owns approval truth; nod is a messenger (poll is truth, callback is a
+  hint, the broker's timeout wins).
+- The broker forwards approved calls directly to the tool container; toolyard is not
+  in the request path.
+- Defer until a component needs it: profiles, mTLS / component credentials between
+  hosts, multiple approval surfaces, sandboxed jobs.
 
-There is no active test suite until the first isolated component is created.
+## Current status
 
-## Suggested Next Step
+**The planned build order (Phases 0–4) is complete and tested**, and an operator
+**admin web app** now runs the whole stack. The full vertical slice runs end to end:
+agent → broker (auth + policy) → human approval in nod → tool execution with workload
+secrets, and the broker never sees a secret.
 
-Start with `ClientProfileService`.
+Phase 4 (admin + hardening) added `brokerctl` to manage callers/policies/tokens
+(admin actions audited), per-caller rate limiting, immediate revocation, `reason`
+redaction, and an audit trail that answers the four questions. The agent-side client
+(the `toolstack` CLI + MCP adapter + skill) is built on top.
 
-Reason: it is small, central, and needed before meaningful request handling,
-policy evaluation, or admin flows. Build it as a clean standalone component
-with in-memory storage first, then decide whether persistence is needed.
+The [admin web app](admin/README.md) (FastAPI — the one component with runtime deps)
+supervises the broker process, manages callers/tokens/policies, **authors and edits
+tools** (writes their `toolyard.toml` from a form into a directory you name, which the
+broker then discovers), and shows requests + audit. It shares the broker's `Store` and
+`broker.operations`, so the panel and `brokerctl` write **one** audit trail; it binds
+loopback only and keeps secrets off the browser. 173 tests pass across [broker/](broker/),
+[toolyard/](toolyard/), [client/](client/), and [admin/](admin/), plus an opt-in docker
+end-to-end and a full author → register → run → call live walkthrough.
+
+## Suggested next step
+
+Harden for real deployment:
+
+- The deferred items — approval `deliver` callback (latency), container **tmpfs**
+  secret injection (no host disk), temporary grants/JIT elevation, and a background
+  approval-expiry sweeper.
+- Wire a real nod + secret backend (Infisical/SOPS) + tailnet per
+  [broker/README.md](broker/README.md) and [toolyard/README.md](toolyard/README.md).
+- Component-credentials/mTLS only if modules ever split across hosts.

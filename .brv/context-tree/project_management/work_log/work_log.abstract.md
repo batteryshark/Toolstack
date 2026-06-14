@@ -1,1 +1,1 @@
-The work log records the 2026-05-27 rebuild restart, removal of the old scaffold, completed architecture docs, and the next isolated component.
+The work log records the greenfield rebuild history and the 2026-06-13 pivot to a collapsed deployment reality, with Phase 0 tunnel access and fail-closed broker behavior as the next step.

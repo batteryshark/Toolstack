@@ -11,3 +11,11 @@ build/
 dist/
 *.egg-info/
 /target
+
+# Local-only, not part of the deliverable: the previous build (porting
+# reference) and local Claude Code config/skills.
+toolstack-old/
+.claude/
+
+# local dev secrets (never commit)
+secrets.toml

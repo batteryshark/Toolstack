@@ -1,27 +1,44 @@
 # Toolstack Rebuild
 
-Greenfield component decomposition for an agentic tool management system.
+A brokered, action-without-access tool layer for agents: the agent can *ask*, the
+broker *decides*, tools *execute*, and secrets stay with the tools.
 
-Start with [PROJECT.md](PROJECT.md). It is the project nerve center and restart
-point.
+Start with **[docs/walkthrough.md](docs/walkthrough.md)** — the review walkthrough
+(what it is, how it runs, the security properties). [plan.md](plan.md) is the
+component-by-component build plan, [PROJECT.md](PROJECT.md) is the nerve center, and
+[docs/component-decomposition.md](docs/component-decomposition.md) has the diagrams and
+trust boundaries.
 
-This repository intentionally starts with logical boundaries and planning docs.
-It does not choose REST routes, database schemas, sandboxing, mTLS, or
-deployment topology yet.
+## What you build
 
-## Core Components
+- **Broker** — the authority boundary and the only address the agent has: auth,
+  policy, request lifecycle, approval orchestration, and audit. One process, one
+  SQLite file. (Internally split into module seams — see the architecture doc.)
+- **Toolyard** — container lifecycle + per-tool secret resolution at container start.
+- **Tool template** — what a new tool needs (drop a `toolyard.toml`, run `toolyard up`).
+- **Approval adapter** — a broker module that talks to nod; pluggable via
+  [docs/approval-surface-adapter.md](docs/approval-surface-adapter.md).
+- **Agent client** — the generic `toolstack` CLI + skill (and an MCP adapter) an
+  agent uses to discover and call tools through the broker; see
+  [client/SKILL.md](client/SKILL.md).
+- **Admin web app** — the operator's control panel: run the broker, manage
+  callers/tokens/policies, author/edit tools (form → `toolyard.toml`), and watch
+  requests + audit. Local/homelab, loopback-only; see [admin/README.md](admin/README.md).
 
-- `BrokerGateway` accepts client requests and delegates request lifecycle work.
-- `ClientProfileService` owns clients, profiles, profile tokens, and grants.
-- `RequestService` owns mutable request state.
-- `PolicyService` owns tool authorization and temporary grants.
-- `ApprovalService` owns approval workflow state and outcomes.
-- `ToolRegistryService` owns tool catalog metadata and has no secret awareness.
-- `ToolRuntimeService` owns tool execution and runtime preparation.
-- `SecretsManagementService` owns secret namespaces and profile/tool bindings.
-- `EventLoggingService` owns append-only audit events.
+## What you deploy
 
-## Implementation Status
+- **nod** — self-hosted approval surface for human-in-the-loop decisions.
+- **Secret backend** — Infisical or SOPS.
+- **Tailnet** — Tailscale Serve (or any VPN); the ingress boundary.
 
-No active component implementation exists yet. The next step is to build the
-first component in isolation, starting with `ClientProfileService`.
+## Status
+
+The planned build order (Phases 0–4) is **complete and tested**, with an operator
+**admin web app** on top — 173 tests across [broker/](broker/), [toolyard/](toolyard/),
+[client/](client/), and [admin/](admin/). The full vertical slice runs end to end:
+agent → broker (auth, policy, request lifecycle) → human approval in nod → tool
+execution with workload secrets, and the broker never sees a secret. Operators manage
+callers/policies/tokens with `brokerctl` or the [admin panel](admin/README.md). It is
+**not yet deployment-hardened** — see the deferred items in [docs/walkthrough.md](docs/walkthrough.md)
+before running it for real. See [plan.md](plan.md) for the build order and
+[PROJECT.md](PROJECT.md) for what's next.

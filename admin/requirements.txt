@@ -1,0 +1,8 @@
+# The admin app is the one Toolstack component allowed runtime dependencies.
+# Install into a dedicated virtualenv (the broker/toolyard/client stay stdlib):
+#   python3 -m venv admin/.venv && admin/.venv/bin/pip install -r admin/requirements.txt
+fastapi
+uvicorn
+
+# Needed only to run the test suite (FastAPI's TestClient is built on httpx):
+httpx

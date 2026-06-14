@@ -3,8 +3,22 @@
     {
       "order": 3,
       "path": "_index.md",
-      "tokens": 1784,
+      "tokens": 1534,
       "type": "summary"
+    },
+    {
+      "order": 0,
+      "path": "architecture/toolstack/coding_standards/_index.md",
+      "tokens": 346,
+      "type": "summary"
+    },
+    {
+      "abstractPath": "architecture/toolstack/boundary_contracts.abstract.md",
+      "abstractTokens": 47,
+      "importance": 50,
+      "path": "architecture/toolstack/boundary_contracts.md",
+      "tokens": 47,
+      "type": "context"
     },
     {
       "abstractPath": "architecture/toolstack/coding_standards/coding_standards.abstract.md",
@@ -15,65 +29,25 @@
       "type": "context"
     },
     {
-      "abstractPath": "architecture/toolstack/component_decomposition/component_decomposition.abstract.md",
-      "abstractTokens": 38,
+      "abstractPath": "architecture/toolstack/component_decomposition.abstract.md",
+      "abstractTokens": 56,
       "importance": 50,
-      "path": "architecture/toolstack/component_decomposition/component_decomposition.md",
-      "tokens": 38,
-      "type": "context"
-    },
-    {
-      "abstractPath": "architecture/toolstack/component_design/component_decomposition.abstract.md",
-      "abstractTokens": 41,
-      "importance": 50,
-      "path": "architecture/toolstack/component_design/component_decomposition.md",
-      "tokens": 41,
-      "type": "context"
-    },
-    {
-      "abstractPath": "architecture/toolstack/component_io_contracts/component_i_o_contracts.abstract.md",
-      "abstractTokens": 35,
-      "importance": 50,
-      "path": "architecture/toolstack/component_io_contracts/component_i_o_contracts.md",
-      "tokens": 35,
-      "type": "context"
-    },
-    {
-      "abstractPath": "architecture/toolstack/component_plans/component_plans.abstract.md",
-      "abstractTokens": 38,
-      "importance": 50,
-      "path": "architecture/toolstack/component_plans/component_plans.md",
-      "tokens": 38,
-      "type": "context"
-    },
-    {
-      "importance": 50,
-      "path": "architecture/toolstack/context.md",
-      "tokens": 128,
-      "type": "context"
-    },
-    {
-      "abstractPath": "architecture/toolstack/message_contracts/message_contracts.abstract.md",
-      "abstractTokens": 38,
-      "importance": 50,
-      "path": "architecture/toolstack/message_contracts/message_contracts.md",
-      "tokens": 38,
-      "type": "context"
-    },
-    {
-      "abstractPath": "architecture/toolstack/toolstack_architecture/toolstack_architecture.abstract.md",
-      "abstractTokens": 40,
-      "importance": 50,
-      "path": "architecture/toolstack/toolstack_architecture/toolstack_architecture.md",
-      "tokens": 40,
+      "path": "architecture/toolstack/component_decomposition.md",
+      "tokens": 56,
       "type": "context"
     },
     {
       "abstractPath": "architecture/toolstack/toolstack_architecture.abstract.md",
-      "abstractTokens": 51,
+      "abstractTokens": 49,
       "importance": 50,
       "path": "architecture/toolstack/toolstack_architecture.md",
-      "tokens": 51,
+      "tokens": 49,
+      "type": "context"
+    },
+    {
+      "importance": 50,
+      "path": "architecture/toolstack/toolstack_architecture_pivot.md",
+      "tokens": 2573,
       "type": "context"
     },
     {
@@ -84,20 +58,20 @@
     },
     {
       "abstractPath": "project_management/work_log/work_log.abstract.md",
-      "abstractTokens": 36,
+      "abstractTokens": 47,
       "importance": 50,
       "path": "project_management/work_log/work_log.md",
-      "tokens": 36,
+      "tokens": 47,
       "type": "context"
     }
   ],
-  "generated_at": "2026-05-27T17:33:11.992Z",
+  "generated_at": "2026-06-14T04:20:58.238Z",
   "lane_tokens": {
-    "contexts": 550,
+    "contexts": 2877,
     "stubs": 0,
-    "summaries": 1784
+    "summaries": 1880
   },
-  "source_fingerprint": "3bf9cf6abe49a8d194f7191bea9e22cca2f4a46a6193e297847bf6db99f96857",
-  "total_tokens": 2334,
+  "source_fingerprint": "fb4d18868d763a6b4b3e71d3573c58039bc7f5bf3933e1cd38ee425f49ef1e97",
+  "total_tokens": 4757,
   "version": 1
 }
