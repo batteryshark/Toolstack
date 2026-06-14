@@ -1,0 +1,38 @@
+# Single source of truth for the echo tool.
+# The broker reads only the non-secret fields (id, type, operations, port).
+# The toolyard additionally reads [entrypoint] and [[secrets]].
+
+id = "echo"
+type = "rest"
+
+[entrypoint]
+command = "python3 app.py"   # process runner (dev/CI)
+port = 4601
+# production (docker runner): build the Dockerfile here, or set an image:
+# image = "toolstack-echo"
+
+# 'risk' below is descriptive metadata shown during discovery. It does NOT decide
+# whether a call needs approval — that is the per-caller POLICY (allow / review /
+# deny), which an operator sets with `brokerctl`. See broker/policy.py.
+
+[[operations]]
+name = "say"
+risk = "low"
+description = "Echo the given arguments back."
+args = [ { name = "m", type = "string", required = false, description = "any value to echo back" } ]
+
+[[operations]]
+name = "whoami"
+risk = "low"
+description = "Return the calling caller name and broker request id."
+args = []
+
+[[operations]]
+name = "secret_status"
+risk = "low"
+description = "Report whether the tool can read its api_key secret (length only, never the value)."
+args = []
+
+[[secrets]]
+name = "api_key"      # readable by the tool at $TOOLSTACK_SECRETS_DIR/api_key
+field = "API_KEY"     # field looked up in the secret backend

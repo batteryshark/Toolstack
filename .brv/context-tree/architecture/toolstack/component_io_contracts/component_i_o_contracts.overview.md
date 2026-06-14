@@ -1,8 +1,0 @@
-- The I/O contracts define what each service consumes, produces, owns, and must not do, making trust boundaries explicit.
-- The document includes a summary table, per-component contracts, and zone-level contracts.
-- BrokerGateway is heavily constrained and must not call SecretsManagementService, PolicyService, ToolRegistryService, ApprovalService, or ToolRuntimeService directly.
-- RequestService consumes authenticated request context, policy decisions, tool metadata, approval outcomes, and runtime results, and produces request state, orchestration commands, and lifecycle events.
-- ClientProfileService must not decide tool authorization or expose raw tokens; ToolRegistryService must not include secret fields; EventLoggingService must not own mutable request state or make authorization decisions.
-- Secrets must not leak into logs or public payloads, and the contracts preserve redaction and ownership boundaries.
-- The contracts depend on component decomposition as the source of truth for allowed relationships.
-- Notable entities include BrokerGateway, ClientProfileService, RequestService, ToolRegistryService, ApprovalService, ToolRuntimeService, SecretsManagementService, and EventLoggingService.

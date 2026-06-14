@@ -1,18 +1,18 @@
 ---
 title: Work Log
-summary: Work log records the 2026-05-27 rebuild restart, completed architecture docs, and the next isolated component.
+summary: Work log capturing the greenfield rebuild history, the 2026-06-13 architecture pivot, and the latest phase-0 direction.
 tags: []
 related: [architecture/toolstack.md, architecture/toolstack/toolstack_architecture.md]
 keywords: []
 createdAt: '2026-05-27T16:36:15.540Z'
-updatedAt: '2026-05-27T16:52:46.200Z'
+updatedAt: '2026-06-14T04:19:11.778Z'
 ---
 ## Reason
-Capture the rebuild history and session decisions
+Curate the work log and preserve the 2026-06-13 pivot and curation history
 
 ## Raw Concept
 **Task:**
-Document the toolstack rebuild work log
+Record the work log entries that describe the rebuild progression and architecture pivot.
 
 **Changes:**
 - Started the greenfield Toolstack rebuild
@@ -21,6 +21,9 @@ Document the toolstack rebuild work log
 - Started the greenfield rebuild
 - Removed the all-in-one scaffold
 - Recorded the current verification status and next step
+- Documented the original greenfield rebuild work from 2026-05-27
+- Recorded the 2026-06-13 collapse to deployment reality
+- Captured the replacement of the old ClientProfileService-first plan with Phase 0 boundary work
 
 **Files:**
 - docs/work-log.md
@@ -32,27 +35,28 @@ Document the toolstack rebuild work log
 - docs/component-plans.md
 
 **Flow:**
-restart -> document completed architecture work -> track cleanup -> plan next component
+initial rebuild -> prototype removal -> architecture review -> collapse to deployment reality -> Phase 0 boundary
 
-**Timestamp:** 2026-05-27T16:51:34.761Z
+**Timestamp:** 2026-06-14T04:18:38.993Z
 
 ## Narrative
 ### Structure
-The work log is organized by date and lists completed work, important decisions, current verification, next likely step, and cleanup notes.
+The work log is split between the 2026-05-27 rebuild kickoff and the 2026-06-13 pivot review.
 
 ### Dependencies
-It reflects the transition from an all-in-one prototype to a planned one-component-at-a-time rebuild.
+Relies on the project plan and architecture docs as the canonical source of current direction.
 
 ### Highlights
-The log preserves the removal of the prototype and the addition of project rules and build order.
+The work log preserves both the superseded service decomposition and the newer collapsed broker/toolyard design.
 
 ### Rules
-Do not let BrokerGateway, RequestService, or ToolRegistryService talk directly to SecretsManagementService. ToolRegistryService has no secret awareness. SecretsManagementService owns workload namespaces and component-to-component credentials. Approval surfaces are external and pass through Approval Surface Endpoint.
+Superseded 2026-05-27 decisions (kept as history; these named services no longer exist as separate processes — they are now broker module seams): BrokerGateway/RequestService/ToolRegistryService must not talk to SecretsManagementService; SecretsManagementService owned namespaces and component credentials; approvals routed through a separate Approval Surface Endpoint. The durable invariant carried forward: the broker is never on the secret path and the registry is secret-unaware.
 
 ### Examples
-The cleanup pass notes that a previous scratch decomposition file and an external clean-code reference bundle were removed after distilling the project rules into local docs.
+The next likely step stated in the log is Phase 0, proving tunnel access to the broker and fail-closed behavior.
 
 ## Facts
-- **rebuild_start_date**: The rebuild started on 2026-05-27. [project]
-- **scaffold_removed**: The earlier all-in-one scaffold was intentionally removed because it conflicted with the one-component-at-a-time rebuild. [project]
-- **next_step**: The next likely step is to build ClientProfileService as the first isolated component. [project]
+- **rebuild_start_date**: The greenfield Toolstack rebuild started on 2026-05-27. [project]
+- **pivot_date**: The architecture pivot was made on 2026-06-13. [project]
+- **deleted_docs_date**: docs/component-plans.md and docs/component-io-contracts.md were deleted on the pivot date. [project]
+- **next_step**: The next step after the pivot is Phase 0: tailnet ingress plus a localhost-only broker. [project]

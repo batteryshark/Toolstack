@@ -1,0 +1,201 @@
+"""brokerctl — the operator CLI for the broker.
+
+Manage callers, policies, and tokens; inspect requests and audit. The mutations
+themselves live in :mod:`broker.operations` (shared with the admin web app), so
+this module is a thin CLI shell over them; mutating actions are recorded as
+``admin.*`` audit events there. Per the trust model the operator works on the
+broker host with direct DB access, so there is no networked admin surface to
+secure.
+
+    brokerctl create-caller --name hermes --allow echo.say --review echo.skip
+    brokerctl list-callers
+    brokerctl set-policy --name hermes --allow echo.say
+    brokerctl show-policy --name hermes
+    brokerctl issue-token --name hermes
+    brokerctl revoke-token --prefix 1a2b3c
+    brokerctl revoke-caller --name hermes
+    brokerctl list-requests [--status pending_approval]
+    brokerctl audit [--request-id N | --correlation-id C | --limit 50]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+
+from . import operations
+from .store import Store
+
+
+def _store(args) -> Store:
+    return Store(args.db)  # Store(None) -> default XDG path
+
+
+def create_caller(args) -> None:
+    store = _store(args)
+    try:
+        token = operations.create_caller(store, args.name, args.allow, args.review, args.operator)
+    finally:
+        store.close()
+    print(f"caller '{args.name}' created.")
+    print("token (shown once — store it now):")
+    print(token)
+
+
+def list_callers(args) -> None:
+    store = _store(args)
+    try:
+        for c in store.list_callers(include_revoked=args.include_revoked):
+            print(f"{c['id']}\t{c['name']}\t{'revoked' if c['revoked_at'] else 'active'}")
+    finally:
+        store.close()
+
+
+def revoke_caller(args) -> None:
+    store = _store(args)
+    try:
+        operations.revoke_caller(store, args.name, args.operator)
+    except LookupError as exc:
+        raise SystemExit(str(exc))
+    finally:
+        store.close()
+    print(f"caller '{args.name}' revoked.")
+
+
+def show_policy(args) -> None:
+    store = _store(args)
+    try:
+        caller = operations.require_caller(store, args.name)
+        print(json.dumps(store.policy_for(caller["id"]), indent=2))
+    except LookupError as exc:
+        raise SystemExit(str(exc))
+    finally:
+        store.close()
+
+
+def set_policy(args) -> None:
+    store = _store(args)
+    try:
+        operations.set_policy(store, args.name, args.allow, args.review, args.operator)
+    except LookupError as exc:
+        raise SystemExit(str(exc))
+    finally:
+        store.close()
+    print(f"policy for '{args.name}' updated.")
+
+
+def issue_token(args) -> None:
+    store = _store(args)
+    try:
+        token = operations.issue_token(store, args.name, args.operator)
+    except LookupError as exc:
+        raise SystemExit(str(exc))
+    finally:
+        store.close()
+    print("token (shown once — store it now):")
+    print(token)
+
+
+def list_tokens(args) -> None:
+    store = _store(args)
+    try:
+        for t in store.list_tokens(include_revoked=args.include_revoked):
+            print(f"{t['token_hash'][:12]}…\t{t['caller']}\t{'revoked' if t['revoked_at'] else 'active'}")
+    finally:
+        store.close()
+
+
+def revoke_token(args) -> None:
+    store = _store(args)
+    try:
+        count = operations.revoke_token(store, args.prefix, args.operator)
+    finally:
+        store.close()
+    print(f"revoked {count} token(s) matching '{args.prefix}'.")
+
+
+def list_requests(args) -> None:
+    store = _store(args)
+    try:
+        for r in store.list_requests(status=args.status, limit=args.limit):
+            print(f"{r['id']}\t{r['tool']}.{r['op']}\t{r['status']}")
+    finally:
+        store.close()
+
+
+def audit(args) -> None:
+    store = _store(args)
+    try:
+        if args.request_id is not None:
+            events = store.audit_events(request_id=args.request_id)
+        elif args.correlation_id:
+            events = store.audit_events(correlation_id=args.correlation_id)
+        else:
+            events = store.recent_audit(limit=args.limit)
+        for e in events:
+            print(f"{e['component']}.{e['event_type']}\t{e['outcome']}\treq={e['request_id']}\t{json.dumps(e['details'])}")
+    finally:
+        store.close()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="brokerctl")
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--db", help="database path (default: $TOOLSTACK_BROKER_DB or XDG state dir)")
+    operator = argparse.ArgumentParser(add_help=False)
+    operator.add_argument("--operator", default="operator", help="operator id for the audit trail")
+    sub = parser.add_subparsers(required=True)
+
+    p = sub.add_parser("create-caller", parents=[common, operator])
+    p.add_argument("--name", required=True)
+    p.add_argument("--allow", action="append", metavar="TOOL.OP")
+    p.add_argument("--review", action="append", metavar="TOOL.OP")
+    p.set_defaults(func=create_caller)
+
+    p = sub.add_parser("list-callers", parents=[common])
+    p.add_argument("--include-revoked", action="store_true")
+    p.set_defaults(func=list_callers)
+
+    p = sub.add_parser("revoke-caller", parents=[common, operator])
+    p.add_argument("--name", required=True)
+    p.set_defaults(func=revoke_caller)
+
+    p = sub.add_parser("show-policy", parents=[common])
+    p.add_argument("--name", required=True)
+    p.set_defaults(func=show_policy)
+
+    p = sub.add_parser("set-policy", parents=[common, operator])
+    p.add_argument("--name", required=True)
+    p.add_argument("--allow", action="append", metavar="TOOL.OP")
+    p.add_argument("--review", action="append", metavar="TOOL.OP")
+    p.set_defaults(func=set_policy)
+
+    p = sub.add_parser("issue-token", parents=[common, operator])
+    p.add_argument("--name", required=True)
+    p.set_defaults(func=issue_token)
+
+    p = sub.add_parser("list-tokens", parents=[common])
+    p.add_argument("--include-revoked", action="store_true")
+    p.set_defaults(func=list_tokens)
+
+    p = sub.add_parser("revoke-token", parents=[common, operator])
+    p.add_argument("--prefix", required=True, help="token hash prefix (see list-tokens)")
+    p.set_defaults(func=revoke_token)
+
+    p = sub.add_parser("list-requests", parents=[common])
+    p.add_argument("--status")
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(func=list_requests)
+
+    p = sub.add_parser("audit", parents=[common])
+    p.add_argument("--request-id", type=int)
+    p.add_argument("--correlation-id")
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(func=audit)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
