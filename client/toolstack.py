@@ -49,7 +49,11 @@ def _token() -> str | None:
     return None
 
 
-def _request(method: str, path: str, body=None):
+def _send(method: str, path: str, body=None):
+    """Send a request to the broker and return (status, parsed-json). Raises
+    urllib.error.URLError if the broker is unreachable — callers decide how to
+    surface that (the CLI exits; the MCP server returns a JSON-RPC error). Shared
+    with client.mcp_server so the broker HTTP call lives in exactly one place."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Content-Type": "application/json"}
     token = _token()
@@ -64,6 +68,11 @@ def _request(method: str, path: str, body=None):
             return exc.code, json.loads(exc.read() or b"{}")
         finally:
             exc.close()
+
+
+def _request(method: str, path: str, body=None):
+    try:
+        return _send(method, path, body)
     except urllib.error.URLError as exc:
         print(f"cannot reach broker at {_base()}: {exc.reason}", file=sys.stderr)
         raise SystemExit(2)

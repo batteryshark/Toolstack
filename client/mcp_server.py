@@ -16,29 +16,18 @@ import json
 import sys
 import time
 import urllib.error
-import urllib.request
 
-from .toolstack import _FAIL, _base, _token
+from .toolstack import _FAIL, _send
 
 PROTOCOL_VERSION = "2024-11-05"
 _JSON_TYPES = {"string", "integer", "number", "boolean", "object", "array"}
 
 
 def _call(method: str, path: str, body=None):
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    headers = {"Content-Type": "application/json"}
-    token = _token()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(_base() + path, data=data, headers=headers, method=method)
+    # Same broker call as the CLI (client.toolstack._send); only the unreachable
+    # case differs — surface it as a JSON-RPC error rather than exiting.
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.status, json.loads(resp.read() or b"{}")
-    except urllib.error.HTTPError as exc:
-        try:
-            return exc.code, json.loads(exc.read() or b"{}")
-        finally:
-            exc.close()
+        return _send(method, path, body)
     except urllib.error.URLError as exc:
         raise RuntimeError(f"broker unreachable: {exc.reason}")
 
