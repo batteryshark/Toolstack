@@ -139,6 +139,31 @@ class AdminApp(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn("echo", r.text)
 
+    def test_bad_tool_degrades_to_banner_not_500(self):
+        # A hand-edited tool with no port makes toolyard.config.load raise (T-023); every
+        # tool route must degrade to an error banner, never a 500. TestClient re-raises
+        # unhandled server errors, so an unguarded 500 would surface as an exception here.
+        bad = Path(self.tmp, "tools", "broken")
+        bad.mkdir(parents=True)
+        (bad / "toolyard.toml").write_text(  # no [entrypoint] port -> load() raises
+            'id = "broken"\ntype = "rest"\n[entrypoint]\ncommand = "x"\n'
+            '[[operations]]\nname = "go"\nrisk = "low"\n', encoding="utf-8")
+        self._login()
+        csrf = _csrf(self.client.get("/").text)
+
+        self.assertIn("Could not read tools", self.client.get("/tools").text)          # GET list
+        self.assertIn("Could not read tools", self.client.get("/tools/echo/edit").text)  # GET editor
+
+        for path, data in (
+            ("/tools/echo/edit", {"_csrf": csrf, "tool_json": json.dumps(self._NEW_TOOL)}),  # save
+            ("/tools/echo/remove", {"_csrf": csrf}),                                          # remove
+            ("/tools/new", {"_csrf": csrf, "dir": str(self.tmp),                              # create
+                            "tool_json": json.dumps(self._NEW_TOOL)}),
+        ):
+            r = self.client.post(path, data=data)
+            self.assertEqual(r.status_code, 200, path)
+            self.assertIn("Could not read tools", r.text)
+
     def test_toolyard_action_requires_csrf(self):
         self._login()
         r = self.client.post("/toolyard/tools/echo/start", data={})  # no _csrf -> rejected before spawn

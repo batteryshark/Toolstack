@@ -83,6 +83,16 @@ def create_app() -> FastAPI:
             grouped.setdefault(op["tool"], []).append(op)
         return grouped
 
+    def safe_list_tools(config):
+        """``(tools, error)`` — list the tools, or ``([], "Could not read tools: …")`` if
+        any toolyard.toml fails to load (e.g. a hand-edited tool with a bad/missing port,
+        which `toolyard.config.load` now rejects). Every tool route goes through this so a
+        single bad tool degrades to an error banner instead of a 500."""
+        try:
+            return toolyard_ops.list_tools(config.tools_root, config.tool_dirs), None
+        except Exception as exc:
+            return [], f"Could not read tools: {exc}"
+
     # --- auth -----------------------------------------------------------------
     @app.get("/login")
     async def login_page(request: Request):
@@ -289,10 +299,7 @@ def create_app() -> FastAPI:
         if not user:
             return redirect("/login")
         config = broker_config.load()
-        try:
-            tools, error = toolyard_ops.list_tools(config.tools_root, config.tool_dirs), None
-        except Exception as exc:
-            tools, error = [], f"Could not read tools: {exc}"
+        tools, error = safe_list_tools(config)
         return HTMLResponse(views.tools_view(
             user=user, csrf=csrf_for(request), tools=tools,
             tools_root=config.tools_root, error=error))
@@ -307,10 +314,7 @@ def create_app() -> FastAPI:
         events = {"start": "tool_started", "stop": "tool_stopped", "restart": "tool_restarted"}
 
         def tools_error(msg: str) -> HTMLResponse:
-            try:
-                tools = toolyard_ops.list_tools(config.tools_root, config.tool_dirs)
-            except Exception:
-                tools = []
+            tools, _ = safe_list_tools(config)
             return HTMLResponse(views.tools_view(
                 user=user, csrf=csrf_for(request), tools=tools,
                 tools_root=config.tools_root, error=msg))
@@ -359,7 +363,10 @@ def create_app() -> FastAPI:
             errors.append("tool directory must be an absolute path")
         elif not Path(dir_path).is_dir():
             errors.append(f"directory does not exist: {dir_path}")
-        if tool["id"] in {t["id"] for t in toolyard_ops.list_tools(config.tools_root, config.tool_dirs)}:
+        existing, list_err = safe_list_tools(config)
+        if list_err:
+            errors.append(list_err)  # can't confirm uniqueness while a tool fails to load
+        elif tool["id"] in {t["id"] for t in existing}:
             errors.append(f"a tool named '{tool['id']}' already exists")
         if errors:
             return HTMLResponse(views.tool_editor_view(
@@ -382,7 +389,10 @@ def create_app() -> FastAPI:
         if not user:
             return redirect("/login")
         config = broker_config.load()
-        tools = {t["id"]: t for t in toolyard_ops.list_tools(config.tools_root, config.tool_dirs)}
+        tools_list, list_err = safe_list_tools(config)
+        if list_err:
+            return render_dashboard(request, user, error=list_err)
+        tools = {t["id"]: t for t in tools_list}
         if tool_id not in tools:
             return render_dashboard(request, user, error=f"no such tool: {tool_id}")
         dir_path = tools[tool_id]["path"]
@@ -402,7 +412,10 @@ def create_app() -> FastAPI:
         config = broker_config.load()
         # Derive the directory from the tool itself (not the posted field), so the
         # write always targets the tool being edited.
-        tools = {t["id"]: t for t in toolyard_ops.list_tools(config.tools_root, config.tool_dirs)}
+        tools_list, list_err = safe_list_tools(config)
+        if list_err:
+            return render_dashboard(request, user, error=list_err)
+        tools = {t["id"]: t for t in tools_list}
         if tool_id not in tools:
             return render_dashboard(request, user, error=f"no such tool: {tool_id}")
         dir_path = tools[tool_id]["path"]
@@ -432,7 +445,10 @@ def create_app() -> FastAPI:
         if not csrf_ok(request, data):
             return render_dashboard(request, user, error="Invalid CSRF token.")
         config = broker_config.load()
-        tools = {t["id"]: t for t in toolyard_ops.list_tools(config.tools_root, config.tool_dirs)}
+        tools_list, list_err = safe_list_tools(config)
+        if list_err:
+            return render_dashboard(request, user, error=list_err)
+        tools = {t["id"]: t for t in tools_list}
         if tool_id not in tools:
             return render_dashboard(request, user, error=f"no such tool: {tool_id}")
         toolyard_ops.stop(tool_id)  # stop it if running (no-op otherwise)
