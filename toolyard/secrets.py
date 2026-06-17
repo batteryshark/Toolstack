@@ -303,7 +303,10 @@ class InfisicalBackend:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"Infisical {method} {urllib.parse.urlparse(url).path}: HTTP {exc.code}") from exc
+            code = exc.code
+            exc.close()  # release the response; otherwise it leaks (ResourceWarning)
+            raise RuntimeError(
+                f"Infisical {method} {urllib.parse.urlparse(url).path}: HTTP {code}") from exc
 
 
 def get_backend(name: str | None = None, *, secrets_file: str | Path | None = None):
