@@ -96,6 +96,34 @@ class ServerIntegration(unittest.TestCase):
         )
         self.assertEqual(status, 404)
 
+    # --- audit taxonomy (T-018/T-019) ---------------------------------------
+
+    def _audit_pairs(self, **filt):
+        return [(e["component"], e["event_type"])
+                for e in self.server.ctx.store.audit_events(**filt)]
+
+    def test_identity_events_on_auth_success_and_failure(self):
+        self._req("GET", "/v1/tools", headers=self._auth())                 # valid token
+        self._req("GET", "/v1/tools", headers={"Authorization": "Bearer nope"})  # bad token
+        pairs = self._audit_pairs()
+        self.assertIn(("identity", "token_validated"), pairs)
+        self.assertIn(("identity", "token_rejected"), pairs)
+
+    def test_request_completed_event_on_allowed_action(self):
+        _, body, _ = self._req("POST", "/v1/actions/echo.say",
+                               headers=self._auth(), body={"arguments": {}})
+        req_events = [et for c, et in self._audit_pairs(request_id=body["request_id"])
+                      if c == "request"]
+        self.assertIn("received", req_events)
+        self.assertIn("completed", req_events)  # the terminal outcome event
+
+    def test_request_denied_event_on_denied_action(self):
+        _, body, _ = self._req("POST", "/v1/actions/echo.secret",  # not in policy -> deny
+                               headers=self._auth(), body={"arguments": {}})
+        req_events = [et for c, et in self._audit_pairs(request_id=body["request_id"])
+                      if c == "request"]
+        self.assertIn("denied", req_events)
+
 
 class NodSurfaceFromEnv(unittest.TestCase):
     """When TOOLSTACK_NOD_URL/TOKEN are set, build_server wires a NodSurface from

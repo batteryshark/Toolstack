@@ -193,6 +193,12 @@ def resolve_request(ctx, request_id, now=None) -> Outcome:
         return Outcome(EXPIRED, request_id=request_id)
 
     state = ctx.surface.poll(approval_row["surface_ref"])
+    if state.outcome in (approval.APPROVED, approval.REJECTED):
+        # the messenger reported a human decision — recorded distinctly from the
+        # broker's own approved/rejected (which the broker owns and could override).
+        ctx.audit.record("approval", "surface_decision_received", "ok", correlation_id,
+                         request_id=request_id,
+                         details={"tool": req["tool"], "op": req["op"], "outcome": state.outcome})
 
     if state.outcome == approval.APPROVED:
         ctx.store.update_approval(approval_row["id"], status="approved",

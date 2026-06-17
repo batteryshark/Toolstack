@@ -89,12 +89,19 @@ are deferred (see [plan.md](../plan.md)).
 Append-only, written by the broker's Audit module. Families:
 
 - `gateway.*` — `request_received`, `response_returned`
-- `identity.*` — `token_validated`, `token_rejected`, `token_revoked`
+- `identity.*` — `token_validated`, `token_rejected` (per-request auth at the gateway;
+  token *revocation* is an operator action, audited under `admin.token_revoked`)
+- `registry.*` — `tool_lookup_failed`
 - `policy.*` — `decision_allow`, `decision_deny`, `decision_review_required`
-- `request.*` — `received`, `completed`, `denied`, `failed`
-- `approval.*` — `opened`, `approved`, `rejected`, `expired`, `surface_decision_received`
+- `request.*` — `received`, `completed`, `denied`, `failed`, `expired` (one terminal
+  event per request; the producing component also records its own runtime/policy/approval event)
+- `approval.*` — `opened`, `approved`, `rejected`, `expired`, `surface_decision_received`,
+  `unavailable`, `open_failed`
 - `runtime.*` — `execution_started`, `execution_completed`, `execution_failed`
-- `admin.*` — `caller_created`, `caller_revoked`, `policy_changed`, `token_issued`, `token_revoked`
+- `admin.*` — `caller_created`, `caller_revoked`, `policy_changed`, `token_issued`,
+  `token_revoked`, `tool_created`, `tool_edited`, `tool_removed`; the admin web app also
+  writes supervisory `admin.*` events: `broker_started/stopped/restarted`,
+  `tool_started/stopped/restarted`
 
 Together these answer the four audit questions: what did the agent ask for, what
 was decided and by whom, what actually ran, and which credential made it possible.
