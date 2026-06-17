@@ -13,8 +13,11 @@ uniform, token-light way (schemas are fetched on demand, not carried in context)
 Config (env): TOOLSTACK_URL (default http://127.0.0.1:8765), and TOOLSTACK_TOKEN or
 TOOLSTACK_TOKEN_FILE for the caller's bearer token. Stdlib only.
 
-Exit code is non-zero on a denied/expired/failed/unavailable outcome or transport
-error, so an agent's shell can branch on success.
+Exit code is non-zero on a denied/expired/failed/unavailable/timeout outcome or a
+transport error, so an agent's shell can branch on success. A `--wait` that times
+out client-side exits non-zero with `status: "timeout"` and the request id — the
+approval is usually still live on the broker (its TTL outlasts the client wait), so
+resume with `toolstack wait <id>`.
 """
 
 from __future__ import annotations
@@ -28,7 +31,11 @@ import urllib.error
 import urllib.request
 
 DEFAULT_URL = "http://127.0.0.1:8765"
-_FAIL = {"denied", "expired", "failed", "unavailable", "invalid", "not_found", "rate_limited"}
+# Outcomes the caller's shell should treat as failure (non-zero exit). "timeout" is
+# a CLIENT-side outcome: the wait gave up, but the request may still be pending on
+# the broker — it must NOT read as success.
+_FAIL = {"denied", "expired", "failed", "unavailable", "invalid", "not_found",
+         "rate_limited", "timeout"}
 
 
 def _base() -> str:
@@ -90,13 +97,23 @@ def _finish(resp: dict) -> None:
 
 
 def _poll_until_done(request_id: int, timeout: float, interval: float = 2.0) -> dict:
+    """Poll a pending request to a terminal outcome, or to a client-side timeout.
+
+    On timeout the outcome is reported as `status: "timeout"` (a failure — see _FAIL),
+    NOT the broker's `pending_approval`: the call has not completed, so it must not read
+    as success. The request usually outlives this wait (the broker's approval TTL is far
+    longer than the default client timeout), so the result carries the request id to
+    resume with `toolstack wait <id>`."""
     deadline = time.monotonic() + timeout
     while True:
         _, resp = _request("GET", f"/v1/requests/{request_id}")
         if resp.get("status") != "pending_approval":
             return resp
         if time.monotonic() >= deadline:
-            return {**resp, "note": "still pending (client wait timed out)"}
+            return {**resp, "status": "timeout", "request_id": request_id,
+                    "note": (f"client wait timed out after {timeout:g}s; the request is "
+                             f"still pending on the broker — resume with "
+                             f"`toolstack wait {request_id}`")}
         time.sleep(interval)
 
 
@@ -182,12 +199,16 @@ def main() -> None:
     c.add_argument("--args-file", help="read JSON arguments from a file (shell-safe)")
     c.add_argument("--reason", help="justification (use only for review ops / retries)")
     c.add_argument("--wait", action="store_true", help="poll to the outcome if review-required")
-    c.add_argument("--timeout", type=float, default=300)
+    c.add_argument("--timeout", type=float, default=300, metavar="SECONDS",
+                   help="client-side wait for approval (default 300); on timeout, exits "
+                        "non-zero with status=timeout and the request id to resume")
     c.set_defaults(func=cmd_call)
 
     w = sub.add_parser("wait", help="poll a pending request to its outcome")
     w.add_argument("request_id", type=int)
-    w.add_argument("--timeout", type=float, default=300)
+    w.add_argument("--timeout", type=float, default=300, metavar="SECONDS",
+                   help="client-side wait (default 300); on timeout, exits non-zero "
+                        "with status=timeout — re-run `toolstack wait <id>` to keep waiting")
     w.set_defaults(func=cmd_wait)
 
     args = parser.parse_args()
