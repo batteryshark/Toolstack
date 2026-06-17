@@ -64,8 +64,8 @@ supervises the broker process, manages callers/tokens/policies, **authors and ed
 tools** (writes their `toolyard.toml` from a form into a directory you name, which the
 broker then discovers), and shows requests + audit. It shares the broker's `Store` and
 `broker.operations`, so the panel and `brokerctl` write **one** audit trail; it binds
-loopback only and keeps secrets off the browser. 231 tests pass across [broker/](broker/)
-(124), [toolyard/](toolyard/) (27), [client/](client/) (23), and [admin/](admin/) (57), plus
+loopback only and keeps secrets off the browser. 234 tests pass across [broker/](broker/)
+(124), [toolyard/](toolyard/) (29), [client/](client/) (23), and [admin/](admin/) (58), plus
 an opt-in docker end-to-end and a full author → register → run → call live walkthrough.
 
 ## Suggested next step
