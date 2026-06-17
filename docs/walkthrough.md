@@ -329,9 +329,14 @@ before a real deployment:
   tunnel that terminates TLS, never a public bind.
 - **No DB migrations.** The schema grew across phases via `CREATE TABLE` / new
   columns; assume a **fresh DB** when upgrading a dev instance (delete the sqlite file).
-- **nod API assumptions.** The decision-read shape and the `cancel` endpoint in
-  `surface_nod.py` are best-effort guesses — **verify against the real nod API**
-  before relying on them. (Tested against a fake nod, not the real one.)
+- **nod API contract — verified.** The create / decision-read / cancel shapes in
+  `surface_nod.py` are pinned against nod **v1.0.1** (`nod-proto` crate, commit
+  `01d535d`): every request field and response key was checked against that
+  source and the base routing live-probed against a running instance. The default
+  test suite exercises the mapping against a wire-faithful fake; an opt-in live
+  test (`test_surface_nod_live.py`, skipped unless `TOOLSTACK_NOD_URL` /
+  `TOOLSTACK_NOD_TOKEN` are set) drives a real open→poll→cancel cycle. Re-verify
+  if you bump the nod version — the create body is `deny_unknown_fields`.
 - **Rate limiter is in-memory, per process.** Resets on restart; not shared across
   broker instances.
 - **Temporary grants / JIT elevation** not implemented (policy is static

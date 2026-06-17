@@ -2,10 +2,12 @@
 end to end over HTTP, including a real allowed action."""
 
 import json
+import os
 import threading
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 
 from broker.identity import hash_token
 from broker.server import build_server
@@ -93,6 +95,50 @@ class ServerIntegration(unittest.TestCase):
             "POST", "/v1/actions/echo.ghost", headers=self._auth(), body={"arguments": {}}
         )
         self.assertEqual(status, 404)
+
+
+class NodSurfaceFromEnv(unittest.TestCase):
+    """When TOOLSTACK_NOD_URL/TOKEN are set, build_server wires a NodSurface from
+    the environment. The channel must be configurable — a token scoped to one nod
+    channel 403s on another, so the broker has to be able to target the right one."""
+
+    _NOD_KEYS = ("TOOLSTACK_NOD_URL", "TOOLSTACK_NOD_TOKEN", "TOOLSTACK_NOD_CHANNEL")
+
+    def _build(self, env):
+        # Isolate from the real environment: snapshot (restored on exit), clear
+        # all nod keys, then apply exactly what this case sets.
+        with mock.patch.dict(os.environ, {}, clear=False):
+            for k in self._NOD_KEYS:
+                os.environ.pop(k, None)
+            os.environ.update(env)
+            server = build_server(
+                port=0, db_path=":memory:", audit_sink=None,
+                registry=make_registry({"echo": {"say": "low"}}),
+                runtime=FakeRuntime(),
+            )
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.ctx.store.close)
+        return server
+
+    def test_channel_from_env(self):
+        server = self._build({
+            "TOOLSTACK_NOD_URL": "https://nod.example/boop",
+            "TOOLSTACK_NOD_TOKEN": "tok",
+            "TOOLSTACK_NOD_CHANNEL": "toolserver",
+        })
+        self.assertIsNotNone(server.ctx.surface)
+        self.assertEqual(server.ctx.surface._channel, "toolserver")
+
+    def test_channel_defaults_to_default_when_unset(self):
+        server = self._build({
+            "TOOLSTACK_NOD_URL": "https://nod.example/boop",
+            "TOOLSTACK_NOD_TOKEN": "tok",
+        })
+        self.assertEqual(server.ctx.surface._channel, "default")
+
+    def test_no_surface_without_nod_env(self):
+        server = self._build({})
+        self.assertIsNone(server.ctx.surface)
 
 
 if __name__ == "__main__":

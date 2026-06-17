@@ -1,12 +1,43 @@
 """NodSurface — the reference approval-surface adapter, talking to nod over HTTP.
 
-    open   -> POST {base}/api/v1/requests              (issuer token)
-    poll   -> GET  {base}/api/v1/requests/{id}/decision
-    cancel -> POST {base}/api/v1/requests/{id}/cancel   (best effort)
+    open   -> POST {base}/api/v1/requests              (issuer token, requests:write)
+    poll   -> GET  {base}/api/v1/requests/{id}/decision (issuer token, requests:read)
+    cancel -> POST {base}/api/v1/requests/{id}/cancel   (issuer token; best effort)
 
 It maps an OperationCard to nod's CreateDecisionRequest (no raw args/secrets;
 push text redacted) and nod's decision back to a normalized SurfaceState. The
 broker owns approval truth — `poll` is authoritative; nod is the messenger.
+
+Contract pinned against nod v1.0.1 (github.com/batteryshark/nod @ 01d535d),
+verified endpoint-by-endpoint against that source and live-probed against a
+running instance. Do not change a request field or response key below without
+re-checking it against nod's `nod-proto` crate — the request body is strict.
+
+  open  request body  -> nod CreateDecisionRequest (`#[serde(deny_unknown_fields)]`,
+      so an unknown/typo'd field is rejected, not dropped). Fields used here:
+      channel_id, title, summary, body_markdown?, fields[{label,value}],
+      options[{id,label,kind,destructive?}], dedupe_key, notification{redact},
+      callback_url?. `dedupe_key` makes open() retry-safe (same key -> same request).
+  open  response      -> {request_id: str, deduped: bool, request: {...}}.
+      We read request_id; `deduped` is available if a caller wants to detect a
+      dedupe hit. nod ignores unknown *response* fields, so it is forward-compatible.
+  poll  response      -> RequestDecisionView:
+      {request_id, status, decision|null, decisions[], decision_resolution,
+       recipients[], pending_recipients[], request_digest, timed_out?}.
+      status      ∈ {pending, resolved, expired, cancelled}  (snake_case).
+      decision    -> {option_id, option_kind, option_label, text?, actor_user_id?,
+                      actor_device_id?, signature?, resolved_at}.
+      option_kind ∈ {approve, approve_with_text, reject, reject_with_text,
+                      dismiss, open, custom}  (snake_case). We map approve* ->
+      APPROVED, reject* -> REJECTED, everything else -> not-an-approval (PENDING).
+  cancel              -> only the creating issuer token may cancel its request
+      (else 403); best effort, since the broker has already recorded the outcome.
+
+  Efficiency note: nod also serves GET .../{id}/wait?timeout_seconds=N (1..60),
+  a long-poll that returns the same RequestDecisionView as soon as a decision
+  lands. The broker currently uses the instant `/decision` read in its own poll
+  loop; switching to `/wait` would cut request churn (left as a future change so
+  this adapter stays a thin, stateless mapper).
 """
 
 from __future__ import annotations
