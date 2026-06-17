@@ -51,12 +51,10 @@ class BrokerConfig(unittest.TestCase):
 
     def test_to_env_includes_nod_when_set(self):
         env = BrokerRunConfig(
-            nod_url="http://n", nod_token="t", nod_callback_url="http://cb",
-            nod_channel="toolserver",
+            nod_url="http://n", nod_token="t", nod_channel="toolserver",
         ).to_env()
         self.assertEqual(env["TOOLSTACK_NOD_URL"], "http://n")
         self.assertEqual(env["TOOLSTACK_NOD_TOKEN"], "t")
-        self.assertEqual(env["TOOLSTACK_NOD_CALLBACK_URL"], "http://cb")
         self.assertEqual(env["TOOLSTACK_NOD_CHANNEL"], "toolserver")
 
     def test_masked_hides_token(self):

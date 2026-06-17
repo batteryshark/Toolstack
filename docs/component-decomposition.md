@@ -85,7 +85,7 @@ records to the Audit module.
 | Toolyard → Secret backend | HTTP | Per-tool machine identity kept on the host |
 | Tool container → Secret backend | none | Reads `/run/secrets/<name>`; writable fields via toolyard's Unix socket |
 | Broker → nod | HTTP over tailnet | nod issuer token (on the broker host) |
-| nod → Broker (callback) — *deferred* | HTTP | Not built; resolution is poll-based today. When added: authenticated (shared secret/HMAC or tailnet-only), and a hint, not truth. |
+| nod → Broker (callback) — *not implemented, not planned* | — | No callback route exists; resolution is poll-only. Rejected on security grounds: nod posts callbacks unauthenticated, so a receiver would let anyone forge an approval. |
 | Operator → Broker | CLI on the host | Direct SQLite / `brokerctl` |
 
 ## What holds the line

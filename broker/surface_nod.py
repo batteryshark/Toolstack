@@ -16,8 +16,11 @@ re-checking it against nod's `nod-proto` crate — the request body is strict.
   open  request body  -> nod CreateDecisionRequest (`#[serde(deny_unknown_fields)]`,
       so an unknown/typo'd field is rejected, not dropped). Fields used here:
       channel_id, title, summary, body_markdown?, fields[{label,value}],
-      options[{id,label,kind,destructive?}], dedupe_key, notification{redact},
-      callback_url?. `dedupe_key` makes open() retry-safe (same key -> same request).
+      options[{id,label,kind,destructive?}], dedupe_key, notification{redact}.
+      `dedupe_key` makes open() retry-safe (same key -> same request). We do NOT
+      send nod's `callback_url`: resolution is poll-only by design (`poll` is
+      authoritative), and nod posts callbacks unauthenticated, so a broker receiver
+      would let anyone forge an approval. See docs/approval-surface-adapter.md.
   open  response      -> {request_id: str, deduped: bool, request: {...}}.
       We read request_id; `deduped` is available if a caller wants to detect a
       dedupe hit. nod ignores unknown *response* fields, so it is forward-compatible.
@@ -51,12 +54,10 @@ from .approval import OperationCard, SurfaceState
 
 
 class NodSurface:
-    def __init__(self, base_url, issuer_token, *, channel="default",
-                 callback_url=None, timeout=15.0):
+    def __init__(self, base_url, issuer_token, *, channel="default", timeout=15.0):
         self._base = base_url.rstrip("/")
         self._token = issuer_token
         self._channel = channel
-        self._callback_url = callback_url
         self._timeout = timeout
 
     def _call(self, method: str, path: str, body: dict | None = None) -> dict:
@@ -92,8 +93,6 @@ class NodSurface:
         }
         if card.justification:
             payload["body_markdown"] = f"**Agent's reason:** {card.justification}"
-        if self._callback_url:
-            payload["callback_url"] = self._callback_url
         result = self._call("POST", "/api/v1/requests", payload)
         return str(result["request_id"])
 

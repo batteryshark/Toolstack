@@ -89,8 +89,8 @@ tools through the broker (lazy discovery, optional per-domain skills).
 
 The big simplification from the old design: **nod replaces the Discord bot
 *and* a future web approval UI**, so there is no separate approver process to
-build, deploy, or babysit. The approver becomes ~200 LOC inside the broker plus
-one callback route.
+build, deploy, or babysit. The approver becomes ~200 LOC inside the broker that
+opens a nod decision and polls it for the result.
 
 ---
 
@@ -201,7 +201,8 @@ GET  /v1/tools, /v1/tools/<tool>.<op>   # discovery (policy-filtered to the call
 POST /v1/actions/<tool>.<op>            # 200 ran · 202 review · 403 denied · 404 unknown · 429 rate-limited · 502 tool failed · 503 no surface
 GET  /v1/requests/<id>                  # poll a request (owner only): status + result + approver/note
 # operator actions (callers/policies/tokens/audit) = brokerctl on the host, not HTTP
-# deferred: POST /mcp/<tool> (broker-native MCP) · POST /v1/approvals/callback (approval fast-path)
+# deferred: POST /mcp/<tool> (broker-native MCP)
+# no approval callback route: resolution is poll-only (nod callbacks are unauthenticated, so a receiver would be forgeable)
 ```
 
 **SQLite shape (grows by phase):** `callers`, `tokens` (hashed),
@@ -299,7 +300,7 @@ localhost only. The tunnel is the only path in.
 
 | Host | Holds |
 |---|---|
-| Broker host | SQLite state · **nod issuer token** (to open approvals) · callback auth secret. No workload-secret credential. |
+| Broker host | SQLite state · **nod issuer token** (to open approvals). No workload-secret credential. (No callback auth secret — resolution is poll-only; there is no callback route.) |
 | Toolyard host | Per-tool secret-backend identities (mode `0600`) · `toolyard.toml` files. |
 | Agent host | A low-power broker token. Nothing else. |
 
@@ -317,15 +318,15 @@ a different surface.
 
 ### The adapter interface (what the broker depends on)
 
-The broker's approval orchestration depends on three operations plus one optional
-fast-path:
+The broker's approval orchestration depends on three operations. Resolution is
+**poll-only** — there is no inbound callback:
 
 | Operation | Direction | Purpose | nod implementation |
 |---|---|---|---|
 | `open(card, expires_at) -> ref` | broker → surface | Publish a redacted, operation-describing prompt; return an opaque handle. | `POST /api/v1/requests` → `request_id` |
-| `poll(ref) -> state` | broker → surface | The **durable source of truth**: `pending` / `approved` / `rejected` / `expired`, with approver + note. | `GET /api/v1/requests/{id}/decision` |
+| `poll(ref) -> state` | broker → surface | The **sole source of truth**: `pending` / `approved` / `rejected` / `expired`, with approver + note. | `GET /api/v1/requests/{id}/decision` |
 | `cancel(ref)` | broker → surface | Withdraw a pending prompt on broker timeout or token revocation. | nod issuer cancel |
-| `deliver(decision)` | surface → broker | *Optional* low-latency hint. Broker still confirms via `poll`. | nod `callback_url` → `POST /v1/approvals/callback` |
+| ~~`deliver(decision)`~~ | — | **Not implemented, not planned.** A push fast-path is rejected: nod posts callbacks unauthenticated, so a broker receiver would let anyone forge an approval. | — (no callback route) |
 
 ### Data contracts
 
@@ -344,20 +345,19 @@ Surface-native ids and option kinds are *metadata*, not authority.
   `fields` = caller/tool/op/target/risk/policy; `links` = audit + runbook;
   `options` = approve / approve_with_text / reject_with_text(destructive);
   `dedupe_key` = broker `request_id` (retry-safe); `expires_at` = broker timeout;
-  `callback_url` = the broker callback route; `notification.redact = true` so
-  lock-screen push leaks nothing.
-- Decision (callback payload or decision read) → SurfaceDecision: `option_kind`
+  `notification.redact = true` so lock-screen push leaks nothing. (No `callback_url`
+  is set — there is no broker callback route.)
+- Decision (from the decision read) → SurfaceDecision: `option_kind`
   `approve*` → approved, `reject*` → rejected; `text` → note; `actor_user_id` →
   approver.
 
 ### Trust rules (non-negotiable)
 
 - The **nod issuer token** lives on the broker host; never on the agent.
-- The **callback is authenticated** (shared secret / HMAC / tailnet-only) so a
-  forged POST can't approve anything.
-- **Callback is a hint; `poll` is truth.** nod documents callbacks as best-effort,
-  so the broker reconciles every approval against the decision read before it
-  executes.
+- **No callback route exists; `poll` is the sole source of truth.** A push
+  fast-path is deliberately not built: nod posts callbacks unauthenticated (no
+  signature, no shared secret), so a broker receiver would let anyone forge an
+  approval. The broker reads every approval from the decision read.
 - **The broker's timer is authoritative.** It fails closed on its own timeout
   regardless of nod, and ignores decisions that arrive after expiry.
 - For hardened deployments, the broker may additionally require

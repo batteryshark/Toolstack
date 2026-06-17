@@ -38,8 +38,11 @@ through **Phase 4** (the full planned build order). See [../plan.md](../plan.md)
 - **Hardening**: per-caller rate limiting (`429` over the limit); operator changes
   and a caller's optional `reason` are recorded in audit, with `reason` redacted.
 
-Deferred (deployment hardening): the approval `deliver` callback fast-path
-(poll-based resolution is in place), container **tmpfs** secret injection, temporary
+Not implemented by design: the approval `deliver` callback fast-path. Resolution is
+poll-only; a nod callback receiver is rejected because nod posts callbacks
+unauthenticated (anyone reaching it could forge an approval).
+
+Deferred (deployment hardening): container **tmpfs** secret injection, temporary
 grants, and component credentials/mTLS (only if modules split across hosts).
 
 ## Run it
