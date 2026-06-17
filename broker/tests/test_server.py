@@ -96,6 +96,33 @@ class ServerIntegration(unittest.TestCase):
         )
         self.assertEqual(status, 404)
 
+    # --- broker-native MCP framing over HTTP (T-021) ------------------------
+
+    def test_mcp_unauthenticated_401(self):
+        status, _, _ = self._req("POST", "/mcp",
+                                 body={"jsonrpc": "2.0", "id": 1, "method": "ping"})
+        self.assertEqual(status, 401)
+
+    def test_mcp_initialize_over_http(self):
+        status, body, _ = self._req(
+            "POST", "/mcp", headers=self._auth(),
+            body={"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                  "params": {"protocolVersion": "2024-11-05"}})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["result"]["serverInfo"]["name"], "toolstack-broker")
+
+    def test_mcp_tools_call_allow_over_http(self):
+        # MCP frame over the wire -> real gateway/lifecycle -> runtime -> MCP result back.
+        status, body, _ = self._req(
+            "POST", "/mcp", headers=self._auth(),
+            body={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                  "params": {"name": "echo__say", "arguments": {"m": "hi"}}})
+        self.assertEqual(status, 200)
+        result = body["result"]
+        self.assertFalse(result["isError"])
+        inner = json.loads(result["content"][0]["text"])
+        self.assertEqual(inner["result"], {"echoed": {"m": "hi"}})
+
     # --- audit taxonomy (T-018/T-019) ---------------------------------------
 
     def _audit_pairs(self, **filt):

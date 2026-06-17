@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
+from . import mcp
 from . import policy as policy_rules
 from . import request_lifecycle as lifecycle
 from .identity import authenticate, token_fingerprint
@@ -33,6 +34,7 @@ ACTIONS_PREFIX = "/v1/actions/"
 REQUESTS_PREFIX = "/v1/requests/"
 TOOLS_PATH = "/v1/tools"
 TOOLS_PREFIX = "/v1/tools/"
+MCP_PATH = "/mcp"  # broker-native MCP (JSON-RPC) framing; see broker/mcp.py
 
 # request-lifecycle outcome -> HTTP status
 _OUTCOME_STATUS = {
@@ -109,6 +111,15 @@ def _route(method, path, headers, body, ctx, correlation_id) -> Response:
         if ctx.rate_limiter is not None and not ctx.rate_limiter.allow(caller.id):
             return Response(429, {"error": "rate_limited"}, correlation_id)
         return _action(path, body, ctx, caller, correlation_id)
+
+    if method == "POST" and path == MCP_PATH:
+        # Same authority as REST: authenticated above; policy/approval/audit and rate
+        # limiting live inside mcp.handle (rate limiting applies to tools/call only, not
+        # the initialize/list/ping handshake — mirroring GET /v1/tools, which is unmetered).
+        # mcp.handle returns the HTTP status so a throttle (429) / internal error (500)
+        # audits with the right outcome via _AUDIT_OUTCOME, exactly like the REST path.
+        status, mcp_body = mcp.handle(body, ctx, caller, correlation_id)
+        return Response(status, mcp_body, correlation_id)
 
     if method == "GET" and path == TOOLS_PATH:
         return _list_tools(ctx, caller, correlation_id)
