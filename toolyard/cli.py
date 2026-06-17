@@ -107,7 +107,12 @@ def main() -> None:
     ls.set_defaults(func=cmd_ls)
 
     args = parser.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except ValueError as exc:
+        # a malformed toolyard.toml (e.g. a missing/invalid port) -> a clean one-line
+        # message and a non-zero exit, not a traceback.
+        raise SystemExit(str(exc))
 
 
 if __name__ == "__main__":
