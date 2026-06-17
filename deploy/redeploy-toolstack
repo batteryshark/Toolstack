@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: deploy/redeploy-toolstack [--pull] [--skip-venv] [--skip-service] [--skip-tools]
+
+Redeploy the local Toolstack checkout:
+  1. optionally fast-forward git (--pull)
+  2. refresh the admin virtualenv dependencies
+  3. restart the toolstack-admin systemd service (admin panel + broker)
+  4. restart every tool registered in the saved admin run-config
+
+Run this from anywhere inside the repository.
+USAGE
+}
+
+PULL=0
+SKIP_VENV=0
+SKIP_SERVICE=0
+SKIP_TOOLS=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --pull) PULL=1 ;;
+    --skip-venv) SKIP_VENV=1 ;;
+    --skip-service) SKIP_SERVICE=1 ;;
+    --skip-tools) SKIP_TOOLS=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+SERVICE_FILE="$SCRIPT_DIR/toolstack-admin.service"
+SERVICE_NAME="${TOOLSTACK_SYSTEMD_SERVICE:-toolstack-admin.service}"
+VENV_PY="$REPO_ROOT/admin/.venv/bin/python"
+VENV_PIP="$REPO_ROOT/admin/.venv/bin/pip"
+
+cd "$REPO_ROOT"
+
+export TOOLSTACK_REPO_ROOT="$REPO_ROOT"
+
+if [[ -f "$SERVICE_FILE" ]]; then
+  while IFS= read -r line; do
+    [[ "$line" == Environment=* ]] || continue
+    kv="${line#Environment=}"
+    key="${kv%%=*}"
+    value="${kv#*=}"
+    export "$key=$value"
+  done < "$SERVICE_FILE"
+fi
+
+if [[ "$PULL" -eq 1 ]]; then
+  echo "==> Pulling latest code"
+  git pull --ff-only
+fi
+
+if [[ "$SKIP_VENV" -eq 0 ]]; then
+  if [[ ! -x "$VENV_PY" ]]; then
+    echo "==> Creating admin virtualenv"
+    python3 -m venv "$REPO_ROOT/admin/.venv"
+  fi
+  echo "==> Installing admin dependencies"
+  "$VENV_PIP" install -r "$REPO_ROOT/admin/requirements.txt"
+fi
+
+if [[ "$SKIP_SERVICE" -eq 0 ]]; then
+  echo "==> Restarting $SERVICE_NAME"
+  if systemctl restart "$SERVICE_NAME" 2>/dev/null; then
+    :
+  else
+    sudo systemctl restart "$SERVICE_NAME"
+  fi
+fi
+
+if [[ "$SKIP_TOOLS" -eq 0 ]]; then
+  echo "==> Restarting registered tools"
+  "$VENV_PY" - <<'PY'
+from admin import broker_config, settings, toolyard_ops
+
+cfg = broker_config.load()
+tools = toolyard_ops.list_tools(cfg.tools_root, cfg.tool_dirs)
+if not tools:
+    print("no tools registered")
+    raise SystemExit(0)
+
+for tool in tools:
+    tool_id = tool["id"]
+    print(f"{tool_id}: restarting")
+    toolyard_ops.restart(
+        tool_id,
+        cfg.tools_root,
+        cfg.tool_dirs,
+        settings.tool_secrets_file(),
+        settings.tool_runner_backend(),
+    )
+print(f"restarted {len(tools)} tool(s)")
+PY
+fi
+
+echo "==> Toolstack redeploy complete"
