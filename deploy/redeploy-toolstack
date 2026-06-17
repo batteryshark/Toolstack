@@ -43,13 +43,19 @@ cd "$REPO_ROOT"
 
 export TOOLSTACK_REPO_ROOT="$REPO_ROOT"
 
+# Load the deployment's site env so the tool-restart step below uses the right
+# runner / secret backend (not the "process" / "file" defaults). Config now lives
+# in the unit's EnvironmentFile; older units inlined it as Environment= lines,
+# which we still honor as a fallback.
+ENV_FILE="${TOOLSTACK_ENV_FILE:-/etc/toolstack/admin.env}"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a; . "$ENV_FILE"; set +a
+fi
 if [[ -f "$SERVICE_FILE" ]]; then
   while IFS= read -r line; do
     [[ "$line" == Environment=* ]] || continue
     kv="${line#Environment=}"
-    key="${kv%%=*}"
-    value="${kv#*=}"
-    export "$key=$value"
+    export "${kv%%=*}=${kv#*=}"
   done < "$SERVICE_FILE"
 fi
 
