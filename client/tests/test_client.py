@@ -53,6 +53,17 @@ class ClientIntegration(unittest.TestCase):
             pass
         return buf.getvalue()
 
+    def _run(self, func, **kw):
+        """Like _out, but also returns the process exit code (0 if no SystemExit)."""
+        buf = io.StringIO()
+        code = 0
+        try:
+            with redirect_stdout(buf):
+                func(argparse.Namespace(**kw))
+        except SystemExit as exc:
+            code = exc.code if exc.code is not None else 0
+        return buf.getvalue(), code
+
     def test_tools_lists_allowed_with_effects(self):
         out = self._out(toolstack.cmd_tools)
         self.assertIn("echo.say", out)
@@ -108,6 +119,23 @@ class ClientIntegration(unittest.TestCase):
                         args_file=None, reason=None, wait=True, timeout=5)
         self.assertIn('"status": "denied"', out)
         self.assertIn("not now", out)
+
+    def test_review_wait_timeout_is_failure_not_success(self):
+        # surface stays PENDING -> the client wait times out. The call did NOT
+        # complete, so it must exit non-zero with status=timeout (not pending/ok),
+        # and point at how to resume.
+        out, code = self._run(toolstack.cmd_call, spec="echo.skip", args="{}",
+                              args_file=None, reason=None, wait=True, timeout=0)
+        self.assertIn('"status": "timeout"', out)  # not pending/ok
+        self.assertIn("toolstack wait", out)  # resume guidance with the request id
+        self.assertEqual(code, 1)
+
+    def test_wait_command_timeout_is_failure(self):
+        # the standalone `wait` subcommand must also fail (non-zero) on timeout
+        _, resp = toolstack._request("POST", "/v1/actions/echo.skip", {"arguments": {}})
+        out, code = self._run(toolstack.cmd_wait, request_id=resp["request_id"], timeout=0)
+        self.assertIn('"status": "timeout"', out)
+        self.assertEqual(code, 1)
 
 
 if __name__ == "__main__":

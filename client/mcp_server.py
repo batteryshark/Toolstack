@@ -104,13 +104,20 @@ class Server:
         return _result(json.dumps(resp, indent=2), is_error=is_error)
 
     def _poll(self, request_id) -> dict:
+        # On timeout, report status="timeout" (in _FAIL) so the tools/call result is
+        # isError:true — the call has NOT completed, even though the request may still
+        # be pending on the broker. Otherwise an MCP agent reads a timed-out call as a
+        # successful one.
         deadline = time.monotonic() + self._poll_timeout
         while True:
             _, resp = _call("GET", f"/v1/requests/{request_id}")
             if resp.get("status") != "pending_approval":
                 return resp
             if time.monotonic() >= deadline:
-                return {**resp, "note": "still pending (mcp wait timed out)"}
+                return {**resp, "status": "timeout", "request_id": request_id,
+                        "note": (f"wait timed out after {self._poll_timeout:g}s; the "
+                                 "request is still pending approval on the broker and "
+                                 "has not completed")}
             time.sleep(2.0)
 
 

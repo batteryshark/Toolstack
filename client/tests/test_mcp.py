@@ -69,6 +69,14 @@ class McpServer(unittest.TestCase):
         self.assertIn("denied", r["content"][0]["text"])
         self.assertIn("not now", r["content"][0]["text"])
 
+    def test_call_review_timeout_is_error_not_false_success(self):
+        # surface stays PENDING -> the wait times out. The call did not complete,
+        # so the result must be isError:true with status=timeout (not a silent pass).
+        srv = mcp_server.Server(poll_timeout=0)
+        r = srv.dispatch("tools/call", {"name": "echo__skip", "arguments": {}})
+        self.assertTrue(r["isError"])
+        self.assertIn('"status": "timeout"', r["content"][0]["text"])
+
     def test_unknown_method_is_jsonrpc_error(self):
         resp = mcp_server._handle(self.mcp, {"jsonrpc": "2.0", "id": 1, "method": "bogus"})
         self.assertEqual(resp["error"]["code"], -32601)
