@@ -325,8 +325,11 @@ before a real deployment:
   decision, not a gap. `poll` is the sole source of approval truth; a receiver of
   nod's unauthenticated callback would be forgeable (anyone reaching it could forge
   an "approved"). Poll-only closes that hole.
-- **No background expiry sweeper.** A pending request expires lazily (on the next
-  poll). An unattended pending request stays `pending_approval` in the DB until polled.
+- **Expiry/revocation are lazy, not a background worker.** A pending request expires on
+  its next poll, on any new `submit` (which sweeps all stale approvals), or via
+  `brokerctl sweep`; revoking a caller/token cancels its pending approvals eagerly. There
+  is still no always-on background thread — an unattended, never-swept request lingers
+  until the next submit or a manual sweep (fine: the single-threaded broker stays simple).
 - **Single-threaded broker serving.** The broker's `HTTPServer` serves one request at
   a time. SQLite is now in **WAL mode**, so the admin app's short-lived connections
   safely coexist with the broker's long-lived one; but concurrent *serving inside the
