@@ -10,9 +10,12 @@ TOOLSTACK_TEST_DOCKER=1.
 import dataclasses
 import json
 import os
+import shutil
 import socket
 import subprocess
+import tempfile
 import time
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -91,6 +94,23 @@ def _docker_ok() -> bool:
         return False
 
 
+def _post_unix(socket_path: str, name: str, value: str) -> int:
+    body = json.dumps({"value": value, "reason": "test"}).encode()
+    req = (f"POST /v1/secrets/{name} HTTP/1.1\r\nHost: toolyard\r\n"
+           f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n").encode() + body
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.connect(socket_path)
+    sock.sendall(req)
+    raw = b""
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        raw += chunk
+    sock.close()
+    return int(raw.split()[1])
+
+
 @unittest.skipUnless(_docker_ok(), "set TOOLSTACK_TEST_DOCKER=1 with docker running")
 class DockerRunnerE2E(unittest.TestCase):
     def test_container_serves_with_its_secret(self):
@@ -102,6 +122,53 @@ class DockerRunnerE2E(unittest.TestCase):
         status = _call(tool.port, "secret_status", {})
         self.assertTrue(status["has_api_key"])
         self.assertEqual(status["api_key_len"], len(SECRET))
+
+    def test_stop_removes_the_container(self):
+        tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
+        runner = DockerRunner()
+        running = runner.start(tool, {"api_key": SECRET})
+        self.addCleanup(runner.stop, running)  # idempotent if already stopped
+        self.assertTrue(_wait_for_tool(tool.port), "container did not start")
+        runner.stop(running)
+        gone = subprocess.run(["docker", "ps", "-aq", "-f", f"name=^{running.handle}$"],
+                              capture_output=True, text=True).stdout.strip()
+        self.assertEqual(gone, "", "stop did not remove the container")
+        self.assertFalse(Path(running.workdir).exists())  # secrets dir cleaned up
+
+    def test_writable_tool_mounts_proxy_socket_and_patches_backend(self):
+        # A tool with a writable secret: the docker runner starts the host-side write proxy
+        # AND bind-mounts its socket dir into the container at /run/toolyard. Run a distinct
+        # tool id (echowp, no container collision) FROM the reused echo image (image= in the
+        # toml -> the runner skips its own build, so this leaves no throwaway/dangling image).
+        subprocess.run(["docker", "build", "-t", "toolstack-echo", str(REPO / "tools" / "echo_rest")],
+                       check=True, capture_output=True)
+        d = Path(tempfile.mkdtemp(prefix="tsr-t012-"))
+        self.addCleanup(shutil.rmtree, str(d), ignore_errors=True)
+        (d / "toolyard.toml").write_text(
+            'id = "echowp"\ntype = "rest"\n[entrypoint]\nport = 4601\nimage = "toolstack-echo"\n'
+            '[[secrets]]\nname = "api_key"\nfield = "API_KEY"\nwritable = true\n')
+        secrets_file = d / "secrets.toml"
+        secrets_file.write_text('[echowp]\nAPI_KEY = "old"\n')
+
+        tool = dataclasses.replace(load(d / "toolyard.toml"), port=_free_port())
+        runner = DockerRunner()
+        running = runner.start(tool, {"api_key": "old"},
+                               secret_backend="file", secrets_file=str(secrets_file))
+        self.addCleanup(runner.stop, running)
+        self.assertTrue(_wait_for_tool(tool.port), "container did not start")
+
+        # the write proxy was started, and the socket dir is bind-mounted into the container
+        self.assertIsNotNone(running.proxy_pid)
+        mounts = subprocess.run(["docker", "inspect", running.handle, "--format", "{{json .Mounts}}"],
+                                capture_output=True, text=True).stdout
+        self.assertIn("/run/toolyard", mounts)
+        self.assertIn(running.proxy_dir, mounts)
+
+        # the host-side proxy patches the file backend (the writeback round trip)
+        sock = str(Path(running.proxy_dir) / "secrets.sock")
+        self.assertEqual(_post_unix(sock, "api_key", "rotated"), 200)
+        with secrets_file.open("rb") as f:
+            self.assertEqual(tomllib.load(f)["echowp"]["API_KEY"], "rotated")
 
 
 if __name__ == "__main__":
