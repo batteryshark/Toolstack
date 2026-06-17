@@ -75,7 +75,7 @@ def create_app() -> FastAPI:
 
     def ops_by_tool(config) -> dict:
         try:
-            ops = Registry.from_tools_root(config.tools_root).list_ops()
+            ops = Registry.from_sources(config.tools_root, config.tool_dirs).list_ops()
         except (OSError, ValueError, KeyError):
             ops = []
         grouped: dict[str, list] = {}
