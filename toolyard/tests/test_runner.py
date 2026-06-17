@@ -85,6 +85,51 @@ class ProcessRunnerE2E(unittest.TestCase):
         self.assertFalse(workdir.exists())
 
 
+class SharedSecretE2E(unittest.TestCase):
+    """Opt-in broker->tool shared secret (T-022): with a broker_secret provisioned, the
+    echo tool accepts a call carrying the matching X-Toolstack-Secret header and rejects
+    one that is missing or wrong (the tool's 401 surfaces as a RuntimeError from the
+    runtime, which the request lifecycle maps to 502)."""
+
+    SHARED = "broker-shh-456"
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
+        self.runner = ProcessRunner()
+        self.running = self.runner.start(
+            self.tool, {"api_key": SECRET, "broker_secret": self.SHARED})
+        self.addCleanup(self.runner.stop, self.running)
+        if not self._ready():
+            self.fail("echo tool did not start")
+
+    def _signed_call(self, secret, op="say", arguments=None):
+        rt = HttpRuntime(tool_secret=lambda tool_id: secret)
+        return rt.execute(ToolOp("echo", op, "low", self.tool.port, "rest"),
+                          arguments or {}, 1, "hermes")
+
+    def _ready(self, tries: int = 80) -> bool:
+        # readiness means a correctly-signed call gets through (not just an open socket)
+        for _ in range(tries):
+            try:
+                self._signed_call(self.SHARED)
+                return True
+            except Exception:
+                time.sleep(0.25)
+        return False
+
+    def test_matching_secret_is_accepted(self):
+        self.assertEqual(self._signed_call(self.SHARED, "say", {"m": "hi"}),
+                         {"echoed": {"m": "hi"}})
+
+    def test_missing_secret_is_rejected(self):
+        with self.assertRaises(RuntimeError):  # no header -> tool 401
+            self._signed_call(None, "say", {"m": "hi"})
+
+    def test_wrong_secret_is_rejected(self):
+        with self.assertRaises(RuntimeError):  # mismatched header -> tool 401
+            self._signed_call("not-the-secret", "say", {"m": "hi"})
+
+
 def _docker_ok() -> bool:
     if not os.environ.get("TOOLSTACK_TEST_DOCKER"):
         return False

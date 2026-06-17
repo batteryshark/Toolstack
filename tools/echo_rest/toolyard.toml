@@ -36,3 +36,12 @@ args = []
 [[secrets]]
 name = "api_key"      # readable by the tool at $TOOLSTACK_SECRETS_DIR/api_key
 field = "API_KEY"     # field looked up in the secret backend
+
+# Optional defense in depth (off by default — see app.py `verify_broker`). Uncomment to
+# require the broker's per-tool shared secret. Provision the SAME value in both places:
+#   - the secret backend, under the field below (toolyard injects it as broker_secret)
+#   - the broker's env: TOOLSTACK_TOOL_SECRET_ECHO=<value> (broker sends X-Toolstack-Secret)
+# Then a process that merely guesses this tool's port can't call it directly.
+# [[secrets]]
+# name = "broker_secret"
+# field = "ECHO_BROKER_SECRET"
