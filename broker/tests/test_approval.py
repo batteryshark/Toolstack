@@ -86,6 +86,15 @@ class ApprovalFlow(BrokerTestCase):
         repoll = lifecycle.resolve_request(ctx, out.request_id)  # request now resolved
         self.assertEqual(repoll.decided_at, "2026-06-17T12:00:00.000Z")  # from the store
 
+    def test_surface_decision_received_is_audited(self):
+        surface = FakeSurface(approval.APPROVED, approver="alice")
+        ctx, caller = self._setup(surface)
+        out = lifecycle.submit(ctx, caller, "echo", "shout", {}, CID)
+        lifecycle.resolve_request(ctx, out.request_id)
+        pairs = {(e["component"], e["event_type"])
+                 for e in ctx.store.audit_events(request_id=out.request_id)}
+        self.assertIn(("approval", "surface_decision_received"), pairs)
+
     def test_agent_reason_rides_to_the_card(self):
         surface = FakeSurface(approval.PENDING)
         ctx, caller = self._setup(surface)

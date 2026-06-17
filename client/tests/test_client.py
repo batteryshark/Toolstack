@@ -148,6 +148,18 @@ class ClientIntegration(unittest.TestCase):
         self.assertIn('"status": "timeout"', out)
         self.assertEqual(code, 1)
 
+    def test_terminal_request_event_emitted_once_across_repolls(self):
+        # the gateway emits a single terminal request.* event on the transition to
+        # terminal — a re-poll of an already-resolved request must not re-emit it.
+        self.surface.set(approval.APPROVED, approver="alice")
+        _, resp = toolstack._request("POST", "/v1/actions/echo.skip", {"arguments": {}})
+        rid = resp["request_id"]
+        toolstack._request("GET", f"/v1/requests/{rid}")  # first poll: resolves -> completed
+        toolstack._request("GET", f"/v1/requests/{rid}")  # re-poll: must not re-emit
+        completed = [e for e in self.server.ctx.store.audit_events(request_id=rid)
+                     if e["component"] == "request" and e["event_type"] == "completed"]
+        self.assertEqual(len(completed), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

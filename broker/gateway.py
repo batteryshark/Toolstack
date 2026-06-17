@@ -15,7 +15,18 @@ from dataclasses import dataclass
 
 from . import policy as policy_rules
 from . import request_lifecycle as lifecycle
-from .identity import authenticate
+from .identity import authenticate, token_fingerprint
+
+# lifecycle terminal status -> (request.* audit event_type, audit outcome word). A single
+# terminal request.* event per request makes "what was the outcome" directly queryable,
+# rather than inferring it from the producing component's runtime.*/policy.*/approval.* event.
+_REQUEST_TERMINAL = {
+    "ok": ("completed", "ok"),
+    "denied": ("denied", "denied"),
+    "failed": ("failed", "failed"),
+    "unavailable": ("failed", "failed"),
+    "expired": ("expired", "expired"),
+}
 
 HEALTH_PATH = "/v1/health"
 ACTIONS_PREFIX = "/v1/actions/"
@@ -81,9 +92,18 @@ def _route(method, path, headers, body, ctx, correlation_id) -> Response:
     if method == "GET" and path == HEALTH_PATH:
         return Response(200, {"status": "ok"}, correlation_id)
 
-    caller = authenticate(ctx.store, headers.get("authorization"))
+    bearer = headers.get("authorization")
+    caller = authenticate(ctx.store, bearer)
     if caller is None:
+        # has_bearer = an Authorization header was present (not that it was a well-formed
+        # bearer); token_fp is None unless it parsed as `Bearer <token>`. The two together
+        # distinguish "no header" / "malformed header" / "well-formed but unknown token".
+        ctx.audit.record("identity", "token_rejected", "denied", correlation_id,
+                         details={"has_bearer": bool(bearer),
+                                  "token_fp": token_fingerprint(bearer)})
         return Response(401, {"error": "unauthorized"}, correlation_id)
+    ctx.audit.record("identity", "token_validated", "ok", correlation_id,
+                     details={"caller": caller.name, "token_fp": token_fingerprint(bearer)})
 
     if method == "POST" and path.startswith(ACTIONS_PREFIX):
         if ctx.rate_limiter is not None and not ctx.rate_limiter.allow(caller.id):
@@ -142,7 +162,12 @@ def _request_status(path, ctx, caller, correlation_id) -> Response:
     if req is None or req["caller_id"] != caller.id:
         # never reveal another caller's request
         return Response(404, {"error": "not_found"}, correlation_id)
+    # Only a pending_approval request can transition to terminal here; a re-poll of an
+    # already-resolved request must not re-emit its terminal event.
+    was_pending = req["status"] == "pending_approval"
     outcome = lifecycle.resolve_request(ctx, int(rid))
+    if was_pending:
+        _audit_request_terminal(ctx, outcome, correlation_id, req["tool"], req["op"])
     return Response(200, _outcome_body(outcome), correlation_id)
 
 
@@ -164,7 +189,21 @@ def _action(path, body, ctx, caller, correlation_id) -> Response:
 
     outcome = lifecycle.submit(ctx, caller, tool, op, arguments, correlation_id,
                                reason=body.get("reason"))
+    _audit_request_terminal(ctx, outcome, correlation_id, tool, op)
     return Response(_OUTCOME_STATUS[outcome.status], _outcome_body(outcome), correlation_id)
+
+
+def _audit_request_terminal(ctx, outcome, correlation_id, tool, op) -> None:
+    """Emit the terminal `request.<completed|denied|failed|expired>` event for a request
+    that just reached a terminal state. No-op for a still-pending outcome or a missing
+    request row, so callers must guard re-polls (don't re-emit for an already-resolved
+    request) — see `_request_status`."""
+    mapped = _REQUEST_TERMINAL.get(outcome.status)
+    if mapped is None or outcome.request_id is None:
+        return
+    event_type, outcome_word = mapped
+    ctx.audit.record("request", event_type, outcome_word, correlation_id,
+                     request_id=outcome.request_id, details={"tool": tool, "op": op})
 
 
 def _outcome_body(outcome) -> dict:

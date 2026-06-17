@@ -192,7 +192,11 @@ Each invariant, how it's enforced, and the test that proves it.
 | Admin panel is contained | binds `127.0.0.1`; scrypt password + HMAC session + CSRF on every POST; fail-closed (no password set → refuses to start); nod token / tool secrets never rendered back | `admin…test_auth` (session/CSRF), `test_app` (login gate, CSRF rejection), `test_broker_config` (token masked) |
 
 The "four audit questions" (what was asked / decided & by whom / actually ran /
-which credential) are answerable via `brokerctl audit --request-id <N>`.
+which credential) are answerable via `brokerctl audit --request-id <N>`: a request
+carries `request.received` → a `policy.*`/`approval.*` decision → `runtime.*` execution
+→ a terminal `request.{completed,denied,failed,expired}`, and each authenticated call
+emits `identity.token_validated` with a non-reversible token fingerprint (the "which
+credential" answer); a rejected bearer emits `identity.token_rejected`.
 
 ---
 
