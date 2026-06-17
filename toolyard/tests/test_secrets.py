@@ -1,8 +1,12 @@
 """Secret backend resolution (FileBackend, InfisicalBackend, get_backend)."""
 
+import json
 import os
 import tempfile
+import threading
 import unittest
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from toolyard.config import SecretSpec, ToolDef, load
@@ -134,6 +138,131 @@ class Infisical(unittest.TestCase):
         with self.assertRaises(PermissionError):
             b.update(_tool(SecretSpec("tok", "TOKEN", vault="Proj", item="demo-item")),
                      "tok", "x")
+
+
+class _FakeInfisical(BaseHTTPRequestHandler):
+    """A wire-faithful, in-memory Infisical v4 over real HTTP — so the backend's actual
+    urllib / auth / project-lookup / parse / PATCH code is exercised (the tests above
+    monkeypatch `_request`, skipping all of it). One project ("Proj"/"p1"), one path."""
+
+    store: dict = {}        # secretKey -> secretValue
+    login_count = 0
+    CID, CSECRET = "cid", "csecret"
+
+    def _body(self) -> dict:
+        n = int(self.headers.get("Content-Length") or 0)
+        return json.loads(self.rfile.read(n) or b"{}") if n else {}
+
+    def _send(self, status: int, obj: dict) -> None:
+        payload = json.dumps(obj).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _authed(self) -> bool:
+        return self.headers.get("Authorization") == "Bearer fake-token"
+
+    def do_POST(self):
+        if self.path == "/api/v1/auth/universal-auth/login":
+            b = self._body()
+            if b.get("clientId") != self.CID or b.get("clientSecret") != self.CSECRET:
+                return self._send(401, {"error": "unauthorized"})
+            type(self).login_count += 1
+            return self._send(200, {"accessToken": "fake-token", "expiresIn": 600})
+        self._send(404, {"error": "nf"})
+
+    def do_GET(self):
+        if not self._authed():
+            return self._send(401, {"error": "unauthorized"})
+        if self.path == "/api/v1/projects":
+            return self._send(200, {"projects": [{"id": "p1", "slug": "Proj", "name": "Proj"}]})
+        if self.path.startswith("/api/v4/secrets"):
+            return self._send(200, {"secrets": [{"secretKey": k, "secretValue": v}
+                                                for k, v in type(self).store.items()]})
+        self._send(404, {"error": "nf"})
+
+    def do_PATCH(self):
+        if not self._authed():
+            return self._send(401, {"error": "unauthorized"})
+        prefix = "/api/v4/secrets/"
+        if self.path.startswith(prefix):
+            field = urllib.parse.unquote(self.path[len(prefix):])
+            type(self).store[field] = self._body().get("secretValue")
+            return self._send(200, {"secret": {"secretKey": field}})
+        self._send(404, {"error": "nf"})
+
+    def log_message(self, *a):
+        pass
+
+
+class InfisicalHTTP(unittest.TestCase):
+    """InfisicalBackend driven over REAL HTTP against the fake above — auth, project
+    lookup, secret parse, token caching, the write→re-read round trip, and the
+    HTTPError path, none of which the `_request`-monkeypatch tests reach."""
+
+    def setUp(self):
+        _FakeInfisical.store = {"API_KEY": "v1"}
+        _FakeInfisical.login_count = 0
+        self.server = HTTPServer(("127.0.0.1", 0), _FakeInfisical)
+        self.addCleanup(self.server.server_close)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.shutdown)
+        self.creds_dir = tempfile.mkdtemp()
+        Path(self.creds_dir, "demo.env").write_text(  # item defaults to the tool id "demo"
+            "INFISICAL_CLIENT_ID=cid\nINFISICAL_CLIENT_SECRET=csecret\n")
+        self.backend = InfisicalBackend(
+            host=f"http://127.0.0.1:{self.server.server_address[1]}",
+            credentials_dir=self.creds_dir, environment="dev", default_vault="Proj")
+
+    def _tool(self, field="API_KEY"):
+        return _tool(SecretSpec("api_key", field, writable=True))
+
+    def test_resolve_over_real_http(self):
+        self.assertEqual(self.backend.resolve(self._tool()), {"api_key": "v1"})
+
+    def test_write_then_reread_round_trip(self):
+        # T-005: a tool writes a new value; a later import sees it (no stale value cache).
+        self.assertEqual(self.backend.resolve(self._tool()), {"api_key": "v1"})
+        self.backend.update(self._tool(), "api_key", "v2")
+        self.assertEqual(self.backend.resolve(self._tool()), {"api_key": "v2"})
+
+    def test_access_token_is_cached_across_calls(self):
+        self.backend.resolve(self._tool())
+        self.backend.resolve(self._tool())
+        self.assertEqual(_FakeInfisical.login_count, 1)  # logged in once, token reused
+
+    def test_http_error_becomes_runtime_error(self):
+        Path(self.creds_dir, "demo.env").write_text(  # wrong creds -> login 401
+            "INFISICAL_CLIENT_ID=wrong\nINFISICAL_CLIENT_SECRET=wrong\n")
+        b = InfisicalBackend(host=self.backend.host, credentials_dir=self.creds_dir,
+                             environment="dev", default_vault="Proj")
+        with self.assertRaises(RuntimeError):
+            b.resolve(self._tool())
+
+    def test_unknown_field_raises_over_http(self):
+        with self.assertRaises(KeyError):
+            self.backend.resolve(self._tool(field="MISSING"))
+
+
+@unittest.skipUnless(
+    os.environ.get("TOOLSTACK_INFISICAL_HOST") and os.environ.get("TOOLSTACK_INFISICAL_TEST_VAULT"),
+    "set TOOLSTACK_INFISICAL_HOST + _TEST_VAULT/_TEST_ITEM/_TEST_FIELD (+ creds dir) for the live test",
+)
+class InfisicalLive(unittest.TestCase):
+    """Opt-in: verify the pinned v4 contract against a REAL Infisical. Reads
+    TOOLSTACK_INFISICAL_* (host/env/creds dir, via from_env) plus _TEST_VAULT/_TEST_ITEM/
+    _TEST_FIELD naming a secret the configured machine identity can read."""
+
+    def test_resolves_a_real_secret(self):
+        backend = InfisicalBackend.from_env()
+        spec = SecretSpec("probe", os.environ["TOOLSTACK_INFISICAL_TEST_FIELD"],
+                          vault=os.environ["TOOLSTACK_INFISICAL_TEST_VAULT"],
+                          item=os.environ.get("TOOLSTACK_INFISICAL_TEST_ITEM"))
+        resolved = backend.resolve(_tool(spec))
+        self.assertIsInstance(resolved["probe"], str)
+        self.assertTrue(resolved["probe"])  # non-empty
 
 
 class Factory(unittest.TestCase):
