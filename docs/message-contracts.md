@@ -42,10 +42,17 @@ GET  /v1/requests/<id>           poll a request (owner only) -> status + result 
 - Discovery is policy-filtered: a caller sees only the ops it may use.
 - Audit: `gateway.request_received`, `gateway.response_returned`.
 - Security: arguments and `reason` are redacted before audit. The broker never inspects or materializes secrets.
-- MCP is available as a **client-side adapter** (`client/mcp_server.py`) over these
-  REST endpoints. A broker-native `POST /mcp/<tool>` route remains deferred. There is
-  **no** approval callback route — resolution is poll-only by design (nod's callbacks
-  are unauthenticated, so a receiver would be forgeable).
+- MCP is available two ways over the **same** authority. (1) A **client-side adapter**
+  (`client/mcp_server.py`): a stdio bridge that translates MCP to the REST endpoints above
+  and blocks per-process until approval resolves. (2) A **broker-native** `POST /mcp` route
+  (`broker/mcp.py`) that terminates JSON-RPC (MCP) frames at the broker itself — stateless,
+  non-blocking (a review op returns `pending_approval` + a request id, polled via
+  `GET /v1/requests/<id>` exactly like REST), and bound by the same token auth. Both apply
+  identical policy / approval / audit; over `/mcp` a denied or unknown op reads as
+  `unknown tool` to the caller (least privilege) yet is audited exactly as on the REST path,
+  auth failure is HTTP 401, and a per-caller throttle is HTTP 429. There is **no** approval
+  callback route — resolution is poll-only by design (nod's callbacks are unauthenticated, so
+  a receiver would be forgeable).
 
 ### 2. Broker → Tool container (forwarding)
 
@@ -53,7 +60,10 @@ GET  /v1/requests/<id>           poll a request (owner only) -> status + result 
 POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
 ```
 
-- MCP frames are forwarded unchanged after the policy check on `params.name`.
+- Both ingress framings converge here: whether a call arrived as REST `/v1/actions` or as a
+  native MCP `tools/call` on `POST /mcp`, the broker terminates the agent-facing frame, checks
+  policy, and makes this **one** REST call to the tool. Frames are never relayed verbatim to a
+  tool — tools speak REST.
 - The broker adds `broker_request_id` and `caller: {"name": "..."}`.
 - **Optional per-tool shared secret (defense in depth, opt-in).** The broker may send an
   `X-Toolstack-Secret: <value>` header so the tool can verify the call came from the broker —

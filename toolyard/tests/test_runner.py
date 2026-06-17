@@ -14,13 +14,17 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 import tomllib
 import unittest
+import urllib.request
 from pathlib import Path
 
-from broker.registry import ToolOp
+from broker.identity import hash_token
+from broker.registry import Registry, ToolOp
 from broker.runtime import HttpRuntime
+from broker.server import build_server
 from toolyard.config import load
 from toolyard.runner import DockerRunner, ProcessRunner
 
@@ -128,6 +132,56 @@ class SharedSecretE2E(unittest.TestCase):
     def test_wrong_secret_is_rejected(self):
         with self.assertRaises(RuntimeError):  # mismatched header -> tool 401
             self._signed_call("not-the-secret", "say", {"m": "hi"})
+
+
+class McpOverHttpE2E(unittest.TestCase):
+    """T-021 AC#4: a real MCP JSON-RPC frame over HTTP -> real broker (/mcp) -> real echo
+    tool process -> response. The broker terminates MCP, applies policy/audit, and forwards
+    through the same REST runtime that the /v1/actions path uses. No Docker needed."""
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
+        self.runner = ProcessRunner()
+        self.running = self.runner.start(self.tool, {"api_key": SECRET})
+        self.addCleanup(self.runner.stop, self.running)
+        if not _wait_for_tool(self.tool.port):
+            self.fail("echo tool did not start")
+
+        # a real broker whose registry forwards echo.say to the running tool's port
+        registry = Registry({"echo": {"port": self.tool.port, "type": "rest",
+                                      "ops": {"say": {"risk": "low", "description": "", "args": []}}}})
+        self.server = build_server(port=0, db_path=":memory:", audit_sink=None, registry=registry)
+        store = self.server.ctx.store
+        caller_id = store.add_caller("hermes")
+        self.token = "mcp-e2e-token"
+        store.add_token(caller_id, hash_token(self.token))
+        store.set_policy(caller_id, {"tools": {"echo": {"say": "allow"}}})
+        self.bport = self.server.server_address[1]
+        self.bthread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.bthread.start()
+        self.addCleanup(self._stop_broker)
+
+    def _stop_broker(self):
+        self.server.shutdown()
+        self.bthread.join(timeout=5)
+        self.server.server_close()
+        self.server.ctx.store.close()
+
+    def test_mcp_call_over_http_reaches_the_real_tool(self):
+        msg = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+               "params": {"name": "echo__say", "arguments": {"m": "hi"}}}
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.bport}/mcp", data=json.dumps(msg).encode("utf-8"),
+            method="POST",
+            headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read())
+
+        result = body["result"]
+        self.assertFalse(result["isError"])
+        inner = json.loads(result["content"][0]["text"])  # the broker's outcome body
+        self.assertEqual(inner["status"], "ok")
+        self.assertEqual(inner["result"], {"echoed": {"m": "hi"}})  # straight from the tool
 
 
 def _docker_ok() -> bool:
