@@ -10,8 +10,8 @@ decide what's next. Companion docs: [PROJECT.md](../PROJECT.md) (nerve center),
 
 The planned build order (Phases 0–4) is **complete and tested**, the agent-side
 client (the `toolstack` CLI + MCP adapter + skill) is built on top, and an operator
-**admin web app** now runs and manages the whole stack — 234 tests pass
-(124 broker + 29 toolyard + 23 client + 58 admin) plus an opt-in Docker end-to-end
+**admin web app** now runs and manages the whole stack — 236 tests pass
+(124 broker + 31 toolyard + 23 client + 58 admin), incl. opt-in Docker runner tests
 and an opt-in live-nod test, with live walkthroughs end to end. The full vertical slice runs:
 
 > **agent → broker (auth + policy) → human approval in nod → tool execution with
@@ -258,9 +258,9 @@ dirs, `os.pathsep`-separated), `TOOLSTACK_NOD_URL`/`_TOKEN`, `TOOLSTACK_APPROVAL
 
 ```bash
 python3 -m unittest discover -s broker/tests -t .        # 124 tests (1 live-nod skipped)
-python3 -m unittest discover -s toolyard/tests -t .       # 29 tests (1 docker skipped)
+python3 -m unittest discover -s toolyard/tests -t .       # 31 tests (3 docker skipped)
 python3 -m unittest discover -s client/tests -t .         # 23 tests (CLI + MCP, vs a real broker)
-TOOLSTACK_TEST_DOCKER=1 python3 -m unittest toolyard.tests.test_runner   # + real container
+TOOLSTACK_TEST_DOCKER=1 python3 -m unittest toolyard.tests.test_runner   # + 3 real-container tests
 
 # the admin app (needs its venv): 58 tests
 admin/.venv/bin/python -m unittest discover -s admin/tests -t .
