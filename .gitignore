@@ -24,3 +24,9 @@ toolstack-old/
 
 # local dev secrets (never commit)
 secrets.toml
+
+# Per-tool agent skills are tied to private tools — not committed. (The tool
+# implementations themselves live outside this repo under
+# ~/.local/share/toolstack/tools and are never tracked here.) The generic client
+# skill at client/SKILL.md is unaffected.
+client/skills/
