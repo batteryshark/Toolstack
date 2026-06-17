@@ -1,0 +1,31 @@
+[Unit]
+Description=Toolstack TSR admin panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/TSR
+Environment=HOME=/home/admin
+Environment=XDG_CONFIG_HOME=/home/admin/.config/tsr
+Environment=XDG_STATE_HOME=/home/admin/.local/state/tsr
+Environment=TOOLSTACK_SECRETS_FILE=/home/admin/TSR/secrets.toml
+# The four real tools (apple-calendar, sandals, spotify, todoist) are FastAPI
+# containers whose secrets come from Infisical, so the panel starts them with the
+# docker runner + the Infisical secret backend.
+Environment=TOOLSTACK_RUNNER=docker
+Environment=TOOLSTACK_SECRET_BACKEND=infisical
+Environment=TOOLSTACK_INFISICAL_HOST=https://homeserver-apps.mackarel-sunfish.ts.net:19081
+Environment=TOOLSTACK_INFISICAL_ENVIRONMENT=dev
+Environment=TOOLSTACK_INFISICAL_CREDENTIALS_DIR=/home/admin/.config/toolstack/infisical
+Environment=TOOLSTACK_INFISICAL_VAULT=ToolServer
+ExecStart=/home/admin/TSR/admin/.venv/bin/python -m admin serve --port 8780
+ExecStartPost=/home/admin/TSR/admin/.venv/bin/python -c "from admin import broker_config, supervisor; supervisor.start(broker_config.load())"
+ExecStopPost=/home/admin/TSR/admin/.venv/bin/python -c "from admin import supervisor; supervisor.stop()"
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

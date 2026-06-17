@@ -23,6 +23,12 @@ class Load(unittest.TestCase):
         ids = {d.id for d in discover(REPO / "tools")}
         self.assertIn("echo", ids)
 
+    def test_secret_vault_item_default_to_none(self):
+        # The echo tool declares no vault/item, so they parse as None.
+        spec = load(TOOL_TOML).secrets[0]
+        self.assertIsNone(spec.vault)
+        self.assertIsNone(spec.item)
+
 
 if __name__ == "__main__":
     unittest.main()

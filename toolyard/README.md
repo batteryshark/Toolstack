@@ -46,7 +46,16 @@ hands the values to the tool — never to the broker.
 - **Dev (shipped):** `FileBackend` reads a local TOML file shaped as
   `[<tool_id>]  FIELD = "value"`. Copy [../secrets.example.toml](../secrets.example.toml)
   to `secrets.toml` (gitignored) and fill it in.
-- **Production:** SOPS or Infisical behind the same `resolve()` interface.
+- **Production (shipped):** `InfisicalBackend` resolves each secret from Infisical
+  over its HTTP API (stdlib only — no added dependency). A `[[secrets]]` entry adds
+  `vault` (Infisical project) and `item` (secret path; defaults to the tool id) next
+  to `field` (the secret key). Each tool authenticates with its own machine identity
+  read from `<credentials_dir>/<item>.env`. Configure with `TOOLSTACK_INFISICAL_HOST`
+  / `_ENVIRONMENT` / `_CREDENTIALS_DIR` / `_VAULT` (legacy `TOOLYARD_INFISICAL_*` are
+  read as a fallback).
+- **Backend selection:** `get_backend(name)` picks `file` (default) or `infisical`;
+  the CLI exposes `--secret-backend` and honors `$TOOLSTACK_SECRET_BACKEND`.
+- SOPS can follow behind the same `resolve()` interface.
 
 ## Runners
 
@@ -90,17 +99,29 @@ python3 -m unittest discover -s toolyard/tests -t .
 TOOLSTACK_TEST_DOCKER=1 python3 -m unittest toolyard.tests.test_runner  # include docker e2e
 ```
 
+## Writable secrets
+
+A tool that rotates a credential (e.g. an OAuth token) writes it back through a Unix
+socket the toolyard mounts into the container at `/run/toolyard/secrets.sock`
+(message-contracts §4). For any tool declaring a `writable = true` secret, the runner
+starts a small **write-proxy** on the host (it holds the backend; only the socket is
+exposed to the container), enforces the tool's writable allowlist, and patches exactly
+the declared `(vault, item, field)`. The proxy is killed and its socket removed on
+stop. No backend credential is ever mounted in the container.
+
 ## Modules
 
 - `config.py` — parse `toolyard.toml` into a `ToolDef`.
-- `secrets.py` — secret backends (dev `FileBackend`; SOPS/Infisical to follow).
+- `secrets.py` — secret backends (`FileBackend`, `InfisicalBackend`; `get_backend()`).
 - `runner.py` — `ProcessRunner` and `DockerRunner` (`get_runner(backend)`).
+- `write_proxy.py` — the writable-secret socket server (message-contracts §4).
 - `cli.py` — `up` / `down` / `ls`, with a small JSON state file.
 
 ## Security notes
 
 - A tool never holds a broker token or a secret-backend credential.
 - The broker never receives a secret value (verified in the tests).
+- Writable secrets go host-side through the write-proxy; the container only ever sees
+  the socket, never a backend credential.
 - Hardening to add: inject secrets into a container **tmpfs** at start so they never
-  touch host disk (the Phase 2 backends write to a `0700` dir removed on stop), and
-  per-tool writable-secret rotation over a Unix socket.
+  touch host disk (the Phase 2 backends write to a `0700` dir removed on stop).
