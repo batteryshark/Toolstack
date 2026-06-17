@@ -47,10 +47,14 @@ zero-dependency; each also runs uninstalled as `python3 -m client.toolstack`,
 `python3 -m broker.brokerctl`, etc. The **admin web app** carries the only runtime deps
 (FastAPI/uvicorn) and has its own venv — see [admin/README.md](admin/README.md).
 
+For a real (systemd) install — the admin panel supervising the broker, with an
+`EnvironmentFile`, the supervision model, and verification steps — see
+[deploy/README.md](deploy/README.md).
+
 ## Status
 
 The planned build order (Phases 0–4) is **complete and tested**, with an operator
-**admin web app** on top — 173 tests across [broker/](broker/), [toolyard/](toolyard/),
+**admin web app** on top — 231 tests across [broker/](broker/), [toolyard/](toolyard/),
 [client/](client/), and [admin/](admin/). The full vertical slice runs end to end:
 agent → broker (auth, policy, request lifecycle) → human approval in nod → tool
 execution with workload secrets, and the broker never sees a secret. Operators manage

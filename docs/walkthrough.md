@@ -10,9 +10,9 @@ decide what's next. Companion docs: [PROJECT.md](../PROJECT.md) (nerve center),
 
 The planned build order (Phases 0–4) is **complete and tested**, the agent-side
 client (the `toolstack` CLI + MCP adapter + skill) is built on top, and an operator
-**admin web app** now runs and manages the whole stack — 176 tests pass
-(96 broker + 8 toolyard + 15 client + 57 admin) plus an opt-in Docker end-to-end,
-with live walkthroughs end to end. The full vertical slice runs:
+**admin web app** now runs and manages the whole stack — 231 tests pass
+(124 broker + 27 toolyard + 23 client + 57 admin) plus an opt-in Docker end-to-end
+and an opt-in live-nod test, with live walkthroughs end to end. The full vertical slice runs:
 
 > **agent → broker (auth + policy) → human approval in nod → tool execution with
 > its own workload secrets — and the broker never sees a secret.**
@@ -257,9 +257,9 @@ dirs, `os.pathsep`-separated), `TOOLSTACK_NOD_URL`/`_TOKEN`, `TOOLSTACK_APPROVAL
 ## Test it
 
 ```bash
-python3 -m unittest discover -s broker/tests -t .        # 96 tests
-python3 -m unittest discover -s toolyard/tests -t .       # 8 tests (1 docker skipped)
-python3 -m unittest discover -s client/tests -t .         # 15 tests (CLI + MCP, vs a real broker)
+python3 -m unittest discover -s broker/tests -t .        # 124 tests (1 live-nod skipped)
+python3 -m unittest discover -s toolyard/tests -t .       # 27 tests (1 docker skipped)
+python3 -m unittest discover -s client/tests -t .         # 23 tests (CLI + MCP, vs a real broker)
 TOOLSTACK_TEST_DOCKER=1 python3 -m unittest toolyard.tests.test_runner   # + real container
 
 # the admin app (needs its venv): 57 tests
@@ -371,6 +371,8 @@ tools/echo_rest/      sample tool: app.py · toolyard.toml · Dockerfile
 client/               agent client: toolstack.py (CLI) · mcp_server.py (MCP) · SKILL.md + tests/
 admin/                control panel (FastAPI): server · views · auth · supervisor ·
                       broker_config · tool_authoring · toolyard_ops + tests/ + .venv (gitignored)
+deploy/               systemd unit template · env example · redeploy script · README (real install)
+pyproject.toml        packages the stdlib CLIs (toolstack/brokerctl/toolyard) for `pip install -e .`
 ```
 
 ---
