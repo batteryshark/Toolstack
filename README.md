@@ -31,6 +31,22 @@ trust boundaries.
 - **Secret backend** — Infisical or SOPS.
 - **Tailnet** — Tailscale Serve (or any VPN); the ingress boundary.
 
+## Install
+
+The broker, toolyard, and client are stdlib-only Python (3.11+, for `tomllib`). Install the
+repo to put the CLIs on your PATH:
+
+```bash
+pip install -e .          # editable — the commands track your checkout
+toolstack --help
+```
+
+This installs `toolstack` (the agent client), `brokerctl` (operator CLI), `toolyard` (tool
+runner), and `toolstack-mcp` (the client as an MCP stdio server). Runtime stays
+zero-dependency; each also runs uninstalled as `python3 -m client.toolstack`,
+`python3 -m broker.brokerctl`, etc. The **admin web app** carries the only runtime deps
+(FastAPI/uvicorn) and has its own venv — see [admin/README.md](admin/README.md).
+
 ## Status
 
 The planned build order (Phases 0–4) is **complete and tested**, with an operator
