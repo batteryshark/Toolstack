@@ -36,6 +36,19 @@ class Registry:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
         entry = data.get("entrypoint", {})
+        tool_type = data.get("type", "rest")
+        port = entry.get("port")
+        # A rest tool is invoked at 127.0.0.1:<port>. A missing/invalid port used to
+        # register silently as None and only surface as a 502 at call time — fail
+        # closed at load instead, naming the offending file and tool. (bool is an int
+        # subclass in Python, so exclude it: `port = true` is not a port.)
+        if tool_type == "rest" and not (
+            isinstance(port, int) and not isinstance(port, bool) and 1 <= port <= 65535
+        ):
+            raise ValueError(
+                f"{toml_path}: tool {data.get('id')!r} needs an [entrypoint] port "
+                f"(integer 1-65535) for a 'rest' tool; got {port!r}"
+            )
         ops = {}
         for o in data.get("operations", []):
             ops[o["name"]] = {
@@ -44,8 +57,7 @@ class Registry:
                 "args": o.get("args", []),
             }
         # NOTE: data["secrets"] is deliberately never read here.
-        catalog[data["id"]] = {"port": entry.get("port"),
-                               "type": data.get("type", "rest"), "ops": ops}
+        catalog[data["id"]] = {"port": port, "type": tool_type, "ops": ops}
 
     @classmethod
     def from_tools_root(cls, root: str | Path) -> "Registry":

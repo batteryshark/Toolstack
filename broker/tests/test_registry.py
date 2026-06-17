@@ -97,5 +97,49 @@ class FromSources(unittest.TestCase):
         self.assertEqual(reg.list_ops(), [])
 
 
+class PortValidation(unittest.TestCase):
+    """A rest tool with no/invalid port must fail at load, naming the file + tool —
+    not register silently and 502 at call time."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _load(self, toml: str):
+        d = Path(self.tmp, "weather")
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "toolyard.toml").write_text(toml)
+        return Registry.from_tools_root(self.tmp)
+
+    def test_missing_port_raises_naming_the_tool(self):
+        with self.assertRaises(ValueError) as cm:
+            self._load('id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "x"\n'
+                       '[[operations]]\nname = "today"\nrisk = "low"\n')
+        msg = str(cm.exception)
+        self.assertIn("weather", msg)
+        self.assertIn("port", msg)
+
+    def test_non_integer_port_raises(self):
+        with self.assertRaises(ValueError):
+            self._load('id = "weather"\ntype = "rest"\n[entrypoint]\nport = "4700"\n'
+                       '[[operations]]\nname = "today"\nrisk = "low"\n')
+
+    def test_boolean_port_raises(self):
+        # bool is an int subclass; `port = true` must not pass as a port
+        with self.assertRaises(ValueError):
+            self._load('id = "weather"\ntype = "rest"\n[entrypoint]\nport = true\n'
+                       '[[operations]]\nname = "today"\nrisk = "low"\n')
+
+    def test_out_of_range_port_raises(self):
+        with self.assertRaises(ValueError):
+            self._load('id = "weather"\ntype = "rest"\n[entrypoint]\nport = 70000\n'
+                       '[[operations]]\nname = "today"\nrisk = "low"\n')
+
+    def test_valid_port_loads(self):
+        reg = self._load('id = "weather"\ntype = "rest"\n[entrypoint]\nport = 4700\n'
+                         '[[operations]]\nname = "today"\nrisk = "low"\n')
+        self.assertEqual(reg.lookup("weather", "today").port, 4700)
+
+
 if __name__ == "__main__":
     unittest.main()
