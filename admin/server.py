@@ -217,7 +217,8 @@ def create_app() -> FastAPI:
         config = broker_config.load()
         try:
             with open_store(config) as store:
-                operations.revoke_caller(store, data.get("name", ""), user)
+                operations.revoke_caller(store, data.get("name", ""), user,
+                                         surface=config.build_surface())
         except LookupError as exc:
             return render_dashboard(request, user, error=str(exc))
         return redirect("/")
@@ -232,7 +233,8 @@ def create_app() -> FastAPI:
             return render_dashboard(request, user, error="Invalid CSRF token.")
         config = broker_config.load()
         with open_store(config) as store:
-            operations.revoke_token(store, data.get("prefix", ""), user)
+            operations.revoke_token(store, data.get("prefix", ""), user,
+                                    surface=config.build_surface())
         return redirect("/")
 
     # --- policy ---------------------------------------------------------------

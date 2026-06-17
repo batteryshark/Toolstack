@@ -94,5 +94,46 @@ class ApprovalFlow(BrokerTestCase):
         self.assertNotIn("p@ss", json.dumps(ctx.audit.events()))
 
 
+class LazySweep(BrokerTestCase):
+    """The broker has no background worker, so stale approvals are GC'd lazily:
+    `sweep_expired` on demand, and on every `submit`."""
+
+    def _park(self, surface, approval_ttl=3600.0):
+        ctx = self.make_ctx(catalog={"echo": {"shout": "high"}},
+                            surface=surface, approval_ttl=approval_ttl)
+        token = seed_caller(ctx.store, "hermes", allow=["echo.say"], review=["echo.shout"])
+        caller = authenticate(ctx.store, f"Bearer {token}")
+        out = lifecycle.submit(ctx, caller, "echo", "shout", {}, CID)
+        return ctx, caller, out
+
+    def test_sweep_expires_stale_pending_approval(self):
+        surface = FakeSurface(approval.PENDING)
+        ctx, caller, out = self._park(surface)
+        n = lifecycle.sweep_expired(ctx, now=10**12)  # far future -> past the deadline
+        self.assertEqual(n, 1)
+        self.assertEqual(ctx.store.request(out.request_id)["status"], "expired")
+        self.assertEqual(ctx.store.approval_for_request(out.request_id)["status"], "expired")
+        self.assertIn(f"ref-{out.request_id}", surface.cancelled)
+        self.assertEqual(ctx.runtime.calls, [])  # nothing ran
+
+    def test_sweep_leaves_a_live_approval_untouched(self):
+        surface = FakeSurface(approval.PENDING)
+        ctx, caller, out = self._park(surface)
+        self.assertEqual(lifecycle.sweep_expired(ctx), 0)  # now() << deadline
+        self.assertEqual(ctx.store.request(out.request_id)["status"], "pending_approval")
+        self.assertEqual(surface.cancelled, [])
+
+    def test_submit_triggers_the_sweep(self):
+        surface = FakeSurface(approval.PENDING)
+        # approval_ttl=0 -> the parked approval's deadline is its creation instant,
+        # so it's already stale by the time the next request comes in.
+        ctx, caller, out = self._park(surface, approval_ttl=0.0)
+        self.assertEqual(ctx.store.request(out.request_id)["status"], "pending_approval")
+        # an unrelated new request's lazy GC sweeps the stale one
+        lifecycle.submit(ctx, caller, "echo", "say", {}, "corr-2")
+        self.assertEqual(ctx.store.request(out.request_id)["status"], "expired")
+        self.assertIn(f"ref-{out.request_id}", surface.cancelled)
+
+
 if __name__ == "__main__":
     unittest.main()

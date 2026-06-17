@@ -14,6 +14,7 @@ secure.
     brokerctl issue-token --name hermes
     brokerctl revoke-token --prefix 1a2b3c
     brokerctl revoke-caller --name hermes
+    brokerctl sweep
     brokerctl list-requests [--status pending_approval]
     brokerctl audit [--request-id N | --correlation-id C | --limit 50]
 """
@@ -23,8 +24,11 @@ from __future__ import annotations
 import argparse
 import json
 
-from . import operations
+from . import operations, request_lifecycle
+from .audit import AuditLog, stderr_sink
+from .context import BrokerContext
 from .store import Store
+from .surface_nod import NodSurface
 
 
 def _store(args) -> Store:
@@ -54,12 +58,14 @@ def list_callers(args) -> None:
 def revoke_caller(args) -> None:
     store = _store(args)
     try:
-        operations.revoke_caller(store, args.name, args.operator)
+        cancelled = operations.revoke_caller(store, args.name, args.operator,
+                                             surface=NodSurface.from_env())
     except LookupError as exc:
         raise SystemExit(str(exc))
     finally:
         store.close()
-    print(f"caller '{args.name}' revoked.")
+    suffix = f" ({cancelled} pending approval(s) cancelled)" if cancelled else ""
+    print(f"caller '{args.name}' revoked.{suffix}")
 
 
 def show_policy(args) -> None:
@@ -108,10 +114,25 @@ def list_tokens(args) -> None:
 def revoke_token(args) -> None:
     store = _store(args)
     try:
-        count = operations.revoke_token(store, args.prefix, args.operator)
+        count = operations.revoke_token(store, args.prefix, args.operator,
+                                        surface=NodSurface.from_env())
     finally:
         store.close()
     print(f"revoked {count} token(s) matching '{args.prefix}'.")
+
+
+def sweep(args) -> None:
+    """Expire pending approvals past their broker deadline (lazy GC, since the broker
+    runs no background worker). Withdraws each from nod if TOOLSTACK_NOD_* is set."""
+    store = _store(args)
+    try:
+        ctx = BrokerContext(store=store, registry=None, runtime=None,
+                            audit=AuditLog(store, sink=stderr_sink),
+                            surface=NodSurface.from_env())
+        count = request_lifecycle.sweep_expired(ctx)
+    finally:
+        store.close()
+    print(f"swept {count} expired approval(s).")
 
 
 def list_requests(args) -> None:
@@ -181,6 +202,10 @@ def main() -> None:
     p = sub.add_parser("revoke-token", parents=[common, operator])
     p.add_argument("--prefix", required=True, help="token hash prefix (see list-tokens)")
     p.set_defaults(func=revoke_token)
+
+    p = sub.add_parser("sweep", parents=[common],
+                       help="expire pending approvals past their deadline (lazy GC)")
+    p.set_defaults(func=sweep)
 
     p = sub.add_parser("list-requests", parents=[common])
     p.add_argument("--status")

@@ -101,13 +101,7 @@ def build_server(
     if registry is None:
         registry = Registry.from_sources(tools_root, tool_dirs or ())
     if surface is None:
-        nod_url = os.environ.get("TOOLSTACK_NOD_URL")
-        nod_token = os.environ.get("TOOLSTACK_NOD_TOKEN")
-        if nod_url and nod_token:
-            surface = NodSurface(
-                nod_url, nod_token,
-                channel=os.environ.get("TOOLSTACK_NOD_CHANNEL", "default"),
-            )
+        surface = NodSurface.from_env()
     if approval_ttl is None:
         approval_ttl = float(os.environ.get("TOOLSTACK_APPROVAL_TTL", "3600"))
     if rate_limit is None:

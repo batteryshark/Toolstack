@@ -43,6 +43,7 @@ class Outcome:
 
 
 def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Outcome:
+    sweep_expired(ctx)  # lazy GC of stale approvals — the broker has no background worker
     audit = ctx.audit
     tool_op = ctx.registry.lookup(tool, op)
     if tool_op is None:
@@ -134,6 +135,34 @@ def execute_request(ctx, request_id, tool, op, arguments, correlation_id, caller
     return Outcome(OK, request_id=request_id, result=result)
 
 
+def _expire_approval(ctx, approval_id, request_id, surface_ref, tool, op, correlation_id) -> None:
+    """Mark an approval (and its request) expired, withdraw it from the surface (best
+    effort), and audit. Shared by the per-request timeout in `resolve_request` and the
+    lazy `sweep_expired` — one place that fails an approval closed."""
+    ctx.store.update_approval(approval_id, status="expired")
+    ctx.store.update_request(request_id, status="expired", arguments_json=None)
+    if ctx.surface is not None:
+        try:
+            ctx.surface.cancel(surface_ref)
+        except Exception:
+            pass
+    ctx.audit.record("approval", "expired", EXPIRED, correlation_id,
+                     request_id=request_id, details={"tool": tool, "op": op})
+
+
+def sweep_expired(ctx, now=None) -> int:
+    """Expire every pending approval past its broker deadline, whether or not its
+    request is being polled. The broker has no background worker, so this runs
+    lazily — on each `submit` and from `brokerctl sweep` / the admin dashboard — to
+    GC requests nobody polls again. Returns the number expired."""
+    now = time.time() if now is None else now
+    rows = ctx.store.expired_pending_approvals(now)
+    for row in rows:
+        _expire_approval(ctx, row["id"], row["request_id"], row["surface_ref"],
+                         row["tool"], row["op"], row["correlation_id"])
+    return len(rows)
+
+
 def resolve_request(ctx, request_id, now=None) -> Outcome:
     """Advance a pending-approval request: enforce the broker timeout, poll the
     surface, and execute on a confirmed approval. Terminal requests are returned
@@ -158,14 +187,8 @@ def resolve_request(ctx, request_id, now=None) -> Outcome:
     # The broker's own timer is authoritative: fail closed past the deadline,
     # ignoring any later surface decision.
     if now >= approval_row["expires_at"]:
-        ctx.store.update_approval(approval_row["id"], status="expired")
-        ctx.store.update_request(request_id, status="expired", arguments_json=None)
-        try:
-            ctx.surface.cancel(approval_row["surface_ref"])
-        except Exception:
-            pass
-        ctx.audit.record("approval", "expired", EXPIRED, correlation_id,
-                         request_id=request_id, details={"tool": req["tool"], "op": req["op"]})
+        _expire_approval(ctx, approval_row["id"], request_id, approval_row["surface_ref"],
+                         req["tool"], req["op"], correlation_id)
         return Outcome(EXPIRED, request_id=request_id)
 
     state = ctx.surface.poll(approval_row["surface_ref"])

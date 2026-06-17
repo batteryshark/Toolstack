@@ -9,6 +9,8 @@ from broker import operations
 from broker.identity import authenticate, hash_token
 from broker.store import Store
 
+from .support import FakeSurface
+
 
 class Operations(unittest.TestCase):
     def setUp(self):
@@ -74,6 +76,65 @@ class Operations(unittest.TestCase):
     def test_revoke_unknown_token_is_noop_without_audit(self):
         count = operations.revoke_token(self.store, "deadbeef", "op")
         self.assertEqual(count, 0)
+        self.assertEqual(self._admin_events("token_revoked"), [])
+
+    # --- revocation cancels pending approvals (T-003) -----------------------
+
+    def _seed_pending_approval(self, caller_id, ref="ref-1", expires_at=10**12):
+        """A parked, still-live pending approval for a caller (far-future deadline)."""
+        rid = self.store.create_request("corr-a", caller_id, "echo", "shout", "pending_approval")
+        self.store.create_approval(rid, ref, expires_at)
+        return rid
+
+    def _cancel_events(self):
+        return [e for e in self.store.audit_events()
+                if e["component"] == "approval" and e["event_type"] == "cancelled"]
+
+    def test_revoke_caller_cancels_pending_approvals_and_withdraws(self):
+        operations.create_caller(self.store, "hermes", None, None, "op")
+        rid = self._seed_pending_approval(self.store.caller_by_name("hermes")["id"])
+        surface = FakeSurface()
+        cancelled = operations.revoke_caller(self.store, "hermes", "op", surface=surface)
+        self.assertEqual(cancelled, 1)
+        self.assertEqual(self.store.approval_for_request(rid)["status"], "cancelled")
+        self.assertEqual(self.store.request(rid)["status"], "expired")  # disarmed
+        self.assertIsNone(self.store.request(rid)["arguments_json"])
+        self.assertIn("ref-1", surface.cancelled)  # withdrawn from the surface
+        self.assertEqual(len(self._cancel_events()), 1)
+
+    def test_revoke_caller_disarms_even_without_a_surface(self):
+        # brokerctl / the admin app revoke out of the broker process and may hold no
+        # surface; the store marking alone must guarantee the request can't execute.
+        operations.create_caller(self.store, "hermes", None, None, "op")
+        rid = self._seed_pending_approval(self.store.caller_by_name("hermes")["id"])
+        self.assertEqual(operations.revoke_caller(self.store, "hermes", "op"), 1)  # surface=None
+        self.assertEqual(self.store.request(rid)["status"], "expired")
+        self.assertEqual(self.store.approval_for_request(rid)["status"], "cancelled")
+
+    def test_revoke_token_cancels_only_when_caller_left_tokenless(self):
+        t1 = operations.create_caller(self.store, "hermes", None, None, "op")
+        rid = self._seed_pending_approval(self.store.caller_by_name("hermes")["id"])
+        t2 = operations.issue_token(self.store, "hermes", "op")  # caller now has 2 tokens
+        # one token still live -> the approval stands
+        operations.revoke_token(self.store, hash_token(t1)[:16], "op", surface=FakeSurface())
+        self.assertEqual(self.store.request(rid)["status"], "pending_approval")
+        # last token revoked -> caller de-authenticated -> approval cancelled
+        surface = FakeSurface()
+        operations.revoke_token(self.store, hash_token(t2)[:16], "op", surface=surface)
+        self.assertEqual(self.store.request(rid)["status"], "expired")
+        self.assertEqual(self.store.approval_for_request(rid)["status"], "cancelled")
+        self.assertIn("ref-1", surface.cancelled)
+
+    def test_revoke_caller_with_no_pending_approvals_is_clean(self):
+        operations.create_caller(self.store, "hermes", None, None, "op")
+        self.assertEqual(operations.revoke_caller(self.store, "hermes", "op"), 0)
+        self.assertEqual(self._cancel_events(), [])
+
+    def test_revoke_token_empty_prefix_is_refused(self):
+        # an empty prefix LIKE-matches every token — must not nuke them all
+        token = operations.create_caller(self.store, "hermes", None, None, "op")
+        self.assertEqual(operations.revoke_token(self.store, "", "op"), 0)
+        self.assertIsNotNone(authenticate(self.store, f"Bearer {token}"))  # still live
         self.assertEqual(self._admin_events("token_revoked"), [])
 
 
