@@ -54,9 +54,22 @@ POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
 ```
 
 - MCP frames are forwarded unchanged after the policy check on `params.name`.
-- The broker adds `broker_request_id` and `caller: {"name": "..."}`; optional per-tool shared secret for defense in depth.
+- The broker adds `broker_request_id` and `caller: {"name": "..."}`.
+- **Optional per-tool shared secret (defense in depth, opt-in).** The broker may send an
+  `X-Toolstack-Secret: <value>` header so the tool can verify the call came from the broker —
+  not from another loopback process that guessed the tool's port and called it directly,
+  bypassing policy/approval. The operator provisions the **same** value twice: the broker
+  reads it from `TOOLSTACK_TOOL_SECRET_<TOOL>` (id upper-cased, non-alphanumerics → `_`;
+  surrounding whitespace stripped on both sides; keep tool ids distinct under that
+  normalization) and sends it (`broker/runtime.py`); the tool reads its copy from
+  `$TOOLSTACK_SECRETS_DIR/broker_secret` (the toolyard injects it like any other field) and
+  compares constant-time, replying `401` on mismatch. With neither side configured, no header
+  is sent and the tool's check stays off — the feature adds nothing to the wire until enabled.
+  This shared secret is the broker's **channel** credential for the hop; it is **not** a
+  workload secret (the broker still never reads the secret backend — see §3 and the rule below).
 - Audit: `runtime.execution_started`, `runtime.execution_completed`, `runtime.execution_failed`.
-- Security: the broker attaches **no** secrets. The tool already holds its own.
+- Security: the broker attaches **no workload** secrets. The tool already holds its own; the
+  only thing the broker may add is the optional channel shared secret above.
 
 ### 3. Toolyard → Secret backend (at container start)
 
