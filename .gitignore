@@ -17,5 +17,10 @@ dist/
 toolstack-old/
 .claude/
 
+# Ordna board for /orchestrate — local-only (Private visibility, chosen at init).
+# .claude/ above already covers .claude/worktrees/ used for orchestrate worktrees.
+/.ordna/
+/tasks/
+
 # local dev secrets (never commit)
 secrets.toml
