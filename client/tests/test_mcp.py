@@ -77,6 +77,28 @@ class McpServer(unittest.TestCase):
         self.assertTrue(r["isError"])
         self.assertIn('"status": "timeout"', r["content"][0]["text"])
 
+    def test_review_schema_advertises_reason_only_on_review(self):
+        tools = {t["name"]: t for t in self.mcp.dispatch("tools/list", {})["tools"]}
+        # a review op's input schema advertises the optional _reason justification...
+        self.assertIn("_reason", tools["echo__skip"]["inputSchema"]["properties"])
+        # ...an allow op does not (no human reads it)
+        self.assertNotIn("_reason", tools["echo__say"]["inputSchema"].get("properties", {}))
+
+    def test_review_call_forwards_reason_to_approver_and_strips_it(self):
+        self.surface.set(approval.APPROVED, approver="alice", note="ok")
+        r = self.mcp.dispatch("tools/call",
+                              {"name": "echo__skip", "arguments": {"_reason": "skip the ad break"}})
+        self.assertFalse(r["isError"])
+        # the justification rode to the human on the approval card (redacted)...
+        self.assertIn("skip the ad break", self.surface.opened[-1].justification)
+        # ...and _reason was NOT forwarded to the tool
+        self.assertNotIn("_reason", r["content"][0]["text"])
+
+    def test_review_call_without_reason_sends_none(self):
+        self.surface.set(approval.APPROVED, approver="alice", note="ok")
+        self.mcp.dispatch("tools/call", {"name": "echo__skip", "arguments": {}})
+        self.assertIsNone(self.surface.opened[-1].justification)
+
     def test_unknown_method_is_jsonrpc_error(self):
         resp = mcp_server._handle(self.mcp, {"jsonrpc": "2.0", "id": 1, "method": "bogus"})
         self.assertEqual(resp["error"]["code"], -32601)

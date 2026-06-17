@@ -6,6 +6,11 @@ forwards to the broker, blocking on approval and returning the result (plus the
 approver's note). The agent passes a structured `arguments` object — no shell, so no
 quoting breakage. Run it as an MCP server command: `python3 -m client.mcp_server`.
 
+Review ops advertise an optional `_reason` string in their input schema — the MCP
+analogue of the CLI's `--reason`. `tools/call` pulls `_reason` out of the arguments
+(it is never forwarded to the tool) and sends it as the broker's justification, so it
+reaches the human approver and the audit log.
+
 Config (env): TOOLSTACK_URL, TOOLSTACK_TOKEN / TOOLSTACK_TOKEN_FILE (shared with the
 CLI). Stdlib only.
 """
@@ -49,6 +54,19 @@ def _input_schema(args: list) -> dict:
     return schema
 
 
+def _with_reason(schema: dict) -> dict:
+    """Advertise the optional `_reason` justification on a review tool's input schema.
+    It is the MCP analogue of the CLI's --reason: shown to the human approver and
+    audited, and stripped by `_call_tool` before the tool runs (never a tool arg)."""
+    props = dict(schema.get("properties", {}))
+    props["_reason"] = {
+        "type": "string",
+        "description": ("Why you need this — shown to the human approver and recorded "
+                        "in the audit log. Recommended on review ops; not passed to the tool."),
+    }
+    return {**schema, "type": "object", "properties": props}
+
+
 class _MethodNotFound(Exception):
     pass
 
@@ -82,10 +100,11 @@ class Server:
             self._names[name] = (t["tool"], t["op"])
             _, described = _call("GET", f"/v1/tools/{t['tool']}.{t['op']}")
             description = t.get("description", "")
+            schema = _input_schema(described.get("args", []))
             if t.get("effect") == "review":
                 description = (description + " (requires human approval)").strip()
-            tools.append({"name": name, "description": description,
-                          "inputSchema": _input_schema(described.get("args", []))})
+                schema = _with_reason(schema)  # advertise the optional justification
+            tools.append({"name": name, "description": description, "inputSchema": schema})
         return tools
 
     def _call_tool(self, params: dict) -> dict:
@@ -96,7 +115,16 @@ class Server:
         if name not in self._names:
             return _result(f'unknown tool "{name}"', is_error=True)
         tool, op = self._names[name]
-        _, resp = _call("POST", f"/v1/actions/{tool}.{op}", {"arguments": arguments})
+        # `_reason` is adapter metadata, not a tool argument: pull it out (so it is
+        # never forwarded to the tool) and pass it as the broker's justification —
+        # the MCP equivalent of the CLI's --reason. It rides to the human approver
+        # on review ops and is audited (redacted).
+        args = dict(arguments)
+        reason = args.pop("_reason", None)
+        body = {"arguments": args}
+        if isinstance(reason, str) and reason.strip():
+            body["reason"] = reason
+        _, resp = _call("POST", f"/v1/actions/{tool}.{op}", body)
         if resp.get("status") == "pending_approval":
             resp = self._poll(resp["request_id"])
         status = resp.get("status")

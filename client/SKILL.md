@@ -50,6 +50,12 @@ A `--reason` is shown to the human who approves; it is NOT for routine calls.
   that *responds to that note*. Retry at most once; if denied again, stop and report
   the note to the user. Do not resubmit repeatedly with new comments.
 
+Using the **MCP server** (`python3 -m client.mcp_server`) instead of the CLI? Supply the
+justification as a `_reason` string in a review op's call `arguments` — it's advertised in
+that op's input schema, shown to the approver, and stripped before the tool runs (it's not
+a tool argument). Same guidance: review ops only. (`_reason` is a reserved argument name —
+a tool must not declare an arg called that.)
+
 ## Rules
 
 - Don't call raw broker endpoints; use this CLI.
