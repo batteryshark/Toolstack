@@ -1,3 +1,31 @@
+# Toolstack TSR admin panel — systemd unit TEMPLATE.
+#
+# This file ships with placeholders, not working values. To deploy:
+#   1. cp deploy/toolstack-admin.service /etc/systemd/system/toolstack-admin.service
+#   2. Edit every line marked "EDIT:" — the service account and the install root
+#      (the root path repeats in WorkingDirectory + the three Exec lines). The
+#      defaults assume the checkout lives at /opt/toolstack/TSR owned by a
+#      `toolstack` user; change to taste.
+#   3. cp deploy/toolstack-admin.env.example /etc/toolstack/admin.env, then
+#      `chmod 600` it and fill it in — that is where the secret backend, the
+#      Infisical host/vault, and the toolyard runner live, so site config and
+#      secrets stay out of this unit (and out of version control).
+#   4. systemctl daemon-reload && systemctl enable --now toolstack-admin
+#
+# Supervision model (intentional — this is not an orphaned-process bug):
+#   ExecStart is the admin panel: the long-lived, systemd-tracked process.
+#   The broker is NOT a child of it. It is supervised out of band by a state
+#   file (PID + port under the admin XDG state dir), exactly like toolyard's
+#   ProcessRunner: it runs in its own process group, started/stopped through
+#   admin.supervisor. ExecStartPost auto-starts it on boot — idempotent, it
+#   no-ops if a healthy broker is already recorded — and ExecStopPost tears it
+#   down; init reaps it. You can also start/stop/restart it from the dashboard.
+#   Trade-off: because systemd doesn't track the broker, a broker crash won't
+#   trigger a systemd restart on its own — the dashboard surfaces broker health,
+#   and `Restart=on-failure` below only covers the panel. If you'd rather systemd
+#   own the broker directly, run `python -m broker.server` as its own unit (with
+#   the same EnvironmentFile) and drop the ExecStartPost/ExecStopPost lines here.
+
 [Unit]
 Description=Toolstack TSR admin panel
 After=network-online.target
@@ -5,25 +33,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=admin
-Group=admin
-WorkingDirectory=/home/admin/TSR
-Environment=HOME=/home/admin
-Environment=XDG_CONFIG_HOME=/home/admin/.config/tsr
-Environment=XDG_STATE_HOME=/home/admin/.local/state/tsr
-Environment=TOOLSTACK_SECRETS_FILE=/home/admin/TSR/secrets.toml
-# The four real tools (apple-calendar, sandals, spotify, todoist) are FastAPI
-# containers whose secrets come from Infisical, so the panel starts them with the
-# docker runner + the Infisical secret backend.
-Environment=TOOLSTACK_RUNNER=docker
-Environment=TOOLSTACK_SECRET_BACKEND=infisical
-Environment=TOOLSTACK_INFISICAL_HOST=https://homeserver-apps.mackarel-sunfish.ts.net:19081
-Environment=TOOLSTACK_INFISICAL_ENVIRONMENT=dev
-Environment=TOOLSTACK_INFISICAL_CREDENTIALS_DIR=/home/admin/.config/toolstack/infisical
-Environment=TOOLSTACK_INFISICAL_VAULT=ToolServer
-ExecStart=/home/admin/TSR/admin/.venv/bin/python -m admin serve --port 8780
-ExecStartPost=/home/admin/TSR/admin/.venv/bin/python -c "from admin import broker_config, supervisor; supervisor.start(broker_config.load())"
-ExecStopPost=/home/admin/TSR/admin/.venv/bin/python -c "from admin import supervisor; supervisor.stop()"
+# EDIT: the service account that owns the TSR checkout.
+User=toolstack
+Group=toolstack
+# EDIT: absolute path to the TSR checkout (same root as the Exec lines below).
+WorkingDirectory=/opt/toolstack/TSR
+# Site config + secrets: secret backend, Infisical host/vault, toolyard runner,
+# admin knobs. Optional (the leading '-'): without it the panel uses its built-in
+# defaults (process runner, file secret backend). See toolstack-admin.env.example.
+EnvironmentFile=-/etc/toolstack/admin.env
+# EDIT: absolute path to the admin venv's python — repeated in all three lines.
+ExecStart=/opt/toolstack/TSR/admin/.venv/bin/python -m admin serve --port 8780
+ExecStartPost=/opt/toolstack/TSR/admin/.venv/bin/python -c "from admin import broker_config, supervisor; supervisor.start(broker_config.load())"
+ExecStopPost=/opt/toolstack/TSR/admin/.venv/bin/python -c "from admin import supervisor; supervisor.stop()"
 Restart=on-failure
 RestartSec=3
 

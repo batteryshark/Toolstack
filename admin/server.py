@@ -476,6 +476,7 @@ def _config_from_form(data: dict, current) -> "broker_config.BrokerRunConfig":
         nod_url=data.get("nod_url", current.nod_url).strip(),
         nod_token=nod_token,
         nod_callback_url=data.get("nod_callback_url", current.nod_callback_url).strip(),
+        nod_channel=data.get("nod_channel", current.nod_channel).strip(),
         approval_ttl=_int("approval_ttl", current.approval_ttl),
         rate_limit=_int("rate_limit", current.rate_limit),
     )

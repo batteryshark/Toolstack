@@ -47,12 +47,17 @@ class BrokerConfig(unittest.TestCase):
         self.assertIn("TOOLSTACK_BROKER_PORT", env)
         self.assertNotIn("TOOLSTACK_NOD_URL", env)
         self.assertNotIn("TOOLSTACK_NOD_TOKEN", env)
+        self.assertNotIn("TOOLSTACK_NOD_CHANNEL", env)  # empty -> broker's "default"
 
     def test_to_env_includes_nod_when_set(self):
-        env = BrokerRunConfig(nod_url="http://n", nod_token="t", nod_callback_url="http://cb").to_env()
+        env = BrokerRunConfig(
+            nod_url="http://n", nod_token="t", nod_callback_url="http://cb",
+            nod_channel="toolserver",
+        ).to_env()
         self.assertEqual(env["TOOLSTACK_NOD_URL"], "http://n")
         self.assertEqual(env["TOOLSTACK_NOD_TOKEN"], "t")
         self.assertEqual(env["TOOLSTACK_NOD_CALLBACK_URL"], "http://cb")
+        self.assertEqual(env["TOOLSTACK_NOD_CHANNEL"], "toolserver")
 
     def test_masked_hides_token(self):
         masked = BrokerRunConfig(nod_token="supersecret").masked()

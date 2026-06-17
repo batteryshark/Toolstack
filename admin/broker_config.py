@@ -31,6 +31,7 @@ class BrokerRunConfig:
     nod_url: str = ""
     nod_token: str = ""
     nod_callback_url: str = ""
+    nod_channel: str = ""  # nod channel id; empty -> the broker's "default"
     approval_ttl: int = 3600
     rate_limit: int = 120
     tool_dirs: list[str] = field(default_factory=list)  # extra per-tool dirs (any path)
@@ -52,6 +53,8 @@ class BrokerRunConfig:
             env["TOOLSTACK_NOD_TOKEN"] = self.nod_token
         if self.nod_callback_url:
             env["TOOLSTACK_NOD_CALLBACK_URL"] = self.nod_callback_url
+        if self.nod_channel:
+            env["TOOLSTACK_NOD_CHANNEL"] = self.nod_channel
         if self.tool_dirs:
             env["TOOLSTACK_TOOLS_DIRS"] = os.pathsep.join(self.tool_dirs)
         return env
