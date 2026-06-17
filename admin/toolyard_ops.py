@@ -1,7 +1,7 @@
 """Drive the toolyard from the admin panel — list tools and start/stop/restart them.
 
 This reuses toolyard's own modules (``discover`` / ``load`` / ``get_runner`` /
-``FileBackend``) and, crucially, its **state file**, so the panel and
+``get_backend``) and, crucially, its **state file**, so the panel and
 ``python -m toolyard.cli`` stay in agreement about what is running. Tools come from
 two places: the tools root (``<root>/*/toolyard.toml``) and an explicit list of tool
 directories (``tool_dirs``) that the panel's tool editor can add anywhere on the
@@ -20,7 +20,7 @@ from toolyard.cli import _load_state, _save_state
 from toolyard.config import discover
 from toolyard.config import load as load_tool
 from toolyard.runner import RunningTool, get_runner
-from toolyard.secrets import FileBackend
+from toolyard.secrets import get_backend
 
 
 def _all_defs(tools_root: str, tool_dirs=()) -> dict:
@@ -67,8 +67,11 @@ def start(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend: 
     state = _load_state()
     if tool_id in state:
         return  # already running
-    secrets = FileBackend(secrets_file).resolve(defs[tool_id])
-    running = get_runner(backend).start(defs[tool_id], secrets)
+    secrets = get_backend(secrets_file=secrets_file).resolve(defs[tool_id])
+    # secret_backend=None -> the runner's write proxy reads $TOOLSTACK_SECRET_BACKEND,
+    # the same selector get_backend() just used.
+    running = get_runner(backend).start(
+        defs[tool_id], secrets, secret_backend=None, secrets_file=secrets_file)
     state[tool_id] = asdict(running)
     _save_state(state)
 

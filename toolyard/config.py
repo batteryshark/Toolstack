@@ -17,6 +17,8 @@ class SecretSpec:
     name: str  # file the tool reads at $TOOLSTACK_SECRETS_DIR/<name>
     field: str  # field looked up in the secret backend
     writable: bool = False
+    vault: str | None = None  # backend project/vault (Infisical); backend may ignore
+    item: str | None = None  # backend path/item (Infisical); defaults to the tool id
 
 
 @dataclass(frozen=True)
@@ -36,7 +38,13 @@ def load(toml_path: str | Path) -> ToolDef:
         data = tomllib.load(f)
     entry = data.get("entrypoint", {})
     secrets = tuple(
-        SecretSpec(s["name"], s["field"], s.get("writable", False))
+        SecretSpec(
+            s["name"],
+            s["field"],
+            s.get("writable", False),
+            s.get("vault"),
+            s.get("item"),
+        )
         for s in data.get("secrets", [])
     )
     return ToolDef(

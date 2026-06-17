@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .config import discover
 from .runner import RunningTool, get_runner
-from .secrets import FileBackend
+from .secrets import get_backend
 
 
 def _state_path() -> Path:
@@ -43,7 +43,7 @@ def cmd_up(args) -> None:
     defs = {d.id: d for d in discover(root)}
     targets = [args.id] if args.id else list(defs)
     runner = get_runner(args.backend)
-    backend = FileBackend(secrets_file)
+    backend = get_backend(args.secret_backend, secrets_file=secrets_file)
     state = _load_state()
     for tool_id in targets:
         if tool_id not in defs:
@@ -51,7 +51,9 @@ def cmd_up(args) -> None:
         if tool_id in state:
             print(f"{tool_id}: already running")
             continue
-        running = runner.start(defs[tool_id], backend.resolve(defs[tool_id]))
+        running = runner.start(
+            defs[tool_id], backend.resolve(defs[tool_id]),
+            secret_backend=args.secret_backend, secrets_file=secrets_file)
         state[tool_id] = asdict(running)
         print(f"{tool_id}: started ({running.backend}) on 127.0.0.1:{running.port}")
     _save_state(state)
@@ -92,6 +94,9 @@ def main() -> None:
     up.add_argument("--secrets", help="dev secrets TOML (default: $TOOLSTACK_SECRETS_FILE or 'secrets.toml')")
     up.add_argument("--backend", choices=["process", "docker"],
                     default=os.environ.get("TOOLSTACK_RUNNER", "process"))
+    up.add_argument("--secret-backend", choices=["file", "infisical"],
+                    default=os.environ.get("TOOLSTACK_SECRET_BACKEND", "file"),
+                    help="secret backend (default: $TOOLSTACK_SECRET_BACKEND or 'file')")
     up.set_defaults(func=cmd_up)
 
     down = sub.add_parser("down", help="stop one or all tools")
