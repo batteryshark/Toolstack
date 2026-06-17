@@ -9,7 +9,8 @@ You reach tools only through the broker — never the tools directly. One CLI co
 every tool. Schemas are fetched on demand, so don't pre-load tool docs.
 
 Config (already set in the environment): `TOOLSTACK_URL`, and `TOOLSTACK_TOKEN` or
-`TOOLSTACK_TOKEN_FILE` (your caller's bearer token). Run `toolstack` = `python3 -m client.toolstack`.
+`TOOLSTACK_TOKEN_FILE` (your caller's bearer token). `toolstack` is the installed command
+(`pip install -e .`); equivalently `python3 -m client.toolstack`.
 
 ## Workflow
 
