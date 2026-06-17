@@ -61,10 +61,39 @@ def create_caller(store: Store, name: str, allow, review, operator: str) -> str:
     return token
 
 
-def revoke_caller(store: Store, name: str, operator: str) -> None:
-    require_caller(store, name)
+def _cancel_pending_approvals(store: Store, caller_id: int, surface, operator: str,
+                              reason: str) -> int:
+    """Cancel a caller's pending approvals: mark each terminal in the store — so the
+    parked request can never execute even if a human later taps approve — and
+    best-effort withdraw it from the approval surface. Returns the count cancelled.
+
+    ``surface`` may be None: ``brokerctl`` / the admin app revoke out of the broker
+    process and may hold no live surface, so the store marking IS the security
+    guarantee; the surface withdrawal is opportunistic card hygiene."""
+    rows = store.pending_approvals_for_caller(caller_id)
+    for row in rows:
+        store.update_approval(row["id"], status="cancelled")
+        store.update_request(row["request_id"], status="expired", arguments_json=None)
+        if surface is not None:
+            try:
+                surface.cancel(row["surface_ref"])
+            except Exception:
+                pass  # best effort; the store marking already disarmed the request
+        store.append_audit(time.time(), "approval", "cancelled", "cancelled",
+                           row["correlation_id"], row["request_id"],
+                           {"reason": reason, "operator": operator,
+                            "tool": row["tool"], "op": row["op"]})
+    return len(rows)
+
+
+def revoke_caller(store: Store, name: str, operator: str, surface=None) -> int:
+    """Revoke a caller and cancel its pending approvals. Returns the count cancelled."""
+    caller = require_caller(store, name)
     store.revoke_caller(name)
-    record_admin_event(store, operator, "caller_revoked", {"name": name})
+    cancelled = _cancel_pending_approvals(store, caller["id"], surface, operator, "caller_revoked")
+    record_admin_event(store, operator, "caller_revoked",
+                       {"name": name, "cancelled_approvals": cancelled})
+    return cancelled
 
 
 def set_policy(store: Store, name: str, allow, review, operator: str) -> None:
@@ -82,9 +111,22 @@ def issue_token(store: Store, name: str, operator: str) -> str:
     return token
 
 
-def revoke_token(store: Store, prefix: str, operator: str) -> int:
-    """Revoke tokens whose hash starts with ``prefix``; return how many were revoked."""
+def revoke_token(store: Store, prefix: str, operator: str, surface=None) -> int:
+    """Revoke tokens whose hash starts with ``prefix``; return how many were revoked.
+
+    Cancels pending approvals only for callers the revocation leaves with no active
+    token — i.e. it fully de-authenticates them. A caller with other live tokens can
+    still act, so its in-flight approvals stand."""
+    if not prefix.strip():
+        return 0  # an empty prefix would LIKE-match every token — refuse to nuke all
+    caller_ids = store.caller_ids_for_token_prefix(prefix)
     count = store.revoke_token_by_prefix(prefix)
     if count:
-        record_admin_event(store, operator, "token_revoked", {"prefix": prefix, "count": count})
+        cancelled = 0
+        for caller_id in caller_ids:
+            if store.active_token_count(caller_id) == 0:
+                cancelled += _cancel_pending_approvals(store, caller_id, surface,
+                                                       operator, "token_revoked")
+        record_admin_event(store, operator, "token_revoked",
+                           {"prefix": prefix, "count": count, "cancelled_approvals": cancelled})
     return count

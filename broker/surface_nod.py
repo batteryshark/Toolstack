@@ -46,6 +46,7 @@ re-checking it against nod's `nod-proto` crate — the request body is strict.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 
@@ -59,6 +60,18 @@ class NodSurface:
         self._token = issuer_token
         self._channel = channel
         self._timeout = timeout
+
+    @classmethod
+    def from_env(cls) -> "NodSurface | None":
+        """Build from TOOLSTACK_NOD_URL / _TOKEN / _CHANNEL, or None if URL+token
+        aren't both set. Lets the broker, brokerctl, and the admin app construct the
+        same surface client — the latter two revoke out of the broker process and
+        build their own to withdraw cancelled approvals from nod."""
+        url = os.environ.get("TOOLSTACK_NOD_URL")
+        token = os.environ.get("TOOLSTACK_NOD_TOKEN")
+        if not (url and token):
+            return None
+        return cls(url, token, channel=os.environ.get("TOOLSTACK_NOD_CHANNEL", "default"))
 
     def _call(self, method: str, path: str, body: dict | None = None) -> dict:
         data = json.dumps(body).encode("utf-8") if body is not None else None

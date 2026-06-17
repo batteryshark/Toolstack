@@ -221,6 +221,32 @@ class Store:
             "SELECT * FROM approvals WHERE request_id = ?", (request_id,)
         ).fetchone()
 
+    def pending_approvals_for_caller(self, caller_id: int) -> list[sqlite3.Row]:
+        """Pending approvals (with their request's tool/op/correlation) owned by a
+        caller — the worklist for cancelling on caller/last-token revocation."""
+        return self._conn.execute(
+            """
+            SELECT a.id AS id, a.surface_ref AS surface_ref, a.request_id AS request_id,
+                   r.tool AS tool, r.op AS op, r.correlation_id AS correlation_id
+            FROM approvals a JOIN requests r ON r.id = a.request_id
+            WHERE r.caller_id = ? AND a.status = 'pending'
+            """,
+            (caller_id,),
+        ).fetchall()
+
+    def expired_pending_approvals(self, now: float) -> list[sqlite3.Row]:
+        """Pending approvals past their broker deadline — the lazy sweep's worklist.
+        (Same row shape as :meth:`pending_approvals_for_caller`.)"""
+        return self._conn.execute(
+            """
+            SELECT a.id AS id, a.surface_ref AS surface_ref, a.request_id AS request_id,
+                   r.tool AS tool, r.op AS op, r.correlation_id AS correlation_id
+            FROM approvals a JOIN requests r ON r.id = a.request_id
+            WHERE a.status = 'pending' AND a.expires_at <= ?
+            """,
+            (now,),
+        ).fetchall()
+
     def update_approval(self, approval_id: int, **fields) -> None:
         allowed = ("status", "approver", "note", "decided_at")
         cols = [c for c in fields if c in allowed]
@@ -313,6 +339,22 @@ class Store:
         )
         self._conn.commit()
         return cur.rowcount
+
+    def caller_ids_for_token_prefix(self, prefix: str) -> list[int]:
+        """Distinct caller ids owning any token matching ``prefix`` (revoked or not).
+        Used after a token revocation to find which callers may now be tokenless."""
+        rows = self._conn.execute(
+            "SELECT DISTINCT caller_id FROM tokens WHERE token_hash LIKE ?", (prefix + "%",)
+        ).fetchall()
+        return [r["caller_id"] for r in rows]
+
+    def active_token_count(self, caller_id: int) -> int:
+        """How many non-revoked tokens a caller still has."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM tokens WHERE caller_id = ? AND revoked_at IS NULL",
+            (caller_id,),
+        ).fetchone()
+        return int(row["n"])
 
     def list_requests(self, status: str | None = None, limit: int = 50) -> list[sqlite3.Row]:
         if status:

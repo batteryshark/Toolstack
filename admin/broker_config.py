@@ -56,6 +56,15 @@ class BrokerRunConfig:
             env["TOOLSTACK_TOOLS_DIRS"] = os.pathsep.join(self.tool_dirs)
         return env
 
+    def build_surface(self):
+        """A `NodSurface` from this config, or None if nod isn't configured. The admin
+        app revokes out of the broker process, so it builds its own surface client to
+        withdraw cancelled approvals from nod."""
+        if not (self.nod_url and self.nod_token):
+            return None
+        from broker.surface_nod import NodSurface
+        return NodSurface(self.nod_url, self.nod_token, channel=self.nod_channel or "default")
+
     def masked(self) -> dict:
         """A dict safe to render in the browser: the nod token is never echoed —
         only its presence ('set' / 'not set')."""
