@@ -32,10 +32,10 @@ class FakeRuntime:
 class FakeSurface:
     """In-memory approval surface; the decision is settable via set()."""
 
-    def __init__(self, outcome=approval.PENDING, approver=None, note=None):
+    def __init__(self, outcome=approval.PENDING, approver=None, note=None, decided_at=None):
         self.opened = []
         self.cancelled = []
-        self._state = SurfaceState(outcome, approver, note)
+        self._state = SurfaceState(outcome, approver, note, decided_at)
 
     def open(self, card):
         self.opened.append(card)
@@ -47,8 +47,8 @@ class FakeSurface:
     def cancel(self, ref):
         self.cancelled.append(ref)
 
-    def set(self, outcome, approver=None, note=None):
-        self._state = SurfaceState(outcome, approver, note)
+    def set(self, outcome, approver=None, note=None, decided_at=None):
+        self._state = SurfaceState(outcome, approver, note, decided_at)
 
 
 def make_registry(tools: dict | None = None, port: int = 4600) -> Registry:

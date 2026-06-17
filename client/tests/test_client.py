@@ -94,6 +94,17 @@ class ClientIntegration(unittest.TestCase):
         self.assertIn('"status": "ok"', out)
         self.assertIn("multi-line", out)
 
+    def test_inline_args_beat_stdin(self):
+        # precedence: an explicit inline arg wins over ambient (non-tty) stdin, so a
+        # redirected/empty stdin can't silently override it (matches the docstring).
+        original_stdin = toolstack.sys.stdin
+        toolstack.sys.stdin = io.StringIO(json.dumps({"m": "from-stdin"}))
+        self.addCleanup(setattr, toolstack.sys, "stdin", original_stdin)
+        out = self._out(toolstack.cmd_call, spec="echo.say", args='{"m": "from-inline"}',
+                        args_file=None, reason=None, wait=False, timeout=5)
+        self.assertIn("from-inline", out)
+        self.assertNotIn("from-stdin", out)
+
     def test_call_via_args_file(self):
         fd, path = tempfile.mkstemp(suffix=".json")
         os.close(fd)

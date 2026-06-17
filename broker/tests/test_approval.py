@@ -74,6 +74,18 @@ class ApprovalFlow(BrokerTestCase):
         self.assertEqual(resolved.approver, "alice")
         self.assertEqual(resolved.note, "go ahead")
 
+    def test_decided_at_surfaced_and_persisted(self):
+        # the surface's decision time rides to the caller, and is persisted so a
+        # re-poll of the now-resolved request surfaces the same value.
+        surface = FakeSurface(approval.APPROVED, approver="alice",
+                              decided_at="2026-06-17T12:00:00.000Z")
+        ctx, caller = self._setup(surface)
+        out = lifecycle.submit(ctx, caller, "echo", "shout", {}, CID)
+        resolved = lifecycle.resolve_request(ctx, out.request_id)
+        self.assertEqual(resolved.decided_at, "2026-06-17T12:00:00.000Z")
+        repoll = lifecycle.resolve_request(ctx, out.request_id)  # request now resolved
+        self.assertEqual(repoll.decided_at, "2026-06-17T12:00:00.000Z")  # from the store
+
     def test_agent_reason_rides_to_the_card(self):
         surface = FakeSurface(approval.PENDING)
         ctx, caller = self._setup(surface)

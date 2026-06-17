@@ -40,6 +40,7 @@ class Outcome:
     error: str | None = None
     approver: str | None = None  # who decided (from the approval surface)
     note: str | None = None  # the approver's note, surfaced back to the agent
+    decided_at: str | None = None  # when the human answered, per the surface (ISO 8601)
 
 
 def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Outcome:
@@ -195,24 +196,27 @@ def resolve_request(ctx, request_id, now=None) -> Outcome:
 
     if state.outcome == approval.APPROVED:
         ctx.store.update_approval(approval_row["id"], status="approved",
-                                  approver=state.approver, note=state.note, decided_at=now)
+                                  approver=state.approver, note=state.note,
+                                  decided_at=state.decided_at)
         ctx.audit.record("approval", "approved", "ok", correlation_id, request_id=request_id,
                          details={"tool": req["tool"], "op": req["op"], "approver": state.approver})
         args = json.loads(req["arguments_json"] or "{}")
         caller_name = ctx.store.caller_name(req["caller_id"])
         out = execute_request(ctx, request_id, req["tool"], req["op"], args,
                               correlation_id, caller_name)
-        return replace(out, approver=state.approver, note=state.note)
+        return replace(out, approver=state.approver, note=state.note,
+                       decided_at=state.decided_at)
 
     if state.outcome == approval.REJECTED:
         ctx.store.update_approval(approval_row["id"], status="rejected",
-                                  approver=state.approver, note=state.note, decided_at=now)
+                                  approver=state.approver, note=state.note,
+                                  decided_at=state.decided_at)
         ctx.store.update_request(request_id, status="denied", error="approval_rejected",
                                  arguments_json=None)
         ctx.audit.record("approval", "rejected", DENIED, correlation_id, request_id=request_id,
                          details={"tool": req["tool"], "op": req["op"], "approver": state.approver})
         return Outcome(DENIED, request_id=request_id, reason="approval_rejected",
-                       approver=state.approver, note=state.note)
+                       approver=state.approver, note=state.note, decided_at=state.decided_at)
 
     if state.outcome in (approval.EXPIRED, approval.CANCELLED):
         ctx.store.update_approval(approval_row["id"], status=state.outcome)
@@ -234,6 +238,7 @@ def _outcome_from_request(req, approval_row=None) -> Outcome:
     reason = "approval_rejected" if req["error"] == "approval_rejected" else None
     approver = approval_row["approver"] if approval_row else None
     note = approval_row["note"] if approval_row else None
+    decided_at = approval_row["decided_at"] if approval_row else None
     return Outcome(mapping.get(status, PENDING), request_id=req["id"],
                    result=result, error=req["error"], reason=reason,
-                   approver=approver, note=note)
+                   approver=approver, note=note, decided_at=decided_at)
