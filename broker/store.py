@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS approvals (
     expires_at  REAL NOT NULL,
     approver    TEXT,
     note        TEXT,
-    decided_at  REAL,
+    decided_at  TEXT,               -- ISO 8601 from the surface (when the human answered)
     created_at  REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS audit_events (

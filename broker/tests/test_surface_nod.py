@@ -163,6 +163,7 @@ class NodSurfaceHTTP(unittest.TestCase):
         state = self.surface.poll("nod-123")
         self.assertEqual(state.outcome, approval.APPROVED)
         self.assertEqual(state.approver, "owner")
+        self.assertEqual(state.decided_at, "2026-06-17T00:00:00.000Z")  # nod resolved_at
 
     def test_poll_approved_with_text(self):
         _FakeNod.decision = _resolved_view("approve_with_text", text="lgtm")

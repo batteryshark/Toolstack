@@ -140,8 +140,9 @@ def _to_state(data: dict) -> SurfaceState:
     kind = (decision.get("option_kind") or "").lower()
     approver = decision.get("actor_user_id")
     note = decision.get("text")
+    decided_at = decision.get("resolved_at")  # nod's decision time (ISO 8601) -> decided_at
     if kind.startswith("approve"):
-        return SurfaceState(approval.APPROVED, approver, note)
+        return SurfaceState(approval.APPROVED, approver, note, decided_at)
     if kind.startswith("reject"):
-        return SurfaceState(approval.REJECTED, approver, note)
+        return SurfaceState(approval.REJECTED, approver, note, decided_at)
     return SurfaceState(approval.PENDING)  # dismiss / other -> not an approval

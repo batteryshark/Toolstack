@@ -189,9 +189,15 @@ An adapter is only safe if all of these hold:
 
 **nod decision → SurfaceDecision:** `option_kind` `approve*` → `approved`,
 `reject*` → `rejected`, `dismiss` → treated as no-approval; `text` → `note`;
-`actor_user_id` → `approver_ref`. The adapter parses this from the decision-read
-response only. (nod can also POST the same `decision` object to a `callback_url`,
-but the broker has no callback route, so that payload is unused.)
+`actor_user_id` → `approver_ref`; `resolved_at` → `decided_at`. The adapter parses
+this from the decision-read response only. (nod can also POST the same `decision`
+object to a `callback_url`, but the broker has no callback route, so that payload
+is unused.)
+
+`deduped` (in the create response) is **informational** — the broker does not act on
+it. `open()` is idempotent because the OperationCard's `request_id` is sent as nod's
+`dedupe_key`, so a retried `open` returns the same request instead of a duplicate;
+the broker needs no extra handling for the deduped case.
 
 nod request model authored in detail by nod's own skill:
 [agent-skills/nod-notification-author](https://github.com/batteryshark/nod/tree/main/agent-skills/nod-notification-author).

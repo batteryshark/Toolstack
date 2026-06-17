@@ -34,6 +34,7 @@ class SurfaceState:
     outcome: str  # PENDING / APPROVED / REJECTED / EXPIRED / CANCELLED
     approver: str | None = None
     note: str | None = None
+    decided_at: str | None = None  # when the human answered, per the surface (ISO 8601)
 
 
 def build_card(request_id: int, caller: str, tool: str, op: str, risk: str,

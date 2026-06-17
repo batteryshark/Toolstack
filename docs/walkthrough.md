@@ -233,8 +233,8 @@ TOOLSTACK_TOOLS_ROOT=tools python3 -m broker.server     # listens on 127.0.0.1:8
 # 4. call it (another shell)
 TOKEN=<token from step 2>
 curl -s -X POST http://127.0.0.1:8765/v1/actions/echo.say \
-     -H "Authorization: Bearer $TOKEN" -d '{"arguments": {"msg": "hi"}}'
-# -> {"status":"ok","request_id":1,"result":{"echoed":{"msg":"hi"}}}
+     -H "Authorization: Bearer $TOKEN" -d '{"arguments": {"m": "hi"}}'
+# -> {"status":"ok","request_id":1,"result":{"echoed":{"m":"hi"}}}
 
 python3 -m broker.brokerctl audit --request-id 1     # the full trail
 python3 -m toolyard.cli down echo

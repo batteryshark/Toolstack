@@ -130,10 +130,12 @@ def cmd_describe(args) -> None:
 
 
 def _load_arguments(args) -> dict:
-    """Resolve the JSON arguments object, preferring shells-safe inputs:
-    --args-file, then stdin (e.g. a quoted heredoc), then an inline positional.
-    Reading the body from stdin/a file avoids shell-quoting breakage on quotes,
-    newlines, $, backticks, etc."""
+    """Resolve the JSON arguments object from the first source present, in order:
+    --args-file, then an inline positional, then piped stdin (e.g. a heredoc). An
+    explicit inline arg deliberately beats ambient stdin, so a redirected or empty
+    stdin can't silently override it. Prefer --args-file or a quoted heredoc for
+    values with quotes, newlines, `$`, or backticks — they avoid shell-quoting
+    breakage that a hand-built inline JSON string is prone to."""
     if args.args_file:
         try:
             with open(os.path.expanduser(args.args_file), encoding="utf-8") as f:

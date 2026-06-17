@@ -181,4 +181,6 @@ def _outcome_body(outcome) -> dict:
         body["approver"] = outcome.approver
     if outcome.note is not None:
         body["note"] = outcome.note
+    if outcome.decided_at is not None:
+        body["decided_at"] = outcome.decided_at
     return body
