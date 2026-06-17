@@ -147,12 +147,13 @@ class NodSurfaceHTTP(unittest.TestCase):
         for opt in body["options"]:
             self.assertIn(opt["kind"], NOD_OPTION_KINDS)
 
-    def test_open_includes_callback_url_when_configured(self):
-        surface = NodSurface(f"http://127.0.0.1:{self.port}", "tok",
-                             callback_url="https://broker/cb")
-        surface.open(CARD)
-        self.assertEqual(_FakeNod.created["body"]["callback_url"], "https://broker/cb")
-        self.assertIsNone(_FakeNod.last_reject)
+    def test_open_never_sends_callback_url(self):
+        # Resolution is poll-only by design: nod posts callbacks unauthenticated,
+        # so a broker receiver would let anyone forge an approval. The adapter must
+        # never register a callback_url. (nod still *accepts* the field — this is a
+        # deliberate choice on our side, not a contract limit.)
+        self.surface.open(CARD)
+        self.assertNotIn("callback_url", _FakeNod.created["body"])
 
     def test_poll_pending(self):
         self.assertEqual(self.surface.poll("nod-123").outcome, approval.PENDING)

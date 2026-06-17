@@ -43,8 +43,9 @@ GET  /v1/requests/<id>           poll a request (owner only) -> status + result 
 - Audit: `gateway.request_received`, `gateway.response_returned`.
 - Security: arguments and `reason` are redacted before audit. The broker never inspects or materializes secrets.
 - MCP is available as a **client-side adapter** (`client/mcp_server.py`) over these
-  REST endpoints. A broker-native `POST /mcp/<tool>` route and the approval `deliver`
-  callback fast-path remain deferred.
+  REST endpoints. A broker-native `POST /mcp/<tool>` route remains deferred. There is
+  **no** approval callback route — resolution is poll-only by design (nod's callbacks
+  are unauthenticated, so a receiver would be forgeable).
 
 ### 2. Broker → Tool container (forwarding)
 
@@ -73,7 +74,7 @@ credential is ever mounted in the container.
 ### 5. Broker ↔ nod (approval)
 
 See [approval-surface-adapter.md](approval-surface-adapter.md). The broker owns
-approval truth; nod is the messenger (poll is truth, callback is a hint, the
+approval truth; nod is the messenger (poll-only — there is no callback route; the
 broker's timeout wins).
 
 ## Secrets access rule (collapsed)

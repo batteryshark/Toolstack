@@ -40,8 +40,8 @@ the earlier decomposition survive as **module seams inside the broker**.
   is never on the secret path.
 - The registry is secret-unaware: the broker reads tool/op/risk/port from
   `toolyard.toml` and ignores the `[[secrets]]` block.
-- The broker owns approval truth; nod is a messenger (poll is truth, callback is a
-  hint, the broker's timeout wins).
+- The broker owns approval truth; nod is a messenger (poll-only — there is no
+  callback route; the broker's timeout wins).
 - The broker forwards approved calls directly to the tool container; toolyard is not
   in the request path.
 - Defer until a component needs it: profiles, mTLS / component credentials between
@@ -72,9 +72,8 @@ end-to-end and a full author → register → run → call live walkthrough.
 
 Harden for real deployment:
 
-- The deferred items — approval `deliver` callback (latency), container **tmpfs**
-  secret injection (no host disk), temporary grants/JIT elevation, and a background
-  approval-expiry sweeper.
+- The deferred items — container **tmpfs** secret injection (no host disk),
+  temporary grants/JIT elevation, and a background approval-expiry sweeper.
 - Wire a real nod + secret backend (Infisical/SOPS) + tailnet per
   [broker/README.md](broker/README.md) and [toolyard/README.md](toolyard/README.md).
 - Component-credentials/mTLS only if modules ever split across hosts.

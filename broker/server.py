@@ -107,7 +107,6 @@ def build_server(
             surface = NodSurface(
                 nod_url, nod_token,
                 channel=os.environ.get("TOOLSTACK_NOD_CHANNEL", "default"),
-                callback_url=os.environ.get("TOOLSTACK_NOD_CALLBACK_URL"),
             )
     if approval_ttl is None:
         approval_ttl = float(os.environ.get("TOOLSTACK_APPROVAL_TTL", "3600"))

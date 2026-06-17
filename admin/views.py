@@ -336,7 +336,6 @@ def config_view(*, user, csrf, config, error=None) -> str:
         f"{field('nod_url', 'nod URL', config.nod_url)}"
         f"<label class='field'>nod token (currently {esc(nod_set)})"
         f"<input name='nod_token' type='password' placeholder='(unchanged — leave blank to keep)'></label>"
-        f"{field('nod_callback_url', 'nod callback URL', config.nod_callback_url)}"
         f"{field('nod_channel', 'nod channel', config.nod_channel, placeholder='default')}"
         f"{field('approval_ttl', 'Approval TTL (seconds)', config.approval_ttl)}"
         f"{field('rate_limit', 'Rate limit (per caller/min, 0=off)', config.rate_limit)}"

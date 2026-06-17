@@ -289,9 +289,10 @@ These are judgment calls made along the way — worth a deliberate yes/no:
    from the original docs* — confirm you're happy with TOML.
 4. **Caller model, no profiles.** Identity is caller + token (the old design's
    profiles were dropped). Confirm a single policy bundle per caller is enough.
-5. **nod via a pluggable adapter; poll is truth, callback deferred.** Resolution is
-   poll-based (`GET /v1/requests/<id>`); the `deliver` callback is a latency
-   optimization left for later. Confirm poll-only is acceptable for now.
+5. **nod via a pluggable adapter; poll-only by design.** Resolution is poll-based
+   (`GET /v1/requests/<id>`). A push/callback fast-path is deliberately not built
+   and not planned: nod posts callbacks unauthenticated, so a broker receiver would
+   let anyone forge an approval. Confirm poll-only is the resolution model you want.
 6. **Process + Docker runners; dev file secret backend.** Process backend is the
    zero-infra default; Docker is the production path; SOPS/Infisical are the
    production secret backends (not yet wired).
@@ -316,8 +317,10 @@ before a real deployment:
 - **Secrets touch host disk transiently.** The process runner writes secrets to a
   `0700` temp dir; the docker runner bind-mounts a host dir — both removed on stop.
   Production hardening: inject into a container **tmpfs** at start (no host disk).
-- **Approval `deliver` callback** not built (poll-only). Fine for correctness; adds
-  latency without it.
+- **Approval `deliver` callback** deliberately not built and not planned — a design
+  decision, not a gap. `poll` is the sole source of approval truth; a receiver of
+  nod's unauthenticated callback would be forgeable (anyone reaching it could forge
+  an "approved"). Poll-only closes that hole.
 - **No background expiry sweeper.** A pending request expires lazily (on the next
   poll). An unattended pending request stays `pending_approval` in the DB until polled.
 - **Single-threaded broker serving.** The broker's `HTTPServer` serves one request at

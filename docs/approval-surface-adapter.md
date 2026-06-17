@@ -17,8 +17,8 @@ needs human review, the broker:
 
 1. builds a redacted **OperationCard**,
 2. hands it to the surface (`open`),
-3. waits for a normalized **SurfaceDecision** (`poll`, with `deliver` as an
-   optional fast-path), and
+3. waits for a normalized **SurfaceDecision** (via `poll` — the authoritative,
+   poll-only read), and
 4. executes or refuses based on the broker's own rules.
 
 The surface decides *nothing*. It collects a human's answer and reports it back.
@@ -32,7 +32,8 @@ compromised or buggy surface from being able to authorize an action.
 
 ## The interface
 
-Implement three operations. A fourth is an optional latency optimization.
+Implement three operations. Resolution is **poll-only** — there is no inbound
+callback (see `deliver` below for why).
 
 ### `open(card: OperationCard) -> SurfaceRef`
 
@@ -63,12 +64,15 @@ Withdraw a still-pending prompt. The broker calls this when its own timeout fire
 or the caller's token is revoked. Cancelling an already-resolved request is a
 no-op, not an error.
 
-### `deliver(decision)` — optional fast-path (surface → broker)
+### `deliver(decision)` — rejected (poll-only)
 
-The surface *may* push a decision to a broker callback endpoint so the broker
-doesn't wait for the next poll. **The broker treats this only as a hint** and
-confirms via `poll` before acting. An adapter that can't push is still fully
-correct — the broker will poll.
+A push/callback fast-path is **deliberately not implemented and not planned.**
+There is no broker callback route. The reason is security, not effort: nod posts
+its callbacks **unauthenticated** (a plain `POST callback_url` with the decision
+JSON — no signature, no shared secret). A broker endpoint that trusted such a
+callback would let anyone who can reach it forge an "approved" decision for a
+pending request and bypass the human approval gate. So resolution is poll-only,
+and `poll` is the sole source of approval truth.
 
 ---
 
@@ -108,8 +112,7 @@ treat them as optional/forward-looking. The broker owns the approval timeout, so
 
 ### SurfaceDecision (surface → broker)
 
-The normalized result the broker consumes (returned by `poll`, or pushed by
-`deliver`):
+The normalized result the broker consumes (returned by `poll`):
 
 | Field | Meaning |
 |---|---|
@@ -131,9 +134,7 @@ policy: review-required
         ▼
 broker builds OperationCard ──open──▶ surface shows a human
         │                                   │
-        │◀───────── deliver (hint) ─────────┤  (optional)
-        │                                   │
-        ├──────────── poll ────────────────▶│  (durable truth)
+        ├──────────── poll ────────────────▶│  (durable truth, poll-only)
         │◀──────── SurfaceState ────────────┤
         ▼
   approved?  ── yes ──▶ broker executes (forwards to toolyard)
@@ -149,11 +150,12 @@ An adapter is only safe if all of these hold:
 
 1. **Outbound credential stays on the broker host.** The surface's issuer/API
    token lives with the broker, never on the agent.
-2. **Inbound `deliver` is authenticated.** A forged callback must not be able to
-   approve anything — require a shared secret, HMAC, mTLS, or tailnet-only
-   reachability on the callback route.
-3. **`poll` is truth; `deliver` is a hint.** Never execute on a pushed decision
-   without confirming via `poll`.
+2. **No inbound callback route exists.** Resolution is poll-only, so there is no
+   forged-callback surface to defend. A push fast-path is deliberately not built:
+   nod's callbacks are unauthenticated, so a receiver would let anyone forge an
+   approval.
+3. **`poll` is the sole source of truth.** Approval state comes only from `poll`;
+   the broker never acts on a pushed decision.
 4. **The broker's timer wins.** The broker fails closed on its own timeout and
    ignores any decision that arrives after expiry, even a valid one.
 5. **`approver_ref` is metadata.** Identity from the surface is recorded for
@@ -170,7 +172,7 @@ An adapter is only safe if all of these hold:
 | `open(card)` | `POST /api/v1/requests` (strict; returns `request_id`, `deduped`) |
 | `poll(ref)` | `GET /api/v1/requests/{request_id}/decision` |
 | `cancel(ref)` | nod issuer cancel |
-| `deliver(decision)` | nod `callback_url` → broker `POST /v1/approvals/callback` |
+| `deliver(decision)` | *not implemented* — no broker callback route (poll-only by design) |
 
 **OperationCard → nod `CreateDecisionRequest`:**
 
@@ -183,13 +185,13 @@ An adapter is only safe if all of these hold:
 | `allowed_actions` | `options[]` — `approve`, `approve_with_text`, `reject_with_text` (mark destructive) |
 | *(timeout)* | broker-internal — the broker enforces the deadline; `expires_at` is not currently sent to nod |
 | `idempotency_key` | `dedupe_key` |
-| (callback route) | `callback_url` |
 | (push safety) | `notification.redact: true` |
 
 **nod decision → SurfaceDecision:** `option_kind` `approve*` → `approved`,
 `reject*` → `rejected`, `dismiss` → treated as no-approval; `text` → `note`;
-`actor_user_id` → `approver_ref`. The nod callback payload and the decision-read
-response carry the same `decision` object, so the adapter parses one shape.
+`actor_user_id` → `approver_ref`. The adapter parses this from the decision-read
+response only. (nod can also POST the same `decision` object to a `callback_url`,
+but the broker has no callback route, so that payload is unused.)
 
 nod request model authored in detail by nod's own skill:
 [agent-skills/nod-notification-author](https://github.com/batteryshark/nod/tree/main/agent-skills/nod-notification-author).
@@ -202,8 +204,8 @@ nod request model authored in detail by nod's own skill:
 - [ ] `poll` returns durable state and keeps returning it after resolution.
 - [ ] `cancel` is a no-op on already-resolved requests.
 - [ ] No raw arguments or secrets ever appear in an OperationCard.
-- [ ] Inbound `deliver` is authenticated; forged callbacks are rejected.
-- [ ] The broker confirms every approval via `poll` before executing.
+- [x] No inbound callback route exists (poll-only); there is no forged-callback surface.
+- [ ] The broker reads every approval via `poll` before executing.
 - [ ] Decisions after broker timeout are ignored.
 - [ ] Native verbs map cleanly to `outcome`; ambiguous = not approved.
 
@@ -216,8 +218,8 @@ class ApprovalSurface:
     def open(self, card: OperationCard) -> SurfaceRef: ...
     def poll(self, ref: SurfaceRef) -> SurfaceState: ...
     def cancel(self, ref: SurfaceRef) -> None: ...
-    # optional: a broker callback route normalizes a pushed decision,
-    # authenticates it, then defers to poll() for the authoritative state.
+    # No deliver()/callback route: resolution is poll-only by design
+    # (nod's callbacks are unauthenticated, so a receiver would be forgeable).
 ```
 
 Implement those three methods against your surface, satisfy the checklist, and the

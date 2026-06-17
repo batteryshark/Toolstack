@@ -2,7 +2,7 @@
 
 This captures every environment variable the broker reads at startup (see
 ``broker/server.py``: ``TOOLSTACK_BROKER_PORT`` / ``_DB`` / ``_TOOLS_ROOT`` /
-``_NOD_URL`` / ``_NOD_TOKEN`` / ``_NOD_CALLBACK_URL`` / ``_APPROVAL_TTL`` /
+``_NOD_URL`` / ``_NOD_TOKEN`` / ``_NOD_CHANNEL`` / ``_APPROVAL_TTL`` /
 ``_RATE_LIMIT``). The admin app persists it to a TOML file, turns it into the
 broker child's environment via :meth:`to_env`, and points its own ``Store`` at
 the same ``db_path`` — so there is one source of truth for where broker data lives.
@@ -30,7 +30,6 @@ class BrokerRunConfig:
     tools_root: str = "tools"
     nod_url: str = ""
     nod_token: str = ""
-    nod_callback_url: str = ""
     nod_channel: str = ""  # nod channel id; empty -> the broker's "default"
     approval_ttl: int = 3600
     rate_limit: int = 120
@@ -51,8 +50,6 @@ class BrokerRunConfig:
             env["TOOLSTACK_NOD_URL"] = self.nod_url
         if self.nod_token:
             env["TOOLSTACK_NOD_TOKEN"] = self.nod_token
-        if self.nod_callback_url:
-            env["TOOLSTACK_NOD_CALLBACK_URL"] = self.nod_callback_url
         if self.nod_channel:
             env["TOOLSTACK_NOD_CHANNEL"] = self.nod_channel
         if self.tool_dirs:
