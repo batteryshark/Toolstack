@@ -57,6 +57,19 @@ public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
     public let port: Int?
     public let running: Bool
     public let ops: [OpInfo]
+
+    enum CodingKeys: String, CodingKey { case id, type, port, running, ops }
+
+    // Tolerate an admin that doesn't report `ops` / `running` (e.g. an older version, or a
+    // different deployment) rather than failing the whole response — default them.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "rest"
+        port = try c.decodeIfPresent(Int.self, forKey: .port)
+        running = try c.decodeIfPresent(Bool.self, forKey: .running) ?? false
+        ops = try c.decodeIfPresent([OpInfo].self, forKey: .ops) ?? []
+    }
 }
 
 public struct ToolsResponse: Codable, Sendable {
