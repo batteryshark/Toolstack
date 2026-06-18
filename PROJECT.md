@@ -64,10 +64,11 @@ supervises the broker process, manages callers/tokens/policies, **authors and ed
 tools** (writes their `toolyard.toml` from a form into a directory you name, which the
 broker then discovers), and shows requests + audit. It shares the broker's `Store` and
 `broker.operations`, so the panel and `brokerctl` write **one** audit trail; it binds
-loopback only and keeps secrets off the browser. 310 tests pass across [broker/](broker/)
-(161), [toolyard/](toolyard/) (55), [client/](client/) (23), [admin/](admin/) (62), and
+loopback only and keeps secrets off the browser. 331 tests pass across [broker/](broker/)
+(161), [toolyard/](toolyard/) (55), [client/](client/) (23), [admin/](admin/) (83), and
 [desktop/](desktop/) (9), plus opt-in docker + live-nod/Infisical + vault (`[vault]` extra)
-tests and a full author → register → run → call live walkthrough.
+tests and a full author → register → run → call live walkthrough. The admin also serves a
+JSON operator API (`/api/*`) for native clients.
 
 ## Suggested next step
 

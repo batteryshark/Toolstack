@@ -11,7 +11,7 @@ decide what's next. Companion docs: [PROJECT.md](../PROJECT.md) (nerve center),
 The planned build order (Phases 0–4) is **complete and tested**, the agent-side
 client (the `toolstack` CLI + MCP adapter + skill) is built on top, and an operator
 **admin web app** now runs and manages the whole stack (with a native desktop shell on
-top) — 310 tests pass (161 broker + 55 toolyard + 23 client + 62 admin + 9 desktop),
+top) — 331 tests pass (161 broker + 55 toolyard + 23 client + 83 admin + 9 desktop),
 incl. opt-in Docker runner tests
 and an opt-in live-nod test, with live walkthroughs end to end. The full vertical slice runs:
 
@@ -262,7 +262,7 @@ python3 -m unittest discover -s broker/tests -t .        # 161 tests (1 live-nod
 python3 -m unittest discover -s toolyard/tests -t .       # 55 tests (14 vault + 3 docker + 1 live-Infisical skipped)
 python3 -m unittest discover -s client/tests -t .         # 23 tests (CLI + MCP, vs a real broker)
 python3 -m unittest discover -s desktop/tests -t .        # 9 tests (desktop shell lifecycle)
-admin/.venv/bin/python -m unittest discover -s admin/tests -t .   # 62 tests (needs admin/.venv)
+admin/.venv/bin/python -m unittest discover -s admin/tests -t .   # 83 tests (needs admin/.venv; incl. the JSON /api)
 TOOLSTACK_TEST_DOCKER=1 python3 -m unittest toolyard.tests.test_runner   # + 3 real-container tests
 pip install -e '.[vault]' && python3 -m unittest discover -s toolyard/tests -t .  # + 14 vault tests
 

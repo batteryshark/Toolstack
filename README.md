@@ -54,7 +54,7 @@ For a real (systemd) install — the admin panel supervising the broker, with an
 ## Status
 
 The planned build order (Phases 0–4) is **complete and tested**, with an operator
-**admin web app** + a desktop shell on top — 310 tests across [broker/](broker/),
+**admin web app** + a desktop shell on top — 331 tests across [broker/](broker/),
 [toolyard/](toolyard/), [client/](client/), [admin/](admin/), and [desktop/](desktop/). The
 full vertical slice runs end to end:
 agent → broker (auth, policy, request lifecycle) → human approval in nod → tool
