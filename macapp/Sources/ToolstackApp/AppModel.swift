@@ -84,10 +84,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Load one caller's policy for the editor (returns it rather than storing globally).
-    func loadPolicy(for caller: String) async -> Policy? {
+    /// Load one caller's policy + enabled tools for the editors (returns it rather than storing).
+    func loadPolicy(for caller: String) async -> PolicyResponse? {
         do {
-            return try await client.policy(for: caller).policy
+            return try await client.policy(for: caller)
         } catch let apiError as ApiError {
             if case .unauthorized = apiError { authenticated = false }
             error = apiError.message
@@ -95,6 +95,13 @@ final class AppModel: ObservableObject {
         } catch let other {
             error = other.localizedDescription
             return nil
+        }
+    }
+
+    func setEnabledTools(caller: String, enabled: [String]) async {
+        await run {
+            _ = try await self.client.setEnabledTools(caller: caller, enabled: enabled)
+            await self.refreshCallers()
         }
     }
 

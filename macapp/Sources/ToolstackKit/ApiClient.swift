@@ -106,6 +106,14 @@ public actor ApiClient {
         try await send("PUT", "/api/callers/\(caller)/policy", body: ["allow": allow, "review": review])
     }
 
+    /// Set which tools a caller is enabled for (gates the policy editor). Returns the new list.
+    @discardableResult
+    public func setEnabledTools(caller: String, enabled: [String]) async throws -> [String] {
+        let result: EnabledTools = try await send("PUT", "/api/callers/\(caller)/tools",
+                                                  body: ["enabled": enabled])
+        return result.enabled
+    }
+
     // --- transport ------------------------------------------------------------
 
     private func send<T: Decodable>(_ method: String, _ path: String,

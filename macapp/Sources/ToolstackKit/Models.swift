@@ -101,6 +101,11 @@ public enum Effect: String, Sendable, CaseIterable, Identifiable {
 public struct PolicyResponse: Codable, Sendable {
     public let name: String
     public let policy: Policy
+    public let enabled: [String]   // tools this caller is enabled for (gates the policy editor)
+}
+
+public struct EnabledTools: Codable, Sendable {
+    public let name: String
     public let enabled: [String]
 }
 

@@ -161,6 +161,15 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(try bodyJSON()["nod_token"] as? String, "tok")
     }
 
+    func testSetEnabledToolsPutsList() async throws {
+        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"name":"hermes","enabled":["echo"]}"#.utf8)) }
+        let enabled = try await makeClient(token: "t").setEnabledTools(caller: "hermes", enabled: ["echo"])
+        XCTAssertEqual(enabled, ["echo"])
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "PUT")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/callers/hermes/tools")
+        XCTAssertEqual(try bodyJSON()["enabled"] as? [String], ["echo"])
+    }
+
     func testListToolsDecodesOps() async throws {
         let json = #"{"tools":[{"id":"echo","type":"rest","port":4601,"running":false,"#
                  + #""ops":[{"op":"say","risk":"low","description":"echo it"}]}]}"#
