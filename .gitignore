@@ -29,6 +29,10 @@ secrets.toml
 deploy/docker/.env
 deploy/docker/data/
 
+# Swift / SwiftPM build artifacts (macapp/ — the native operator app)
+.build/
+.swiftpm/
+
 # Per-tool agent skills are tied to private tools — not committed. (The tool
 # implementations themselves live outside this repo under
 # ~/.local/share/toolstack/tools and are never tracked here.) The generic client
