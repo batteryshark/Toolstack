@@ -68,7 +68,8 @@ loopback only and keeps secrets off the browser. 331 tests pass across [broker/]
 (161), [toolyard/](toolyard/) (55), [client/](client/) (23), [admin/](admin/) (83), and
 [desktop/](desktop/) (9), plus opt-in docker + live-nod/Infisical + vault (`[vault]` extra)
 tests and a full author → register → run → call live walkthrough. The admin also serves a
-JSON operator API (`/api/*`) for native clients.
+JSON operator API (`/api/*`) for native clients, consumed by a native SwiftUI macOS app
+([macapp/](macapp/) — `ApiClient` + core screens; 6 `swift test` tests).
 
 ## Suggested next step
 
