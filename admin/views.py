@@ -578,6 +578,11 @@ def _secret_backend_note(backend: dict | None) -> str:
                 "from <em>vault</em> / <em>item</em> / <em>field</em>. Leave <em>vault</em> blank to "
                 f"use the default project <code>{dv}</code>; leave <em>item</em> blank to use the "
                 "tool id. The per-item machine identity must have a matching credentials file.</p>")
+    if backend["name"] == "vault":
+        return ("<p class='muted'>Secret backend: <strong>local vault</strong> (encrypted, "
+                f"<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "
+                "fields are ignored — only <em>field</em> (the key under <code>[tool_id]</code>) is "
+                "used. Provision values with <code>toolyard vault-set</code>.</p>")
     return ("<p class='muted'>Secret backend: <strong>file</strong> "
             f"(<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "
             "fields are ignored by this backend — only <em>field</em> (the key under "

@@ -20,6 +20,12 @@ description = "Toolstack (TSR) — a brokered, action-without-access tool layer 
 requires-python = ">=3.11"   # tomllib (broker.registry / toolyard.config) is 3.11+
 dependencies = []            # stdlib only
 
+[project.optional-dependencies]
+# The local encrypted-vault secret backend (toolyard.secrets.VaultBackend) is the only
+# part that needs a crypto library — stdlib has KDFs (scrypt) but no AEAD. It's imported
+# lazily, so the toolyard stays zero-dependency unless you opt in:  pip install '.[vault]'
+vault = ["cryptography>=42"]
+
 [project.scripts]
 toolstack = "client.toolstack:main"        # the agent's generic tool client (CLI)
 toolstack-mcp = "client.mcp_server:main"   # the same client as an MCP stdio server

@@ -83,10 +83,13 @@ POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
 
 ### 3. Toolyard → Secret backend (at container start)
 
-Toolyard logs in with the per-tool machine identity, resolves that tool's fields,
-and injects them into the container's `/run/secrets/<name>` tmpfs at boot. Resolved
-values never persist to host disk. (Detail to port from the previous build's
-secrets design, kept locally — not part of this repo.)
+Toolyard resolves that tool's fields and injects them into the container's
+`/run/secrets/<name>` tmpfs at boot. Resolved values never persist to host disk. The
+backend is pluggable via `$TOOLSTACK_SECRET_BACKEND` (`toolyard.secrets.get_backend`):
+`file` (dev TOML), `vault` (a local **encrypted-at-rest** file — scrypt-stretched
+passphrase + Fernet AEAD, for laptop/self-contained deploys; needs the `cryptography`
+extra), or `infisical` (logs in with the per-tool machine identity). The broker holds no
+backend credential for any of them.
 
 ### 4. Tool container → Toolyard (writable secrets)
 

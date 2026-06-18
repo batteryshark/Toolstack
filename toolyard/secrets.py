@@ -1,15 +1,21 @@
 """Secret resolution backends.
 
 Phase 2 ships a dev `FileBackend` that reads values from a local TOML file.
-`InfisicalBackend` is the production backend (Infisical via its HTTP API, stdlib
-only — no extra dependency). SOPS can follow behind the same `resolve()` interface.
+`VaultBackend` is the laptop path: the same shape, but encrypted at rest (no external
+server, no plaintext on disk). `InfisicalBackend` is the production backend (Infisical
+via its HTTP API, stdlib only). SOPS can follow behind the same `resolve()` interface.
 Resolved values flow only to the tool (via the runner); they never reach the broker.
 
-Pick a backend with `get_backend(name)` (or `$TOOLSTACK_SECRET_BACKEND`).
+Pick a backend with `get_backend(name)` (or `$TOOLSTACK_SECRET_BACKEND`). Everything here
+is stdlib-only EXCEPT `VaultBackend`, which needs the optional `cryptography` extra
+(`pip install 'toolstack[vault]'`) and imports it lazily — so the toolyard stays
+zero-dependency until you actually use the vault.
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import time
@@ -79,6 +85,179 @@ def _dump_toml(data: dict) -> str:
             lines.append(f'{key} = "{escaped}"')
         lines.append("")
     return "\n".join(lines)
+
+
+# --- Local encrypted vault (the laptop path: no server, no plaintext on disk) ------
+#
+# Same shape as FileBackend ({tool_id: {FIELD: value}}), but the file is an encrypted
+# envelope: a passphrase is stretched with scrypt (stdlib) into a Fernet key (the
+# `cryptography` extra), which AEAD-encrypts the JSON. Like every backend, the toolyard
+# reads it and the broker never does. `cryptography` is imported lazily, so the toolyard
+# is stdlib-only until the vault is actually used.
+
+_VAULT_VERSION = 1
+_SCRYPT_N = 2 ** 14            # ~16 MB, tens of ms — interactive-grade stretching
+_SCRYPT_R = 8
+_SCRYPT_P = 1
+_SCRYPT_MAXMEM = 64 * 1024 * 1024  # headroom for the params above (else scrypt errors)
+
+
+def _default_vault_file() -> str:
+    base = os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
+    return str(Path(base) / "toolstack" / "vault.json")
+
+
+def _vault_passphrase() -> str:
+    """The vault passphrase, from `TOOLSTACK_VAULT_PASSPHRASE` or `_PASSPHRASE_FILE`.
+    Fails closed if neither is set (the toolyard/admin resolve non-interactively).
+
+    The env value is used verbatim (exact by construction); a passphrase *file* commonly
+    carries a trailing newline, so it is stripped. Provision the SAME passphrase the same
+    way on both sides, or a stray newline reads as "wrong passphrase"."""
+    direct = os.environ.get("TOOLSTACK_VAULT_PASSPHRASE")
+    if direct:
+        return direct
+    path = os.environ.get("TOOLSTACK_VAULT_PASSPHRASE_FILE")
+    if path:
+        value = Path(path).read_text(encoding="utf-8").strip()
+        if not value:
+            raise ValueError(f"{path}: vault passphrase file is empty")
+        return value
+    raise ValueError(
+        "vault backend needs TOOLSTACK_VAULT_PASSPHRASE or TOOLSTACK_VAULT_PASSPHRASE_FILE"
+    )
+
+
+def _fernet():
+    """Lazy import — keeps the toolyard stdlib-only until the vault is actually used."""
+    try:
+        from cryptography.fernet import Fernet, InvalidToken
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "the vault backend needs the 'cryptography' package — install the extra: "
+            "pip install 'toolstack[vault]'"
+        ) from exc
+    return Fernet, InvalidToken
+
+
+def _vault_key(passphrase: str, salt: bytes, n: int = _SCRYPT_N,
+               r: int = _SCRYPT_R, p: int = _SCRYPT_P) -> bytes:
+    """Stretch the passphrase (scrypt, stdlib) into a urlsafe-base64 Fernet key, using the
+    KDF params the vault was written with. `maxmem` bounds the memory, so tampered params
+    that demand more fail closed with a clear error rather than a raw scrypt traceback."""
+    try:
+        dk = hashlib.scrypt(passphrase.encode("utf-8"), salt=salt, n=n, r=r, p=p,
+                            dklen=32, maxmem=_SCRYPT_MAXMEM)
+    except (ValueError, OverflowError) as exc:
+        raise RuntimeError(f"vault: unsupported KDF parameters (n={n}, r={r}, p={p})") from exc
+    return base64.urlsafe_b64encode(dk)
+
+
+def _write_vault(path: Path, salt: bytes, key: bytes, data: dict,
+                 params: tuple[int, int, int] = (_SCRYPT_N, _SCRYPT_R, _SCRYPT_P)) -> None:
+    Fernet, _ = _fernet()
+    n, r, p = params
+    token = Fernet(key).encrypt(json.dumps(data).encode("utf-8"))
+    envelope = {
+        "version": _VAULT_VERSION, "kdf": "scrypt",
+        "salt": base64.urlsafe_b64encode(salt).decode("ascii"),
+        "n": n, "r": r, "p": p,
+        "ciphertext": token.decode("ascii"),
+    }
+    blob = json.dumps(envelope, indent=2).encode("utf-8")
+    # Write 0o600 from creation (no world-readable window) and rename into place (atomic —
+    # a concurrent reader sees the old vault or the new one, never a torn half-write).
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, blob)
+    finally:
+        os.close(fd)
+    os.replace(tmp, path)
+
+
+class VaultBackend:
+    """Local, encrypted-at-rest secret backend — the laptop path (no Infisical, no
+    plaintext `secrets.toml`). Drop-in with the other backends (`resolve` + `update`).
+
+    The file is a JSON envelope (version, scrypt salt+params, Fernet ciphertext); the
+    passphrase never lands next to the ciphertext. Create an empty vault with
+    `toolyard vault-init`, provision fields with `toolyard vault-set`.
+    """
+
+    def __init__(self, path, passphrase: str) -> None:
+        self._path = Path(path)
+        if not self._path.exists():
+            raise FileNotFoundError(
+                f"no vault at {self._path} — create one with `toolyard vault-init`"
+            )
+        envelope = json.loads(self._path.read_text(encoding="utf-8"))
+        if envelope.get("version") != _VAULT_VERSION:
+            raise RuntimeError(
+                f"vault {self._path}: unsupported version {envelope.get('version')!r} "
+                f"(this build writes v{_VAULT_VERSION})"
+            )
+        self._salt = base64.urlsafe_b64decode(envelope["salt"])
+        # Derive with the params the vault was WRITTEN with (read back from the envelope),
+        # so changing the compiled-in defaults never bricks an existing vault.
+        self._params = (int(envelope["n"]), int(envelope["r"]), int(envelope["p"]))
+        self._key = _vault_key(passphrase, self._salt, *self._params)
+        self._data = self._decrypt(envelope["ciphertext"])
+
+    def _decrypt(self, token: str) -> dict:
+        Fernet, InvalidToken = _fernet()
+        try:
+            plaintext = Fernet(self._key).decrypt(token.encode("ascii"))
+        except InvalidToken as exc:
+            raise RuntimeError(
+                f"vault {self._path}: wrong passphrase or the file is corrupted/tampered"
+            ) from exc
+        return json.loads(plaintext)
+
+    def _persist(self) -> None:
+        _write_vault(self._path, self._salt, self._key, self._data, self._params)
+
+    def resolve(self, tool_def: ToolDef) -> dict[str, str]:
+        tool_secrets = self._data.get(tool_def.id, {})
+        resolved: dict[str, str] = {}
+        for spec in tool_def.secrets:
+            if spec.field not in tool_secrets:
+                raise KeyError(f"secret backend is missing {tool_def.id}.{spec.field}")
+            resolved[spec.name] = str(tool_secrets[spec.field])
+        return resolved
+
+    def update(self, tool_def: ToolDef, name: str, value: str) -> None:
+        """Runtime writeback path (message-contracts §4): only a field the tool declared
+        `writable` may be patched."""
+        spec = writable_spec(tool_def, name)
+        self._data.setdefault(tool_def.id, {})[spec.field] = value
+        self._persist()
+
+    def set_secret(self, tool_id: str, field: str, value: str) -> None:
+        """Operator provisioning path (CLI/admin): set any field. Not gated on `writable`
+        — that allowlist governs the tool writing back at runtime, not the operator
+        filling the vault."""
+        self._data.setdefault(tool_id, {})[field] = value
+        self._persist()
+
+    @classmethod
+    def init(cls, path, passphrase: str) -> "VaultBackend":
+        """Create a new empty encrypted vault; refuse to clobber an existing file."""
+        if not passphrase:
+            raise ValueError("vault passphrase must not be empty")
+        p = Path(path)
+        if p.exists():
+            raise FileExistsError(f"vault already exists at {p}")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        salt = os.urandom(16)  # ONE salt: stored in the envelope AND used to derive the key
+        params = (_SCRYPT_N, _SCRYPT_R, _SCRYPT_P)
+        _write_vault(p, salt, _vault_key(passphrase, salt, *params), {}, params)
+        return cls(p, passphrase)
+
+    @classmethod
+    def from_env(cls) -> "VaultBackend":
+        path = os.environ.get("TOOLSTACK_VAULT_FILE") or _default_vault_file()
+        return cls(path, _vault_passphrase())
 
 
 @dataclass(frozen=True)
@@ -312,13 +491,16 @@ class InfisicalBackend:
 def get_backend(name: str | None = None, *, secrets_file: str | Path | None = None):
     """Return a secret backend by name (default `$TOOLSTACK_SECRET_BACKEND` or `file`).
 
-    `file` reads the dev TOML (`secrets_file` or `$TOOLSTACK_SECRETS_FILE`);
+    `file` reads the dev TOML (`secrets_file` or `$TOOLSTACK_SECRETS_FILE`); `vault`
+    opens the local encrypted vault (`$TOOLSTACK_VAULT_FILE` + passphrase from the env);
     `infisical` builds an `InfisicalBackend` from the environment.
     """
     name = name or os.environ.get("TOOLSTACK_SECRET_BACKEND", "file")
     if name == "file":
         path = secrets_file or os.environ.get("TOOLSTACK_SECRETS_FILE", "secrets.toml")
         return FileBackend(path)
+    if name == "vault":
+        return VaultBackend.from_env()
     if name == "infisical":
         return InfisicalBackend.from_env()
     raise ValueError(f"unknown secret backend: {name}")
