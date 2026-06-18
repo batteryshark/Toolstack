@@ -50,8 +50,12 @@ pre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:aut
 .risk.medium,.risk.write{background:#fff6df;color:#7a5100;}
 .risk.high,.risk.destructive{background:#ffe8e8;color:#8c1f1f;}
 .card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}
-.argrow,.secrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
-.argrow input,.secrow input{min-width:120px;}
+.argrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
+.argrow input{min-width:120px;}
+.sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}
+.sechead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 2px;}
+.secrow input{min-width:0;width:100%;}
+.colcenter{justify-self:center;text-align:center;}
 .brand{display:flex;align-items:center;gap:18px;}
 nav.appnav{display:flex;gap:4px;align-items:center;}
 nav.appnav a{color:#c7d0dc;text-decoration:none;padding:6px 12px;border-radius:6px;font-weight:550;}
@@ -125,12 +129,16 @@ _TOOL_EDITOR_JS = """
   }
   function secRow(s){
     s = s||{};
-    var row = mk('<div class="secrow"><input class="sec-name" placeholder="name (file the tool reads)">'
-      + '<input class="sec-field" placeholder="backend field">'
-      + '<label><input type="checkbox" class="sec-writable"> writable</label>'
+    var row = mk('<div class="secrow"><input class="sec-name" placeholder="e.g. api_key">'
+      + '<input class="sec-field" placeholder="e.g. API_KEY">'
+      + '<input class="sec-vault" placeholder="default">'
+      + '<input class="sec-item" placeholder="tool id">'
+      + '<span class="colcenter"><input type="checkbox" class="sec-writable"></span>'
       + '<button type="button" class="rm">remove</button></div>');
     row.querySelector('.sec-name').value = s.name||'';
     row.querySelector('.sec-field').value = s.field||'';
+    row.querySelector('.sec-vault').value = s.vault||'';
+    row.querySelector('.sec-item').value = s.item||'';
     row.querySelector('.sec-writable').checked = !!s.writable;
     row.querySelector('.rm').onclick = function(){row.remove();};
     return row;
@@ -169,6 +177,8 @@ _TOOL_EDITOR_JS = """
       secrets: [].map.call(secs.querySelectorAll('.secrow'), function(r){
         return {name: r.querySelector('.sec-name').value,
                 field: r.querySelector('.sec-field').value,
+                vault: r.querySelector('.sec-vault').value,
+                item: r.querySelector('.sec-item').value,
                 writable: r.querySelector('.sec-writable').checked};
       })
     };
@@ -554,10 +564,31 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, err
     return page(f"Policy · {caller}", "".join(sections), user=user, csrf=csrf)
 
 
-def tool_editor_view(*, user, csrf, mode, tool, dir_value="", error=None) -> str:
+def _secret_backend_note(backend: dict | None) -> str:
+    """A muted line telling the operator where secrets resolve from, so they can see at a
+    glance whether a tool's secrets live in Infisical (and which project) and what the
+    vault/item fields mean for the active backend."""
+    if not backend:
+        return ""
+    if backend["name"] == "infisical":
+        dv = esc(backend.get("default_vault") or "(unset)")
+        return ("<p class='muted'>Secret backend: <strong>Infisical</strong> "
+                f"(host <code>{esc(backend.get('host', ''))}</code>, "
+                f"env <code>{esc(backend.get('environment', ''))}</code>). Each secret resolves "
+                "from <em>vault</em> / <em>item</em> / <em>field</em>. Leave <em>vault</em> blank to "
+                f"use the default project <code>{dv}</code>; leave <em>item</em> blank to use the "
+                "tool id. The per-item machine identity must have a matching credentials file.</p>")
+    return ("<p class='muted'>Secret backend: <strong>file</strong> "
+            f"(<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "
+            "fields are ignored by this backend — only <em>field</em> (the key under "
+            "<code>[tool_id]</code>) is used.</p>")
+
+
+def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, error=None) -> str:
     """The Add/Edit tool form. ``mode`` is "new" or "edit"; ``tool`` pre-fills the
     fields (empty dict for a blank new tool). The repeating operation/secret rows
-    are built and serialized by the editor JS into the hidden tool_json field."""
+    are built and serialized by the editor JS into the hidden tool_json field.
+    ``backend`` is a display-only summary of the active secret backend."""
     err = f"<div class='error'>{esc(error)}</div>" if error else ""
     action = "/tools/new" if mode == "new" else f"/tools/{esc(tool.get('id', ''))}/edit"
     if mode == "new":
@@ -584,7 +615,14 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", error=None) -> str
         "<label class='field'>port <input id='f_port' type='number' placeholder='4700' required></label>"
         "<h3>Operations</h3><div id='ops'></div>"
         "<button type='button' id='add-op'>Add operation</button>"
-        "<h3>Secrets <span class='muted'>— declarations only; values stay in your secrets file</span></h3>"
+        "<h3>Secrets <span class='muted'>— declarations only; values stay in the secret backend</span></h3>"
+        f"{_secret_backend_note(backend)}"
+        "<div class='sechead'>"
+        "<span>Name <span class='muted'>(file the tool reads)</span></span>"
+        "<span>Field <span class='muted'>(backend key)</span></span>"
+        "<span>Vault <span class='muted'>(project)</span></span>"
+        "<span>Item <span class='muted'>(path)</span></span>"
+        "<span class='colcenter'>Writable</span><span></span></div>"
         "<div id='secrets'></div><button type='button' id='add-secret'>Add secret</button>"
         "<input type='hidden' name='tool_json' id='tool_json'>"
         "<div class='actions'><button type='submit'>Save tool</button>"
