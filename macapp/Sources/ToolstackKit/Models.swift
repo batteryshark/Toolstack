@@ -56,17 +56,29 @@ public struct OpInfo: Codable, Sendable, Identifiable, Equatable {
     public var id: String { op }
 }
 
+/// A tool's secret DECLARATION (not a value): the file the tool reads (`name`), the backend
+/// `field` it resolves from, whether the tool may write it back, and the Infisical vault/item.
+public struct SecretDecl: Codable, Sendable, Identifiable, Equatable {
+    public let name: String
+    public let field: String
+    public let writable: Bool
+    public let vault: String?
+    public let item: String?
+    public var id: String { name }
+}
+
 public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
     public let id: String
     public let type: String
     public let port: Int?
     public let running: Bool
     public let ops: [OpInfo]
+    public let secrets: [SecretDecl]
 
-    enum CodingKeys: String, CodingKey { case id, type, port, running, ops }
+    enum CodingKeys: String, CodingKey { case id, type, port, running, ops, secrets }
 
-    // Tolerate an admin that doesn't report `ops` / `running` (e.g. an older version, or a
-    // different deployment) rather than failing the whole response — default them.
+    // Tolerate an admin that doesn't report `ops` / `running` / `secrets` (e.g. an older version,
+    // or a different deployment) rather than failing the whole response — default them.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -74,7 +86,18 @@ public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
         port = try c.decodeIfPresent(Int.self, forKey: .port)
         running = try c.decodeIfPresent(Bool.self, forKey: .running) ?? false
         ops = try c.decodeIfPresent([OpInfo].self, forKey: .ops) ?? []
+        secrets = try c.decodeIfPresent([SecretDecl].self, forKey: .secrets) ?? []
     }
+}
+
+/// The active secret backend (deployment-wide). `path` (file/vault) or `host`/`environment`/
+/// `defaultVault` (Infisical) are present depending on `name`.
+public struct SecretBackend: Codable, Sendable {
+    public let name: String   // "file" | "vault" | "infisical"
+    public let path: String?
+    public let host: String?
+    public let environment: String?
+    public let defaultVault: String?
 }
 
 public struct ToolsResponse: Codable, Sendable {

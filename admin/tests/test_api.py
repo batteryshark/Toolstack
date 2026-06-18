@@ -35,7 +35,8 @@ class JsonApi(unittest.TestCase):
         tool_dir.mkdir(parents=True)
         (tool_dir / "toolyard.toml").write_text(
             'id = "echo"\ntype = "rest"\n\n[entrypoint]\nport = 4601\n\n'
-            '[[operations]]\nname = "say"\nrisk = "low"\ndescription = "echo a message"\n',
+            '[[operations]]\nname = "say"\nrisk = "low"\ndescription = "echo a message"\n\n'
+            '[[secrets]]\nname = "api_key"\nfield = "API_KEY"\nwritable = true\n',
             encoding="utf-8")
         self.db_path = str(Path(self.tmp, "broker.sqlite3"))
         broker_config.save(BrokerRunConfig(db_path=self.db_path, tools_root=str(Path(self.tmp, "tools"))))
@@ -182,6 +183,8 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(tools.status_code, 200)
         echo = next(t for t in tools.json()["tools"] if t["id"] == "echo")
         self.assertEqual([op["op"] for op in echo["ops"]], ["say"])  # ops attached for the policy editor
+        self.assertEqual(echo["secrets"], [{"name": "api_key", "field": "API_KEY",
+                                            "writable": True, "vault": None, "item": None}])
         cfg = self.client.get("/api/config", headers=self._auth())
         self.assertEqual(cfg.status_code, 200)
         self.assertIn("port", cfg.json())

@@ -68,6 +68,12 @@ final class AppModel: ObservableObject {
         await run { self.tools = try await self.client.listTools() }
     }
 
+    @Published var secretBackend: SecretBackend?
+
+    func refreshSecretBackend() async {
+        await run { self.secretBackend = try await self.client.secretBackend() }
+    }
+
     @Published var config: BrokerConfigInfo?
 
     func refreshConfig() async {

@@ -199,8 +199,20 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
                     {"op": op["op"], "risk": op["risk"], "description": op["description"]})
         except Exception:
             pass  # tools still listed (without ops) if the registry can't be read
+        # attach each tool's secret DECLARATIONS (name/field/writable/vault/item) for display.
+        # The broker registry ignores [[secrets]], but the admin (control plane) may show them —
+        # these are declarations, never values.
+        try:
+            defs = toolyard_ops._all_defs(config.tools_root, config.tool_dirs)
+        except Exception:
+            defs = {}
         for tool in tools:
             tool["ops"] = ops_by_tool.get(tool["id"], [])
+            td = defs.get(tool["id"])
+            tool["secrets"] = [
+                {"name": s.name, "field": s.field, "writable": s.writable, "vault": s.vault, "item": s.item}
+                for s in (td.secrets if td else ())
+            ]
         return {"tools": tools}
 
     @app.get("/api/config")
