@@ -63,6 +63,17 @@ public actor ApiClient {
                        body: ["name": name, "allow": allow, "review": review])
     }
 
+    /// Replace the caller's token with a fresh one (one active token per caller). Shown once.
+    @discardableResult
+    public func rotateToken(caller: String) async throws -> CreatedCaller {
+        try await send("POST", "/api/callers/\(caller)/rotate-token", body: [:])
+    }
+
+    @discardableResult
+    public func revokeCaller(_ caller: String) async throws -> RevokeResult {
+        try await send("POST", "/api/callers/\(caller)/revoke", body: [:])
+    }
+
     public func listTools() async throws -> [ToolInfo] {
         let response: ToolsResponse = try await send("GET", "/api/tools")
         return response.tools

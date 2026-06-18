@@ -41,7 +41,12 @@ public struct CallersResponse: Codable, Sendable {
 
 public struct CreatedCaller: Codable, Sendable {
     public let name: String
-    public let token: String   // shown once
+    public let token: String   // shown once (create + rotate)
+}
+
+public struct RevokeResult: Codable, Sendable {
+    public let name: String
+    public let cancelledApprovals: Int
 }
 
 public struct OpInfo: Codable, Sendable, Identifiable, Equatable {
