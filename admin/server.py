@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from broker import operations
 from broker.registry import Registry
 
-from . import auth, broker_config, settings, supervisor, tool_authoring, toolyard_ops, views
+from . import api, auth, broker_config, settings, supervisor, tool_authoring, toolyard_ops, views
 from .store_access import open_store
 
 SESSION_COOKIE = "toolstack_admin_session"
@@ -514,6 +514,9 @@ def create_app() -> FastAPI:
             f"Unregistered tool {views.esc(tool_id)} (its files were left on disk). "
             "Restart the broker to apply."))
 
+    # JSON operator API (bearer-token auth) for native / automation clients — same ops,
+    # JSON face. See admin/api.py (T-029).
+    api.add_api_routes(app, secret)
     return app
 
 
