@@ -1,8 +1,23 @@
+import AppKit
 import SwiftUI
 import ToolstackKit
 
+/// Run as a bare SwiftPM executable (`swift run`), the process starts as a non-activating
+/// (accessory) app, so its window can't take focus or come to the front. Force it to be a
+/// normal foreground app on launch — Dock icon, focusable, ⌘-Tab. (A real `.app` bundle in
+/// T-031 makes this implicit; this keeps `swift run` usable now.)
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+}
+
 @main
 struct ToolstackApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {
