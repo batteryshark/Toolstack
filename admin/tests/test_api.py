@@ -188,6 +188,24 @@ class JsonApi(unittest.TestCase):
         sb = self.client.get("/api/secret-backend", headers=self._auth()).json()
         self.assertIn("name", sb)
 
+    def test_config_round_trip_write_only_token_and_validation(self):
+        # save settings, partial-merge style
+        r = self.client.post("/api/config", headers=self._auth(),
+                             json={"approval_ttl": 7200, "rate_limit": 0,
+                                   "nod_url": "https://nod.example/boop", "nod_channel": "ops"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["approval_ttl"], 7200)
+        self.assertEqual(r.json()["nod_url"], "https://nod.example/boop")
+        # nod token is write-only: set it, GET shows "set", and a later save without it KEEPS it
+        self.client.post("/api/config", headers=self._auth(), json={"nod_token": "secret-tok-XYZ"})
+        self.assertEqual(self.client.get("/api/config", headers=self._auth()).json()["nod_token"], "set")
+        self.client.post("/api/config", headers=self._auth(), json={"rate_limit": 5})  # no token
+        self.assertEqual(self.client.get("/api/config", headers=self._auth()).json()["nod_token"], "set")
+        self.assertNotIn("secret-tok-XYZ", self.client.get("/api/config", headers=self._auth()).text)  # never leaked
+        # validation
+        self.assertEqual(self.client.post("/api/config", headers=self._auth(), json={"port": 0}).status_code, 400)
+        self.assertEqual(self.client.post("/api/config", headers=self._auth(), json={"port": "x"}).status_code, 400)
+
     def test_operator_routes_need_auth(self):
         for method, path in [("get", "/api/callers"), ("post", "/api/callers"),
                              ("get", "/api/audit"), ("get", "/api/config")]:

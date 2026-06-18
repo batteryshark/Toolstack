@@ -104,6 +104,19 @@ public struct PolicyResponse: Codable, Sendable {
     public let enabled: [String]
 }
 
+/// The broker run-config (GET /api/config — masked). `nodToken` is "set" / "not set", never the
+/// real token. (db_path / tool_dirs are also returned but ignored here.)
+public struct BrokerConfigInfo: Codable, Sendable {
+    public let port: Int
+    public let toolsRoot: String
+    public let nodUrl: String
+    public let nodToken: String
+    public let nodChannel: String
+    public let approvalTtl: Int
+    public let rateLimit: Int
+    public var nodTokenSet: Bool { nodToken == "set" }
+}
+
 /// What went wrong talking to the admin API. `unauthorized` is special-cased so the UI can
 /// drop back to the login screen; everything else carries a status + server message.
 public enum ApiError: Error, Equatable, Sendable {
