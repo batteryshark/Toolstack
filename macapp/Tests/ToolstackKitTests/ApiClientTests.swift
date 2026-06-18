@@ -130,6 +130,16 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools")
     }
 
+    func testListToolsToleratesMissingOps() async throws {
+        // an admin that doesn't report `ops` (older version) must not break the whole response
+        let json = #"{"tools":[{"id":"echo","type":"rest","port":4601,"path":"x","running":false,"#
+                 + #""alive":false,"backend":null,"removable":false}]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let tools = try await makeClient(token: "t").listTools()
+        XCTAssertEqual(tools.first?.id, "echo")
+        XCTAssertEqual(tools.first?.ops, [])   // defaulted to empty, not a decode failure
+    }
+
     func testGetPolicyDecodes() async throws {
         let json = #"{"name":"hermes","policy":{"tools":{"echo":{"say":"allow"}}},"enabled":["echo"]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
