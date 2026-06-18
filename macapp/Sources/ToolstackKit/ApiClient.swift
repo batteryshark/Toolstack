@@ -96,6 +96,10 @@ public actor ApiClient {
         return response.tools
     }
 
+    public func secretBackend() async throws -> SecretBackend {
+        try await send("GET", "/api/secret-backend")
+    }
+
     public func policy(for caller: String) async throws -> PolicyResponse {
         try await send("GET", "/api/callers/\(caller)/policy")
     }

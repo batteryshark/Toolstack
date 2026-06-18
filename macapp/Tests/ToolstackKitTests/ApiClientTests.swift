@@ -190,6 +190,22 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(tools.first?.ops, [])   // defaulted to empty, not a decode failure
     }
 
+    func testListToolsDecodesSecrets() async throws {
+        let json = #"{"tools":[{"id":"echo","type":"rest","port":4601,"running":false,"ops":[],"#
+                 + #""secrets":[{"name":"api_key","field":"API_KEY","writable":true,"vault":null,"item":null}]}]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let tools = try await makeClient(token: "t").listTools()
+        XCTAssertEqual(tools.first?.secrets.first?.name, "api_key")
+        XCTAssertTrue(try XCTUnwrap(tools.first?.secrets.first).writable)
+    }
+
+    func testSecretBackendDecodes() async throws {
+        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"name":"vault","path":"/data/vault.json"}"#.utf8)) }
+        let backend = try await makeClient(token: "t").secretBackend()
+        XCTAssertEqual(backend.name, "vault")
+        XCTAssertEqual(backend.path, "/data/vault.json")
+    }
+
     func testGetPolicyDecodes() async throws {
         let json = #"{"name":"hermes","policy":{"tools":{"echo":{"say":"allow"}}},"enabled":["echo"]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }

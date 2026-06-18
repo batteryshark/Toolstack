@@ -207,7 +207,8 @@ struct ToolsPane: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
+            backendHeader
             if model.tools.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "wrench.and.screwdriver").font(.largeTitle).foregroundStyle(.secondary)
@@ -218,14 +219,11 @@ struct ToolsPane: View {
             } else {
                 List(model.tools) { tool in
                     DisclosureGroup {
-                        ForEach(tool.ops) { op in
-                            HStack {
-                                Text(op.op).bold()
-                                Text(op.risk).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
-                                    .background(.secondary.opacity(0.15), in: .capsule)
-                                Spacer()
-                                Text(op.description).font(.caption).foregroundStyle(.secondary)
-                            }
+                        ForEach(tool.ops) { op in opRow(op) }
+                        if !tool.secrets.isEmpty {
+                            Divider().padding(.vertical, 2)
+                            Text("Secrets").font(.caption.bold()).foregroundStyle(.secondary)
+                            ForEach(tool.secrets) { secretRow($0) }
                         }
                     } label: {
                         HStack {
@@ -238,7 +236,49 @@ struct ToolsPane: View {
             }
         }
         .navigationTitle("Tools")
-        .task { await model.refreshTools() }
+        .task { await model.refreshTools(); await model.refreshSecretBackend() }
+    }
+
+    @ViewBuilder private var backendHeader: some View {
+        if let backend = model.secretBackend {
+            HStack(spacing: 6) {
+                Image(systemName: "key.fill").font(.caption).foregroundStyle(.secondary)
+                Text("Secret backend:").foregroundStyle(.secondary)
+                Text(backend.name).bold()
+                if let detail = backend.path ?? backend.host, !detail.isEmpty {
+                    Text("· \(detail)").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal).padding(.vertical, 8)
+            Divider()
+        }
+    }
+
+    private func opRow(_ op: OpInfo) -> some View {
+        HStack {
+            Text(op.op).bold()
+            Text(op.risk).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+                .background(.secondary.opacity(0.15), in: .capsule)
+            Spacer()
+            Text(op.description).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func secretRow(_ secret: SecretDecl) -> some View {
+        HStack(spacing: 6) {
+            Text(secret.name).bold()
+            Image(systemName: "arrow.right").font(.caption2).foregroundStyle(.secondary)
+            Text(secret.field).font(.caption).foregroundStyle(.secondary)
+            if secret.writable {
+                Text("writable").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(.orange.opacity(0.2), in: .capsule)
+            }
+            if let vault = secret.vault, !vault.isEmpty {
+                Text(vault).font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
     }
 }
 
