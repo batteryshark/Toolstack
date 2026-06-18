@@ -82,6 +82,21 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func rotateToken(caller: String) async {
+        await run {
+            let result = try await self.client.rotateToken(caller: caller)
+            self.banner = "New token for \(result.name) — copy it now, it won't be shown again:\n\(result.token)"
+            await self.refreshCallers()
+        }
+    }
+
+    func revokeCaller(_ caller: String) async {
+        await run {
+            _ = try await self.client.revokeCaller(caller)
+            await self.refreshCallers()
+        }
+    }
+
     func savePolicy(caller: String, allow: [String], review: [String]) async {
         await run {
             _ = try await self.client.setPolicy(caller: caller, allow: allow, review: review)

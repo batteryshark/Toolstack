@@ -141,7 +141,8 @@ struct BrokerPane: View {
 struct CallersPane: View {
     @EnvironmentObject var model: AppModel
     @State private var newName = ""
-    @State private var editing: Caller?   // caller whose policy is being edited
+    @State private var editing: Caller?    // caller whose policy is being edited
+    @State private var revoking: Caller?   // caller pending revoke confirmation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -161,9 +162,15 @@ struct CallersPane: View {
                     Text(caller.isActive ? "active" : "revoked")
                         .foregroundStyle(caller.isActive ? .primary : .secondary)
                 }
-                TableColumn("Policy") { caller in
+                TableColumn("") { caller in
                     if caller.isActive {
-                        Button("Edit…") { editing = caller }
+                        Menu {
+                            Button("Edit policy…") { editing = caller }
+                            Button("Rotate token") { Task { await model.rotateToken(caller: caller.name) } }
+                            Divider()
+                            Button("Revoke caller", role: .destructive) { revoking = caller }
+                        } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).fixedSize()
                     }
                 }
             }
@@ -173,6 +180,18 @@ struct CallersPane: View {
         .sheet(item: $editing) { caller in
             PolicyEditor(caller: caller.name).environmentObject(model)
         }
+        .confirmationDialog("Revoke caller?", isPresented: revokingBinding, presenting: revoking) { caller in
+            Button("Revoke \(caller.name)", role: .destructive) {
+                Task { await model.revokeCaller(caller.name) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { caller in
+            Text("Disables “\(caller.name)” and cancels its pending approvals. This can't be undone.")
+        }
+    }
+
+    private var revokingBinding: Binding<Bool> {
+        Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } })
     }
 }
 

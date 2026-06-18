@@ -120,6 +120,21 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(body["allow"] as? [String], ["echo.say"])
     }
 
+    func testRotateTokenPostsAndReturnsNewToken() async throws {
+        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"name":"hermes","token":"ROT123"}"#.utf8)) }
+        let created = try await makeClient(token: "t").rotateToken(caller: "hermes")
+        XCTAssertEqual(created.token, "ROT123")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/callers/hermes/rotate-token")
+    }
+
+    func testRevokeCallerPosts() async throws {
+        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"name":"hermes","cancelled_approvals":2}"#.utf8)) }
+        let result = try await makeClient(token: "t").revokeCaller("hermes")
+        XCTAssertEqual(result.cancelledApprovals, 2)  // snake_case -> camelCase
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/callers/hermes/revoke")
+    }
+
     func testListToolsDecodesOps() async throws {
         let json = #"{"tools":[{"id":"echo","type":"rest","port":4601,"running":false,"#
                  + #""ops":[{"op":"say","risk":"low","description":"echo it"}]}]}"#
