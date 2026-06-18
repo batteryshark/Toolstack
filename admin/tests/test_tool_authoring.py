@@ -34,6 +34,24 @@ class Serialize(unittest.TestCase):
         self.assertTrue(parsed["operations"][0]["args"][0]["required"])
         self.assertEqual(parsed["secrets"][0]["field"], "API_KEY")
 
+    def test_infisical_vault_item_round_trip(self):
+        # The Infisical coordinates survive normalize -> to_toml -> parse, so editing an
+        # Infisical-backed tool in the panel does not strip its vault/item.
+        data = tool_authoring.normalize({**FULL, "secrets": [
+            {"name": "api_key", "field": "API_KEY", "vault": "ToolServer",
+             "item": "weather-tool", "writable": True}]})
+        parsed = tomllib.loads(tool_authoring.to_toml(data))
+        sec = parsed["secrets"][0]
+        self.assertEqual((sec["vault"], sec["item"], sec["writable"]),
+                         ("ToolServer", "weather-tool", True))
+
+    def test_blank_vault_item_are_omitted(self):
+        # No vault/item declared -> no keys emitted (so file-backend tools stay clean and
+        # the backend defaults apply).
+        parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(FULL)))
+        self.assertNotIn("vault", parsed["secrets"][0])
+        self.assertNotIn("item", parsed["secrets"][0])
+
     def test_escapes_quotes_in_description(self):
         data = tool_authoring.normalize(
             {**FULL, "operations": [{"name": "today", "risk": "low",

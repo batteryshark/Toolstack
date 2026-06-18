@@ -23,6 +23,8 @@ ARG_TYPES = ("string", "number", "integer", "boolean", "object", "array")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
 _NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")             # operation / argument names
 _SECRET_RE = re.compile(r"^[A-Za-z0-9_.-]+$")         # also used as a filename
+_VAULT_RE = re.compile(r"^[A-Za-z0-9 _.-]+$")         # Infisical project name/slug/id
+_ITEM_RE = re.compile(r"^[A-Za-z0-9_./-]+$")          # Infisical secret path (may have /)
 
 
 def from_json(raw: str) -> dict:
@@ -64,7 +66,15 @@ def normalize(data: dict) -> dict:
         nm = s(sec.get("name"))
         if not nm:
             continue
-        secrets.append({"name": nm, "field": s(sec.get("field")), "writable": bool(sec.get("writable"))})
+        # vault/item are the Infisical coordinates (blank -> backend defaults: vault from
+        # $TOOLSTACK_INFISICAL_VAULT, item from the tool id). Ignored by the file backend.
+        secrets.append({
+            "name": nm,
+            "field": s(sec.get("field")),
+            "vault": s(sec.get("vault")),
+            "item": s(sec.get("item")),
+            "writable": bool(sec.get("writable")),
+        })
 
     try:
         port = int(data.get("port"))
@@ -113,6 +123,10 @@ def validate(data: dict) -> list[str]:
             errors.append(f"secret name '{sec['name']}' has invalid characters")
         if not sec["field"]:
             errors.append(f"secret '{sec['name']}' needs a backend field")
+        if sec.get("vault") and not _VAULT_RE.match(sec["vault"]):
+            errors.append(f"secret '{sec['name']}' vault has invalid characters")
+        if sec.get("item") and not _ITEM_RE.match(sec["item"]):
+            errors.append(f"secret '{sec['name']}' item has invalid characters")
     return errors
 
 
@@ -145,6 +159,10 @@ def to_toml(data: dict) -> str:
             out.append("args = [ " + ", ".join(_arg_inline(a) for a in o["args"]) + " ]")
     for sec in data["secrets"]:
         out += ["", "[[secrets]]", f"name = {_s(sec['name'])}", f"field = {_s(sec['field'])}"]
+        if sec.get("vault"):
+            out.append(f"vault = {_s(sec['vault'])}")
+        if sec.get("item"):
+            out.append(f"item = {_s(sec['item'])}")
         if sec["writable"]:
             out.append("writable = true")
     return "\n".join(out) + "\n"

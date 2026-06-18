@@ -53,6 +53,27 @@ def tool_runner_backend() -> str:
     return os.environ.get("TOOLSTACK_RUNNER", "process")
 
 
+def secret_backend() -> str:
+    """The active secret backend the toolyard resolves tool secrets from (file/infisical).
+    A deployment-wide setting, not per-tool."""
+    return os.environ.get("TOOLSTACK_SECRET_BACKEND", "file")
+
+
+def secret_backend_info() -> dict:
+    """A display-only summary of how tool secrets resolve, for the tool editor. Lets the
+    operator see whether secrets come from Infisical (and which project/host/env) without
+    exposing any secret value."""
+    name = secret_backend()
+    if name == "infisical":
+        return {
+            "name": "infisical",
+            "host": os.environ.get("TOOLSTACK_INFISICAL_HOST", ""),
+            "environment": os.environ.get("TOOLSTACK_INFISICAL_ENVIRONMENT", "prod"),
+            "default_vault": os.environ.get("TOOLSTACK_INFISICAL_VAULT", ""),
+        }
+    return {"name": "file", "path": tool_secrets_file()}
+
+
 def _write_private(path: Path, data: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(data, encoding="utf-8")
