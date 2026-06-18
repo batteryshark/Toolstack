@@ -15,13 +15,20 @@ final class AppModel: ObservableObject {
     @Published var error: String?
     @Published var busy = false
 
-    private let client: ApiClient
+    /// The admin URL the user signs in against — editable on the login screen, remembered
+    /// across launches. Works for a local admin (the default) or a remote one (a tailnet /
+    /// tunnelled homeserver), as long as it's reachable.
+    @Published var serverURL: String
+    private var client: ApiClient
+    private static let urlDefaultsKey = "ToolstackAdminURL"
 
-    init(client: ApiClient = ApiClient(baseURL: AppModel.adminURL())) {
-        self.client = client
+    init() {
+        let saved = UserDefaults.standard.string(forKey: AppModel.urlDefaultsKey)
+        self.serverURL = saved ?? AppModel.adminURL().absoluteString
+        self.client = ApiClient(baseURL: AppModel.adminURL())  // rebuilt from serverURL on login
     }
 
-    /// The admin to talk to — `$TOOLSTACK_ADMIN_URL` or the loopback default.
+    /// The default admin URL — `$TOOLSTACK_ADMIN_URL` or loopback.
     nonisolated static func adminURL() -> URL {
         if let raw = ProcessInfo.processInfo.environment["TOOLSTACK_ADMIN_URL"],
            let url = URL(string: raw) { return url }
@@ -29,6 +36,14 @@ final class AppModel: ObservableObject {
     }
 
     func login(password: String) async {
+        let trimmed = serverURL.trimmingCharacters(in: .whitespaces)
+        guard let url = URL(string: trimmed), url.scheme != nil, url.host != nil else {
+            error = "Enter a valid admin URL — e.g. http://127.0.0.1:8780"
+            return
+        }
+        serverURL = trimmed
+        UserDefaults.standard.set(trimmed, forKey: AppModel.urlDefaultsKey)
+        client = ApiClient(baseURL: url)   // point at whatever admin the user entered
         await run {
             _ = try await self.client.login(password: password)
             self.authenticated = true

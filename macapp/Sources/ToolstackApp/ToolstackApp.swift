@@ -58,14 +58,22 @@ struct LoginView: View {
     var body: some View {
         VStack(spacing: 16) {
             Text("Toolstack").font(.largeTitle.bold())
-            Text("Sign in to the admin").foregroundStyle(.secondary)
-            SecureField("Admin password", text: $password)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 320)
-                .onSubmit { submit() }
+            Text("Connect to an admin").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Admin URL").font(.caption).foregroundStyle(.secondary)
+                TextField("http://127.0.0.1:8780", text: $model.serverURL)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+            }.frame(maxWidth: 360)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Admin password").font(.caption).foregroundStyle(.secondary)
+                SecureField("password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { submit() }
+            }.frame(maxWidth: 360)
             Button("Sign In", action: submit)
                 .keyboardShortcut(.defaultAction)
-                .disabled(password.isEmpty || model.busy)
+                .disabled(password.isEmpty || model.serverURL.isEmpty || model.busy)
         }
         .padding(40)
     }
@@ -101,16 +109,29 @@ struct BrokerPane: View {
 
     var body: some View {
         let running = model.broker?.running == true
-        HStack {
-            Circle().fill(running ? .green : .secondary).frame(width: 10, height: 10)
-            Text(running ? "running" : "stopped")
-            if let port = model.broker?.port { Text("· :\(port)").foregroundStyle(.secondary) }
+        HStack(spacing: 7) {
+            Circle().fill(running ? .green : .secondary).frame(width: 9, height: 9)
+            Text(running ? "running" : "stopped").font(.callout)
+            if let port = model.broker?.port { Text(":\(port)").font(.caption).foregroundStyle(.secondary) }
+            Spacer(minLength: 0)
         }
-        HStack {
-            Button("Start") { Task { await model.brokerAction("start") } }.disabled(running || model.busy)
-            Button("Stop") { Task { await model.brokerAction("stop") } }.disabled(!running || model.busy)
-            Button("Restart") { Task { await model.brokerAction("restart") } }.disabled(model.busy)
+        // Compact icon controls — the sidebar is too narrow for "Start/Stop/Restart" labels
+        // (they truncated to "St…"). Tooltips name each on hover.
+        HStack(spacing: 6) {
+            control("play.fill", "Start broker", disabled: running)  { await model.brokerAction("start") }
+            control("stop.fill", "Stop broker", disabled: !running)  { await model.brokerAction("stop") }
+            control("arrow.clockwise", "Restart broker", disabled: false) { await model.brokerAction("restart") }
         }
+    }
+
+    private func control(_ symbol: String, _ help: String, disabled: Bool,
+                         _ action: @escaping () async -> Void) -> some View {
+        Button { Task { await action() } } label: {
+            Image(systemName: symbol).frame(width: 16)
+        }
+        .buttonStyle(.bordered)
+        .help(help)
+        .disabled(disabled || model.busy)
     }
 }
 
