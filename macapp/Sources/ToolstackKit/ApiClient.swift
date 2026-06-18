@@ -63,6 +63,21 @@ public actor ApiClient {
                        body: ["name": name, "allow": allow, "review": review])
     }
 
+    public func listTools() async throws -> [ToolInfo] {
+        let response: ToolsResponse = try await send("GET", "/api/tools")
+        return response.tools
+    }
+
+    public func policy(for caller: String) async throws -> PolicyResponse {
+        try await send("GET", "/api/callers/\(caller)/policy")
+    }
+
+    /// Replace a caller's policy. `allow`/`review` are `tool.op` specs; an op in neither is denied.
+    @discardableResult
+    public func setPolicy(caller: String, allow: [String], review: [String]) async throws -> PolicyResponse {
+        try await send("PUT", "/api/callers/\(caller)/policy", body: ["allow": allow, "review": review])
+    }
+
     // --- transport ------------------------------------------------------------
 
     private func send<T: Decodable>(_ method: String, _ path: String,

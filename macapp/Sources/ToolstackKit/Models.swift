@@ -44,6 +44,48 @@ public struct CreatedCaller: Codable, Sendable {
     public let token: String   // shown once
 }
 
+public struct OpInfo: Codable, Sendable, Identifiable, Equatable {
+    public let op: String
+    public let risk: String
+    public let description: String
+    public var id: String { op }
+}
+
+public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
+    public let id: String
+    public let type: String
+    public let port: Int?
+    public let running: Bool
+    public let ops: [OpInfo]
+}
+
+public struct ToolsResponse: Codable, Sendable {
+    public let tools: [ToolInfo]
+    public let error: String?
+}
+
+/// A caller's policy: tool -> op -> effect ("allow" | "review"). An op absent from the map is
+/// denied. (Dictionary keys are tool/op names, untouched by `.convertFromSnakeCase`.)
+public struct Policy: Codable, Sendable, Equatable {
+    public let tools: [String: [String: String]]
+    public init(tools: [String: [String: String]] = [:]) { self.tools = tools }
+
+    public func effect(tool: String, op: String) -> Effect {
+        Effect(rawValue: tools[tool]?[op] ?? "deny") ?? .deny
+    }
+}
+
+public enum Effect: String, Sendable, CaseIterable, Identifiable {
+    case deny, review, allow
+    public var id: String { rawValue }
+}
+
+public struct PolicyResponse: Codable, Sendable {
+    public let name: String
+    public let policy: Policy
+    public let enabled: [String]
+}
+
 /// What went wrong talking to the admin API. `unauthorized` is special-cased so the UI can
 /// drop back to the login screen; everything else carries a status + server message.
 public enum ApiError: Error, Equatable, Sendable {

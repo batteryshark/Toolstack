@@ -31,6 +31,12 @@ class JsonApi(unittest.TestCase):
         self.addCleanup(self._restore_env)
 
         settings.write_password_hash(auth.hash_password(PASSWORD))
+        tool_dir = Path(self.tmp, "tools", "echo")
+        tool_dir.mkdir(parents=True)
+        (tool_dir / "toolyard.toml").write_text(
+            'id = "echo"\ntype = "rest"\n\n[entrypoint]\nport = 4601\n\n'
+            '[[operations]]\nname = "say"\nrisk = "low"\ndescription = "echo a message"\n',
+            encoding="utf-8")
         self.db_path = str(Path(self.tmp, "broker.sqlite3"))
         broker_config.save(BrokerRunConfig(db_path=self.db_path, tools_root=str(Path(self.tmp, "tools"))))
         self.client = TestClient(create_app())
@@ -172,7 +178,10 @@ class JsonApi(unittest.TestCase):
         self.assertIn("requests", body)
 
     def test_tools_config_secret_backend(self):
-        self.assertEqual(self.client.get("/api/tools", headers=self._auth()).status_code, 200)
+        tools = self.client.get("/api/tools", headers=self._auth())
+        self.assertEqual(tools.status_code, 200)
+        echo = next(t for t in tools.json()["tools"] if t["id"] == "echo")
+        self.assertEqual([op["op"] for op in echo["ops"]], ["say"])  # ops attached for the policy editor
         cfg = self.client.get("/api/config", headers=self._auth())
         self.assertEqual(cfg.status_code, 200)
         self.assertIn("port", cfg.json())

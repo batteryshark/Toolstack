@@ -93,7 +93,10 @@ struct OperatorView: View {
             }
             .navigationTitle("Toolstack")
         } detail: {
-            CallersPane()
+            TabView {
+                CallersPane().tabItem { Label("Callers", systemImage: "person.2") }
+                ToolsPane().tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
+            }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -138,6 +141,7 @@ struct BrokerPane: View {
 struct CallersPane: View {
     @EnvironmentObject var model: AppModel
     @State private var newName = ""
+    @State private var editing: Caller?   // caller whose policy is being edited
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -157,16 +161,121 @@ struct CallersPane: View {
                     Text(caller.isActive ? "active" : "revoked")
                         .foregroundStyle(caller.isActive ? .primary : .secondary)
                 }
-                TableColumn("") { caller in
+                TableColumn("Policy") { caller in
                     if caller.isActive {
-                        Button("Revoke", role: .destructive) {
-                            // wired in T-031 alongside the rest of the caller-management UI
-                        }.disabled(true)
+                        Button("Edit…") { editing = caller }
                     }
                 }
             }
         }
         .padding()
         .navigationTitle("Callers")
+        .sheet(item: $editing) { caller in
+            PolicyEditor(caller: caller.name).environmentObject(model)
+        }
+    }
+}
+
+struct ToolsPane: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        Group {
+            if model.tools.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "wrench.and.screwdriver").font(.largeTitle).foregroundStyle(.secondary)
+                    Text("No tools registered").foregroundStyle(.secondary)
+                    Text("Author tools into the broker's tools dir, then restart it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(model.tools) { tool in
+                    DisclosureGroup {
+                        ForEach(tool.ops) { op in
+                            HStack {
+                                Text(op.op).bold()
+                                Text(op.risk).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+                                    .background(.secondary.opacity(0.15), in: .capsule)
+                                Spacer()
+                                Text(op.description).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Circle().fill(tool.running ? .green : .secondary).frame(width: 8, height: 8)
+                            Text(tool.id).bold()
+                            Text(tool.type).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Tools")
+        .task { await model.refreshTools() }
+    }
+}
+
+/// Per-caller policy editor: an allow / review / deny picker for every tool op. "deny" just
+/// means the op isn't in the allow or review list (that's how the broker stores it).
+struct PolicyEditor: View {
+    @EnvironmentObject var model: AppModel
+    let caller: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var effects: [String: Effect] = [:]   // "tool.op" -> effect
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Policy — \(caller)").font(.title2.bold())
+            if !loaded {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.tools.isEmpty {
+                Text("No tools to grant. Register a tool first.")
+                    .foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(model.tools) { tool in
+                        Section(tool.id) {
+                            ForEach(tool.ops) { op in
+                                Picker(op.op, selection: bind("\(tool.id).\(op.op)")) {
+                                    ForEach(Effect.allCases) { Text($0.rawValue.capitalized).tag($0) }
+                                }.pickerStyle(.segmented)
+                            }
+                        }
+                    }
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") { Task { await save() } }
+                    .keyboardShortcut(.defaultAction).disabled(!loaded || model.busy)
+            }
+        }
+        .padding()
+        .frame(minWidth: 480, minHeight: 440)
+        .task { await load() }
+    }
+
+    private func bind(_ key: String) -> Binding<Effect> {
+        Binding(get: { effects[key] ?? .deny }, set: { effects[key] = $0 })
+    }
+
+    private func load() async {
+        await model.refreshTools()
+        let policy = await model.loadPolicy(for: caller) ?? Policy()
+        var current: [String: Effect] = [:]
+        for tool in model.tools {
+            for op in tool.ops { current["\(tool.id).\(op.op)"] = policy.effect(tool: tool.id, op: op.op) }
+        }
+        effects = current
+        loaded = true
+    }
+
+    private func save() async {
+        let allow = effects.filter { $0.value == .allow }.map(\.key)
+        let review = effects.filter { $0.value == .review }.map(\.key)
+        await model.savePolicy(caller: caller, allow: allow, review: review)
+        dismiss()
     }
 }

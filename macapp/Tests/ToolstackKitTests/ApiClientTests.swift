@@ -120,6 +120,35 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(body["allow"] as? [String], ["echo.say"])
     }
 
+    func testListToolsDecodesOps() async throws {
+        let json = #"{"tools":[{"id":"echo","type":"rest","port":4601,"running":false,"#
+                 + #""ops":[{"op":"say","risk":"low","description":"echo it"}]}]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let tools = try await makeClient(token: "t").listTools()
+        XCTAssertEqual(tools.first?.id, "echo")
+        XCTAssertEqual(tools.first?.ops.first?.op, "say")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools")
+    }
+
+    func testGetPolicyDecodes() async throws {
+        let json = #"{"name":"hermes","policy":{"tools":{"echo":{"say":"allow"}}},"enabled":["echo"]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let resp = try await makeClient(token: "t").policy(for: "hermes")
+        XCTAssertEqual(resp.policy.tools["echo"]?["say"], "allow")
+        XCTAssertEqual(resp.policy.effect(tool: "echo", op: "say"), .allow)
+        XCTAssertEqual(resp.policy.effect(tool: "echo", op: "shout"), .deny)  // absent -> deny
+    }
+
+    func testSetPolicySendsAllowReviewViaPut() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, [:], Data(#"{"name":"hermes","policy":{"tools":{}},"enabled":[]}"#.utf8))
+        }
+        _ = try await makeClient(token: "t").setPolicy(caller: "hermes", allow: ["echo.say"], review: [])
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "PUT")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/callers/hermes/policy")
+        XCTAssertEqual(try bodyJSON()["allow"] as? [String], ["echo.say"])
+    }
+
     func testListCallersDecodesSnakeCase() async throws {
         // `created_at` on the caller is an EXTRA column (list_callers does SELECT *) that the
         // Caller model omits — it must decode anyway (unknown keys ignored), so keep it here.
