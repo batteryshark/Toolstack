@@ -1,9 +1,14 @@
 """HTTP transport for the broker.
 
-Binds 127.0.0.1 ONLY. The boundary depends on this: external agents reach the
-broker through a tailnet (e.g. Tailscale Serve) that terminates TLS and proxies
-to localhost. The bind host is deliberately not configurable, so a misconfig
-cannot expose the broker on a public interface.
+Binds 127.0.0.1 by default. The boundary depends on this: external agents reach the
+broker through a tailnet (e.g. Tailscale Serve) that terminates TLS and proxies to
+localhost. The default is deliberately loopback so a bare run cannot expose the broker.
+
+`TOOLSTACK_BROKER_HOST` overrides the bind host. The ONLY supported reason to set it is
+running the broker inside a container, where it must bind `0.0.0.0` to be reachable —
+and there the boundary moves to Docker's publish mapping (publish to `127.0.0.1:<port>`
+on the host ONLY), exactly as tool containers already do via `TOOLSTACK_BIND`. Do not set
+it to `0.0.0.0` on a bare host.
 
 Run it:  python3 -m broker.server
 """
@@ -23,9 +28,14 @@ from .runtime import HttpRuntime
 from .store import Store
 from .surface_nod import NodSurface
 
-HOST = "127.0.0.1"  # not configurable, on purpose — the boundary depends on it
+DEFAULT_HOST = "127.0.0.1"  # loopback by default — see the module docstring
 DEFAULT_PORT = 8765
 MAX_BODY_BYTES = 64 * 1024  # cap request bodies to bound memory use
+
+
+def _configured_host() -> str:
+    # 127.0.0.1 unless explicitly overridden (only for the in-container case).
+    return os.environ.get("TOOLSTACK_BROKER_HOST") or DEFAULT_HOST
 
 
 def _configured_port() -> int:
@@ -95,7 +105,9 @@ def build_server(
     surface=None,
     approval_ttl: float | None = None,
     rate_limit: int | None = None,
+    host: str | None = None,
 ) -> HTTPServer:
+    bind_host = _configured_host() if host is None else host
     bind_port = _configured_port() if port is None else port
     store = Store(db_path)
     if registry is None:
@@ -115,7 +127,7 @@ def build_server(
         approval_ttl=approval_ttl,
         rate_limiter=RateLimiter(rate_limit),
     )
-    server = HTTPServer((HOST, bind_port), _Handler)
+    server = HTTPServer((bind_host, bind_port), _Handler)
     server.ctx = ctx  # type: ignore[attr-defined]
     return server
 

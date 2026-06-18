@@ -33,9 +33,10 @@ def _serve(args) -> None:
     from .server import create_app  # lazy: pulls in FastAPI/uvicorn
     import uvicorn
 
-    # Host is hardcoded to loopback, mirroring the broker. Reach it remotely over
-    # a tailnet / SSH tunnel, never by binding a public interface.
-    uvicorn.run(create_app(), host="127.0.0.1", port=args.port)
+    # Loopback by default (mirroring the broker); reach it remotely over a tailnet /
+    # SSH tunnel. TOOLSTACK_ADMIN_HOST overrides it ONLY for the in-container case, where
+    # the boundary becomes Docker's publish-to-127.0.0.1 mapping. See settings.admin_host.
+    uvicorn.run(create_app(), host=settings.admin_host(), port=args.port)
 
 
 def main(argv: list[str] | None = None) -> None:

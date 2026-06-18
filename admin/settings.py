@@ -38,6 +38,14 @@ def admin_username() -> str:
     return os.environ.get("TOOLSTACK_ADMIN_USERNAME", "admin")
 
 
+def admin_host() -> str:
+    """The admin's bind host — 127.0.0.1 by default. Override with `TOOLSTACK_ADMIN_HOST`
+    ONLY inside a container (must bind 0.0.0.0 to be reachable), where the boundary moves
+    to Docker's publish mapping (publish to 127.0.0.1:<port> on the host only). Never set
+    it to 0.0.0.0 on a bare host. Mirrors the broker's `TOOLSTACK_BROKER_HOST`."""
+    return os.environ.get("TOOLSTACK_ADMIN_HOST") or "127.0.0.1"
+
+
 def session_ttl_seconds() -> int:
     return int(os.environ.get("TOOLSTACK_ADMIN_SESSION_TTL", str(12 * 60 * 60)))
 

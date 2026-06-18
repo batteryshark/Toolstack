@@ -1,0 +1,19 @@
+# Build context for deploy/docker/Dockerfile is the repo root. Keep the image lean and
+# free of local-only / sensitive dirs. (Tool image builds use their own narrower context.)
+.git
+.github
+.venv
+admin/.venv
+**/__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+# local ordna board (gitignored) — never bake into the image
+tasks
+.ordna
+# the one-box's own runtime state + secrets
+deploy/docker/data
+deploy/docker/.env
+# the previous build, kept locally
+toolstack-old
+.claude

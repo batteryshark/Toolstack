@@ -25,6 +25,10 @@ toolstack-old/
 # local dev secrets (never commit)
 secrets.toml
 
+# one-box Docker deploy: local env (password/passphrase) + runtime state volume
+deploy/docker/.env
+deploy/docker/data/
+
 # Per-tool agent skills are tied to private tools — not committed. (The tool
 # implementations themselves live outside this repo under
 # ~/.local/share/toolstack/tools and are never tracked here.) The generic client

@@ -10,8 +10,8 @@ decide what's next. Companion docs: [PROJECT.md](../PROJECT.md) (nerve center),
 
 The planned build order (Phases 0–4) is **complete and tested**, the agent-side
 client (the `toolstack` CLI + MCP adapter + skill) is built on top, and an operator
-**admin web app** now runs and manages the whole stack — 296 tests pass
-(158 broker + 55 toolyard + 23 client + 60 admin), incl. opt-in Docker runner tests
+**admin web app** now runs and manages the whole stack — 301 tests pass
+(161 broker + 55 toolyard + 23 client + 62 admin), incl. opt-in Docker runner tests
 and an opt-in live-nod test, with live walkthroughs end to end. The full vertical slice runs:
 
 > **agent → broker (auth + policy) → human approval in nod → tool execution with
