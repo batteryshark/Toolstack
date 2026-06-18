@@ -2,15 +2,18 @@
 
 import json
 import os
+import shutil
 import tempfile
 import threading
 import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from unittest import mock
 
+import toolyard.secrets as secrets_mod
 from toolyard.config import SecretSpec, ToolDef, load
-from toolyard.secrets import FileBackend, InfisicalBackend, get_backend
+from toolyard.secrets import FileBackend, InfisicalBackend, VaultBackend, get_backend
 
 REPO = Path(__file__).resolve().parents[2]
 TOOL_TOML = REPO / "tools" / "echo_rest" / "toolyard.toml"
@@ -263,6 +266,134 @@ class InfisicalLive(unittest.TestCase):
         resolved = backend.resolve(_tool(spec))
         self.assertIsInstance(resolved["probe"], str)
         self.assertTrue(resolved["probe"])  # non-empty
+
+
+def _has_cryptography() -> bool:
+    try:
+        import cryptography.fernet  # noqa: F401
+        return True
+    except ModuleNotFoundError:
+        return False
+
+
+@unittest.skipUnless(_has_cryptography(), "vault backend needs the 'cryptography' extra")
+class Vault(unittest.TestCase):
+    """Local encrypted vault: round-trip, encrypted-at-rest, fail-closed on wrong
+    passphrase / tamper, the two write paths (operator set_secret vs runtime update),
+    and selection via get_backend (T-025)."""
+
+    PW = "correct horse battery staple"
+
+    def _path(self) -> str:
+        d = tempfile.mkdtemp(prefix="tsr-vault-")
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        return os.path.join(d, "vault.json")
+
+    def test_init_set_resolve_round_trip(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        VaultBackend(path, self.PW).set_secret("demo", "API_KEY", "v1")
+        resolved = VaultBackend(path, self.PW).resolve(_tool(SecretSpec("api_key", "API_KEY")))
+        self.assertEqual(resolved, {"api_key": "v1"})
+
+    def test_encrypted_at_rest(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        VaultBackend(path, self.PW).set_secret("demo", "API_KEY", "super-secret-value")
+        blob = Path(path).read_text(encoding="utf-8")
+        self.assertNotIn("super-secret-value", blob)  # value is ciphertext, not plaintext
+        self.assertNotIn("API_KEY", blob)             # even the field name is inside the cipher
+
+    def test_wrong_passphrase_fails_closed(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        VaultBackend(path, self.PW).set_secret("demo", "API_KEY", "v1")
+        with self.assertRaises(RuntimeError):
+            VaultBackend(path, "wrong passphrase")
+
+    def test_tamper_is_detected(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        VaultBackend(path, self.PW).set_secret("demo", "API_KEY", "v1")
+        env = json.loads(Path(path).read_text(encoding="utf-8"))
+        ct = env["ciphertext"]
+        env["ciphertext"] = ("A" if ct[0] != "A" else "B") + ct[1:]  # flip a byte -> bad MAC
+        Path(path).write_text(json.dumps(env), encoding="utf-8")
+        with self.assertRaises(RuntimeError):
+            VaultBackend(path, self.PW)
+
+    def test_update_writeback_round_trip(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        VaultBackend(path, self.PW).set_secret("demo", "TOKEN", "old")
+        VaultBackend(path, self.PW).update(
+            _tool(SecretSpec("token", "TOKEN", writable=True)), "token", "new")
+        resolved = VaultBackend(path, self.PW).resolve(_tool(SecretSpec("token", "TOKEN")))
+        self.assertEqual(resolved, {"token": "new"})
+
+    def test_update_rejects_non_writable(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        with self.assertRaises(PermissionError):
+            VaultBackend(path, self.PW).update(_tool(SecretSpec("token", "TOKEN")), "token", "x")
+
+    def test_resolve_missing_field_raises(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        with self.assertRaises(KeyError):
+            VaultBackend(path, self.PW).resolve(_tool(SecretSpec("api_key", "API_KEY")))
+
+    def test_missing_vault_gives_clear_error(self):
+        with self.assertRaises(FileNotFoundError) as cm:
+            VaultBackend(self._path(), self.PW)  # never init'd
+        self.assertIn("vault-init", str(cm.exception))
+
+    def test_init_refuses_to_clobber(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        with self.assertRaises(FileExistsError):
+            VaultBackend.init(path, self.PW)
+
+    def test_init_rejects_empty_passphrase(self):
+        with self.assertRaises(ValueError):
+            VaultBackend.init(self._path(), "")
+
+    def test_file_is_0600(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        self.assertEqual(oct(os.stat(path).st_mode & 0o777), oct(0o600))
+        VaultBackend(path, self.PW).set_secret("demo", "API_KEY", "v1")  # rewrite keeps it
+        self.assertEqual(oct(os.stat(path).st_mode & 0o777), oct(0o600))
+
+    def test_unsupported_version_fails_closed(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        env = json.loads(Path(path).read_text(encoding="utf-8"))
+        env["version"] = 999
+        Path(path).write_text(json.dumps(env), encoding="utf-8")
+        with self.assertRaises(RuntimeError):
+            VaultBackend(path, self.PW)
+
+    def test_params_read_from_envelope_survive_default_change(self):
+        # A vault written with one scrypt cost must still open if the compiled-in default
+        # changes — the params travel in the envelope, not the code.
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        VaultBackend(path, self.PW).set_secret("demo", "API_KEY", "v1")
+        with mock.patch.object(secrets_mod, "_SCRYPT_N", secrets_mod._SCRYPT_N * 2):
+            resolved = VaultBackend(path, self.PW).resolve(_tool(SecretSpec("api_key", "API_KEY")))
+        self.assertEqual(resolved, {"api_key": "v1"})
+
+    def test_get_backend_vault_from_env(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        VaultBackend(path, self.PW).set_secret("demo", "API_KEY", "v1")
+        with mock.patch.dict(os.environ, {"TOOLSTACK_VAULT_FILE": path,
+                                          "TOOLSTACK_VAULT_PASSPHRASE": self.PW}):
+            backend = get_backend("vault")
+            self.assertIsInstance(backend, VaultBackend)
+            self.assertEqual(backend.resolve(_tool(SecretSpec("api_key", "API_KEY"))),
+                             {"api_key": "v1"})
 
 
 class Factory(unittest.TestCase):

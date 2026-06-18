@@ -54,8 +54,8 @@ def tool_runner_backend() -> str:
 
 
 def secret_backend() -> str:
-    """The active secret backend the toolyard resolves tool secrets from (file/infisical).
-    A deployment-wide setting, not per-tool."""
+    """The active secret backend the toolyard resolves tool secrets from
+    (file/vault/infisical). A deployment-wide setting, not per-tool."""
     return os.environ.get("TOOLSTACK_SECRET_BACKEND", "file")
 
 
@@ -71,6 +71,9 @@ def secret_backend_info() -> dict:
             "environment": os.environ.get("TOOLSTACK_INFISICAL_ENVIRONMENT", "prod"),
             "default_vault": os.environ.get("TOOLSTACK_INFISICAL_VAULT", ""),
         }
+    if name == "vault":
+        return {"name": "vault",
+                "path": os.environ.get("TOOLSTACK_VAULT_FILE", "") or "~/.config/toolstack/vault.json"}
     return {"name": "file", "path": tool_secrets_file()}
 
 
