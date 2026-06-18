@@ -79,5 +79,23 @@ class BrokerConfig(unittest.TestCase):
         self.assertNotIn("TOOLSTACK_TOOLS_DIRS", BrokerRunConfig().to_env())
 
 
+class AdminHost(unittest.TestCase):
+    """The admin binds loopback by default; TOOLSTACK_ADMIN_HOST overrides it (only the
+    in-container case should), mirroring the broker's TOOLSTACK_BROKER_HOST."""
+
+    def test_defaults_to_loopback(self):
+        from unittest import mock
+        from admin import settings
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("TOOLSTACK_ADMIN_HOST", None)
+            self.assertEqual(settings.admin_host(), "127.0.0.1")
+
+    def test_env_override(self):
+        from unittest import mock
+        from admin import settings
+        with mock.patch.dict(os.environ, {"TOOLSTACK_ADMIN_HOST": "0.0.0.0"}):
+            self.assertEqual(settings.admin_host(), "0.0.0.0")
+
+
 if __name__ == "__main__":
     unittest.main()

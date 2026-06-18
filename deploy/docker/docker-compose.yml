@@ -1,0 +1,22 @@
+# Toolstack one-box for a laptop. `docker compose up -d` brings up broker + admin +
+# toolyard in a single container; state persists in ./data. Copy .env.example to .env
+# and set a password first. See README.md.
+services:
+  toolstack:
+    build:
+      context: ../..                      # the repo root (the image needs the whole stack)
+      dockerfile: deploy/docker/Dockerfile
+    image: toolstack-onebox
+    env_file: .env
+    init: true                            # reap the broker/tool subprocesses on stop
+    ports:
+      # Publish to 127.0.0.1 ONLY — this mapping IS the trust boundary (the processes
+      # bind 0.0.0.0 inside the container). Do NOT change the host side to 0.0.0.0.
+      - "127.0.0.1:8780:8780"             # admin UI  -> http://127.0.0.1:8780
+      - "127.0.0.1:8765:8765"             # broker    -> point your agent here
+    volumes:
+      - ./data:/data                      # all state: admin config, broker DB, vault, toolyard
+      # Author tools into a directory on the volume so they persist, then add it in the
+      # admin's broker config. (Mount your own tools dir here if you prefer.)
+      # - ./tools:/data/tools
+    restart: unless-stopped

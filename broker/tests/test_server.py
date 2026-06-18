@@ -10,9 +10,30 @@ import urllib.request
 from unittest import mock
 
 from broker.identity import hash_token
-from broker.server import build_server
+from broker.server import _configured_host, build_server
 
 from .support import FakeRuntime, make_registry
+
+
+class BindHost(unittest.TestCase):
+    """The bind host is loopback by default; TOOLSTACK_BROKER_HOST overrides it (only the
+    in-container case should), so the broker can bind 0.0.0.0 behind a 127.0.0.1 publish."""
+
+    def test_defaults_to_loopback(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("TOOLSTACK_BROKER_HOST", None)
+            self.assertEqual(_configured_host(), "127.0.0.1")
+
+    def test_env_override(self):
+        with mock.patch.dict(os.environ, {"TOOLSTACK_BROKER_HOST": "0.0.0.0"}):
+            self.assertEqual(_configured_host(), "0.0.0.0")
+
+    def test_build_server_honors_explicit_host(self):
+        server = build_server(port=0, host="127.0.0.1", db_path=":memory:", audit_sink=None,
+                              registry=make_registry({"echo": {"say": "low"}}), runtime=FakeRuntime())
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.ctx.store.close)
+        self.assertEqual(server.server_address[0], "127.0.0.1")
 
 
 class ServerIntegration(unittest.TestCase):

@@ -1,8 +1,12 @@
 # Deploying Toolstack
 
 This directory holds the operator-facing deployment artifacts for a real (homelab /
-single-host) install. It deploys the **admin web app**, which in turn supervises the
-**broker**; the toolyard and tools run as the admin app starts them.
+single-host) install via **systemd**. It deploys the **admin web app**, which in turn
+supervises the **broker**; the toolyard and tools run as the admin app starts them.
+
+> **On a laptop?** For a self-contained, no-server install, use the one-box Docker setup
+> instead: [`docker/`](docker/) — `docker compose up` brings up the whole stack with an
+> encrypted local vault. See [docker/README.md](docker/README.md).
 
 | File | What it is |
 |---|---|
