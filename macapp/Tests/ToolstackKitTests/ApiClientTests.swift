@@ -135,6 +135,32 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/callers/hermes/revoke")
     }
 
+    func testConfigDecodesMasked() async throws {
+        let json = #"{"port":8765,"db_path":"/x","tools_root":"tools","nod_url":"https://n/boop","#
+                 + #""nod_token":"set","nod_channel":"ops","approval_ttl":3600,"rate_limit":120,"tool_dirs":[]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let cfg = try await makeClient(token: "t").config()
+        XCTAssertEqual(cfg.nodChannel, "ops")
+        XCTAssertEqual(cfg.approvalTtl, 3600)
+        XCTAssertTrue(cfg.nodTokenSet)  // "set" -> true
+    }
+
+    func testSaveConfigSendsTokenOnlyWhenProvided() async throws {
+        let json = #"{"port":8765,"tools_root":"tools","nod_url":"","nod_token":"not set","#
+                 + #""nod_channel":"","approval_ttl":3600,"rate_limit":120}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let client = makeClient(token: "t")
+        // no token -> body omits nod_token (so the stored one is kept)
+        _ = try await client.saveConfig(port: 8765, toolsRoot: "tools", nodURL: "", nodChannel: "",
+                                        nodToken: nil, approvalTTL: 3600, rateLimit: 120)
+        XCTAssertNil(try bodyJSON()["nod_token"])
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        // a token -> included
+        _ = try await client.saveConfig(port: 8765, toolsRoot: "tools", nodURL: "", nodChannel: "",
+                                        nodToken: "tok", approvalTTL: 3600, rateLimit: 120)
+        XCTAssertEqual(try bodyJSON()["nod_token"] as? String, "tok")
+    }
+
     func testListToolsDecodesOps() async throws {
         let json = #"{"tools":[{"id":"echo","type":"rest","port":4601,"running":false,"#
                  + #""ops":[{"op":"say","risk":"low","description":"echo it"}]}]}"#

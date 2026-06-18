@@ -68,6 +68,22 @@ final class AppModel: ObservableObject {
         await run { self.tools = try await self.client.listTools() }
     }
 
+    @Published var config: BrokerConfigInfo?
+
+    func refreshConfig() async {
+        await run { self.config = try await self.client.config() }
+    }
+
+    func saveConfig(port: Int, toolsRoot: String, nodURL: String, nodChannel: String,
+                    nodToken: String?, approvalTTL: Int, rateLimit: Int) async {
+        await run {
+            self.config = try await self.client.saveConfig(
+                port: port, toolsRoot: toolsRoot, nodURL: nodURL, nodChannel: nodChannel,
+                nodToken: nodToken, approvalTTL: approvalTTL, rateLimit: rateLimit)
+            self.banner = "Saved broker config. Restart the broker to apply."
+        }
+    }
+
     /// Load one caller's policy for the editor (returns it rather than storing globally).
     func loadPolicy(for caller: String) async -> Policy? {
         do {

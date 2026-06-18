@@ -96,6 +96,7 @@ struct OperatorView: View {
             TabView {
                 CallersPane().tabItem { Label("Callers", systemImage: "person.2") }
                 ToolsPane().tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
+                ConfigPane().tabItem { Label("Config", systemImage: "gearshape") }
             }
         }
         .toolbar {
@@ -296,5 +297,69 @@ struct PolicyEditor: View {
         let review = effects.filter { $0.value == .review }.map(\.key)
         await model.savePolicy(caller: caller, allow: allow, review: review)
         dismiss()
+    }
+}
+
+/// Editable broker settings (broker.toml). The nod token is write-only — blank keeps the stored
+/// one. Changes need a broker restart to take effect.
+struct ConfigPane: View {
+    @EnvironmentObject var model: AppModel
+    @State private var loaded = false
+    @State private var port = ""
+    @State private var toolsRoot = ""
+    @State private var nodURL = ""
+    @State private var nodChannel = ""
+    @State private var nodToken = ""
+    @State private var nodTokenIsSet = false
+
+    @State private var approvalTTL = ""
+    @State private var rateLimit = ""
+
+    var body: some View {
+        Form {
+            Section("Approval surface (nod)") {
+                TextField("nod URL", text: $nodURL).autocorrectionDisabled()
+                TextField("nod channel", text: $nodChannel).autocorrectionDisabled()
+                SecureField(nodTokenIsSet ? "nod token — set (blank keeps it)" : "nod token", text: $nodToken)
+            }
+            Section("Limits") {
+                TextField("Approval TTL (seconds)", text: $approvalTTL)
+                TextField("Rate limit (per caller/min, 0 = off)", text: $rateLimit)
+            }
+            Section("Discovery") {
+                TextField("Tools root", text: $toolsRoot).autocorrectionDisabled()
+                TextField("Broker port", text: $port)
+            }
+            Section {
+                Button("Save") { Task { await save() } }.disabled(!loaded || model.busy)
+                Text("Restart the broker (sidebar ↻) to apply.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Config")
+        .task { await load() }
+    }
+
+    private func load() async {
+        await model.refreshConfig()
+        if let c = model.config {
+            port = String(c.port); toolsRoot = c.toolsRoot
+            nodURL = c.nodUrl; nodChannel = c.nodChannel
+            approvalTTL = String(c.approvalTtl); rateLimit = String(c.rateLimit)
+            nodTokenIsSet = c.nodTokenSet; nodToken = ""
+        }
+        loaded = true
+    }
+
+    private func save() async {
+        await model.saveConfig(
+            port: Int(port) ?? model.config?.port ?? 8765,
+            toolsRoot: toolsRoot,
+            nodURL: nodURL, nodChannel: nodChannel,
+            nodToken: nodToken.isEmpty ? nil : nodToken,
+            approvalTTL: Int(approvalTTL) ?? model.config?.approvalTtl ?? 3600,
+            rateLimit: Int(rateLimit) ?? model.config?.rateLimit ?? 120)
+        nodToken = ""
+        nodTokenIsSet = model.config?.nodTokenSet ?? nodTokenIsSet
     }
 }

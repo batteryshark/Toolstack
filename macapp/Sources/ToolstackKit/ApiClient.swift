@@ -74,6 +74,23 @@ public actor ApiClient {
         try await send("POST", "/api/callers/\(caller)/revoke", body: [:])
     }
 
+    public func config() async throws -> BrokerConfigInfo {
+        try await send("GET", "/api/config")
+    }
+
+    /// Save broker settings. `nodToken` is sent only when non-nil/non-empty (write-only — an
+    /// omitted token keeps the stored one).
+    @discardableResult
+    public func saveConfig(port: Int, toolsRoot: String, nodURL: String, nodChannel: String,
+                           nodToken: String?, approvalTTL: Int, rateLimit: Int) async throws -> BrokerConfigInfo {
+        var body: [String: Any] = [
+            "port": port, "tools_root": toolsRoot, "nod_url": nodURL, "nod_channel": nodChannel,
+            "approval_ttl": approvalTTL, "rate_limit": rateLimit,
+        ]
+        if let nodToken, !nodToken.isEmpty { body["nod_token"] = nodToken }
+        return try await send("POST", "/api/config", body: body)
+    }
+
     public func listTools() async throws -> [ToolInfo] {
         let response: ToolsResponse = try await send("GET", "/api/tools")
         return response.tools

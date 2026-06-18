@@ -207,6 +207,44 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
     async def api_config(user: str = Depends(require_user)):
         return broker_config.load().masked()  # masked: never returns the nod token
 
+    @app.post("/api/config")
+    async def api_set_config(request: Request, user: str = Depends(require_user)):
+        data = await _json_object(request)
+        current = broker_config.load()
+
+        def _int(key: str, default: int) -> int:
+            if key not in data:
+                return default
+            try:
+                return int(data[key])
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"{key} must be an integer")
+
+        port = _int("port", current.port)
+        approval_ttl = _int("approval_ttl", current.approval_ttl)
+        rate_limit = _int("rate_limit", current.rate_limit)
+        if not 1 <= port <= 65535:
+            raise HTTPException(status_code=400, detail="port must be 1..65535")
+        if approval_ttl < 1:
+            raise HTTPException(status_code=400, detail="approval_ttl must be >= 1")
+        if rate_limit < 0:
+            raise HTTPException(status_code=400, detail="rate_limit must be >= 0")
+        # nod token is write-only: keep the stored value unless a new non-empty one is given.
+        nod_token = (data.get("nod_token") or "").strip() or current.nod_token
+        updated = broker_config.BrokerRunConfig(
+            port=port,
+            db_path=current.db_path,  # not editable here — changing it would orphan the DB
+            tools_root=(data.get("tools_root") or current.tools_root).strip() or current.tools_root,
+            nod_url=data.get("nod_url", current.nod_url).strip(),
+            nod_token=nod_token,
+            nod_channel=data.get("nod_channel", current.nod_channel).strip(),
+            approval_ttl=approval_ttl,
+            rate_limit=rate_limit,
+            tool_dirs=current.tool_dirs,
+        )
+        broker_config.save(updated)  # the operator restarts the broker to apply (like the HTML panel)
+        return updated.masked()
+
     @app.get("/api/secret-backend")
     async def api_secret_backend(user: str = Depends(require_user)):
         return settings.secret_backend_info()
