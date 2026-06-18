@@ -103,6 +103,16 @@ See [approval-surface-adapter.md](approval-surface-adapter.md). The broker owns
 approval truth; nod is the messenger (poll-only — there is no callback route; the
 broker's timeout wins).
 
+### 6. Admin → operator clients (JSON API)
+
+Distinct from the **agent-facing** broker REST (§1, bearer = a caller's broker token): the
+admin also exposes an **operator** JSON API under `POST/GET /api/*` (`admin/api.py`) for native
+/ automation clients — the same surface as the HTML panel (broker control, callers / policies /
+tokens, observe), JSON in/out. Auth is `POST /api/login {password}` → a signed-session bearer
+token (the same value the panel's cookie carries; no CSRF — a header token isn't auto-sent
+cross-site). Every mutation goes through `broker.operations`, so the API, the HTML panel, and
+`brokerctl` share **one** audit trail. Loopback-only, like the rest of the admin.
+
 ## Secrets access rule (collapsed)
 
 Only **toolyard** talks to the secret backend, and only for **workload** secrets,

@@ -18,11 +18,25 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 
 from broker import operations
 
-from . import auth, broker_config, settings, supervisor
+from . import auth, broker_config, settings, supervisor, toolyard_ops
 from .store_access import open_store
 
 # broker lifecycle action -> the admin.* audit event it records (shared with the HTML handler)
 _BROKER_EVENTS = {"start": "broker_started", "stop": "broker_stopped", "restart": "broker_restarted"}
+
+
+def _rows(rows) -> list[dict]:
+    """sqlite3.Row list -> JSON-serializable dicts."""
+    return [dict(r) for r in rows]
+
+
+def _str_list(value, field: str) -> list[str]:
+    """Coerce a JSON field to a list[str], or 400. None -> []."""
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+        raise HTTPException(status_code=400, detail=f"{field} must be a list of strings")
+    return value
 
 
 async def _json_object(request: Request) -> dict:
@@ -75,3 +89,112 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
         with open_store(config) as store:
             operations.record_admin_event(store, user, _BROKER_EVENTS[action], {})
         return supervisor.status()
+
+    # --- callers / policy / tokens -------------------------------------------
+    @app.get("/api/callers")
+    async def api_callers(user: str = Depends(require_user)):
+        with open_store(broker_config.load()) as store:
+            return {"callers": _rows(store.list_callers(include_revoked=True)),
+                    "tokens": _rows(store.list_tokens(include_revoked=False))}
+
+    @app.post("/api/callers")
+    async def api_create_caller(request: Request, user: str = Depends(require_user)):
+        data = await _json_object(request)
+        name = (data.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
+        allow, review = _str_list(data.get("allow"), "allow"), _str_list(data.get("review"), "review")
+        with open_store(broker_config.load()) as store:
+            if store.caller_by_name(name) is not None:
+                raise HTTPException(status_code=409, detail=f"caller already exists: {name}")
+            token = operations.create_caller(store, name, allow, review, user)
+        return {"name": name, "token": token}  # token shown once
+
+    @app.post("/api/callers/{name}/revoke")
+    async def api_revoke_caller(name: str, user: str = Depends(require_user)):
+        config = broker_config.load()
+        with open_store(config) as store:
+            try:
+                # surface=build_surface() so cancelled approval cards are also withdrawn from
+                # nod, matching the HTML panel (store-marking is the disarm guarantee regardless).
+                cancelled = operations.revoke_caller(store, name, user, surface=config.build_surface())
+            except LookupError as exc:
+                raise HTTPException(status_code=404, detail=str(exc))
+        return {"name": name, "cancelled_approvals": cancelled}
+
+    @app.post("/api/callers/{name}/rotate-token")
+    async def api_rotate_token(name: str, user: str = Depends(require_user)):
+        with open_store(broker_config.load()) as store:
+            try:
+                token = operations.rotate_token(store, name, user)
+            except LookupError as exc:
+                raise HTTPException(status_code=404, detail=str(exc))
+        return {"name": name, "token": token}  # the caller's single active token, shown once
+
+    @app.post("/api/tokens/revoke")
+    async def api_revoke_token(request: Request, user: str = Depends(require_user)):
+        data = await _json_object(request)
+        prefix = (data.get("prefix") or "").strip()
+        if not prefix:
+            raise HTTPException(status_code=400, detail="prefix is required (an empty prefix is refused)")
+        config = broker_config.load()
+        with open_store(config) as store:
+            revoked = operations.revoke_token(store, prefix, user, surface=config.build_surface())
+        return {"prefix": prefix, "revoked": revoked}
+
+    @app.get("/api/callers/{name}/policy")
+    async def api_get_policy(name: str, user: str = Depends(require_user)):
+        with open_store(broker_config.load()) as store:
+            try:
+                caller = operations.require_caller(store, name)
+            except LookupError as exc:
+                raise HTTPException(status_code=404, detail=str(exc))
+            policy = store.policy_for(caller["id"])
+        return {"name": name, "policy": policy, "enabled": operations.enabled_tools(policy)}
+
+    @app.put("/api/callers/{name}/policy")
+    async def api_set_policy(name: str, request: Request, user: str = Depends(require_user)):
+        data = await _json_object(request)
+        allow, review = _str_list(data.get("allow"), "allow"), _str_list(data.get("review"), "review")
+        with open_store(broker_config.load()) as store:
+            try:
+                operations.set_policy(store, name, allow, review, user)
+                policy = store.policy_for(operations.require_caller(store, name)["id"])
+            except LookupError as exc:
+                raise HTTPException(status_code=404, detail=str(exc))
+        return {"name": name, "policy": policy, "enabled": operations.enabled_tools(policy)}
+
+    @app.put("/api/callers/{name}/tools")
+    async def api_set_enabled_tools(name: str, request: Request, user: str = Depends(require_user)):
+        data = await _json_object(request)
+        enabled = _str_list(data.get("enabled"), "enabled")
+        with open_store(broker_config.load()) as store:
+            try:
+                operations.set_enabled_tools(store, name, enabled, user)
+            except LookupError as exc:
+                raise HTTPException(status_code=404, detail=str(exc))
+        return {"name": name, "enabled": enabled}
+
+    # --- observe / discover ---------------------------------------------------
+    @app.get("/api/audit")
+    async def api_audit(user: str = Depends(require_user), limit: int = 50):
+        limit = max(1, min(limit, 500))
+        with open_store(broker_config.load()) as store:
+            return {"audit": store.recent_audit(limit=limit),
+                    "requests": _rows(store.list_requests(limit=limit))}
+
+    @app.get("/api/tools")
+    async def api_tools(user: str = Depends(require_user)):
+        config = broker_config.load()
+        try:
+            return {"tools": toolyard_ops.list_tools(config.tools_root, config.tool_dirs)}
+        except Exception as exc:  # a single bad toolyard.toml -> an error field, not a 500
+            return {"tools": [], "error": f"could not read tools: {exc}"}
+
+    @app.get("/api/config")
+    async def api_config(user: str = Depends(require_user)):
+        return broker_config.load().masked()  # masked: never returns the nod token
+
+    @app.get("/api/secret-backend")
+    async def api_secret_backend(user: str = Depends(require_user)):
+        return settings.secret_backend_info()

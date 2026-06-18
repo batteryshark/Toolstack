@@ -104,6 +104,86 @@ class JsonApi(unittest.TestCase):
             r = self.client.post("/api/broker/start", headers=self._auth())
         self.assertEqual(r.status_code, 502)
 
+    # --- callers / policy / tokens -------------------------------------------
+    def _create(self, name="hermes", **body):
+        return self.client.post("/api/callers", headers=self._auth(), json={"name": name, **body})
+
+    def test_create_and_list_callers(self):
+        r = self._create("hermes", allow=["echo.say"])
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["token"])  # token shown once
+        listing = self.client.get("/api/callers", headers=self._auth()).json()
+        self.assertIn("hermes", [c["name"] for c in listing["callers"]])
+        self.assertTrue(listing["tokens"])  # the initial token is listed (hashed)
+
+    def test_create_duplicate_is_409(self):
+        self._create("hermes")
+        self.assertEqual(self._create("hermes").status_code, 409)
+
+    def test_create_requires_name(self):
+        self.assertEqual(self.client.post("/api/callers", headers=self._auth(), json={}).status_code, 400)
+
+    def test_create_rejects_bad_allow_type(self):
+        r = self.client.post("/api/callers", headers=self._auth(),
+                             json={"name": "x", "allow": "echo.say"})  # str, not list
+        self.assertEqual(r.status_code, 400)
+
+    def test_revoke_caller_and_missing_404(self):
+        self._create("hermes")
+        self.assertEqual(self.client.post("/api/callers/hermes/revoke", headers=self._auth()).status_code, 200)
+        self.assertEqual(self.client.post("/api/callers/ghost/revoke", headers=self._auth()).status_code, 404)
+
+    def test_rotate_token_returns_new(self):
+        first = self._create("hermes").json()["token"]
+        rotated = self.client.post("/api/callers/hermes/rotate-token", headers=self._auth())
+        self.assertEqual(rotated.status_code, 200)
+        self.assertTrue(rotated.json()["token"])
+        self.assertNotEqual(rotated.json()["token"], first)
+
+    def test_revoke_token_empty_prefix_400(self):
+        r = self.client.post("/api/tokens/revoke", headers=self._auth(), json={"prefix": "  "})
+        self.assertEqual(r.status_code, 400)
+
+    def test_policy_round_trip(self):
+        self._create("hermes", allow=["echo.say"])
+        got = self.client.get("/api/callers/hermes/policy", headers=self._auth()).json()
+        self.assertEqual(got["policy"]["tools"]["echo"]["say"], "allow")
+        put = self.client.put("/api/callers/hermes/policy", headers=self._auth(),
+                              json={"review": ["echo.shout"]})
+        self.assertEqual(put.status_code, 200)
+        self.assertEqual(put.json()["policy"]["tools"]["echo"]["shout"], "review")
+
+    def test_policy_missing_caller_404(self):
+        self.assertEqual(self.client.get("/api/callers/ghost/policy", headers=self._auth()).status_code, 404)
+
+    def test_set_enabled_tools(self):
+        self._create("hermes")
+        r = self.client.put("/api/callers/hermes/tools", headers=self._auth(),
+                            json={"enabled": ["echo"]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["enabled"], ["echo"])
+
+    # --- observe / discover ---------------------------------------------------
+    def test_audit_returns_events(self):
+        self._create("hermes")  # records an admin.caller_created event
+        body = self.client.get("/api/audit", headers=self._auth()).json()
+        pairs = [(e["component"], e["event_type"]) for e in body["audit"]]
+        self.assertIn(("admin", "caller_created"), pairs)
+        self.assertIn("requests", body)
+
+    def test_tools_config_secret_backend(self):
+        self.assertEqual(self.client.get("/api/tools", headers=self._auth()).status_code, 200)
+        cfg = self.client.get("/api/config", headers=self._auth())
+        self.assertEqual(cfg.status_code, 200)
+        self.assertIn("port", cfg.json())
+        sb = self.client.get("/api/secret-backend", headers=self._auth()).json()
+        self.assertIn("name", sb)
+
+    def test_operator_routes_need_auth(self):
+        for method, path in [("get", "/api/callers"), ("post", "/api/callers"),
+                             ("get", "/api/audit"), ("get", "/api/config")]:
+            self.assertEqual(getattr(self.client, method)(path).status_code, 401, path)
+
 
 if __name__ == "__main__":
     unittest.main()
