@@ -41,6 +41,17 @@ class Operations(unittest.TestCase):
         self.assertIsNotNone(authenticate(self.store, f"Bearer {token}"))
         self.assertEqual(len(self._admin_events("token_issued")), 1)
 
+    def test_rotate_token_replaces_to_single_active_and_audits(self):
+        t1 = operations.create_caller(self.store, "hermes", None, None, "op")
+        caller = self.store.caller_by_name("hermes")
+        t2 = operations.rotate_token(self.store, "hermes", "op")
+        # The new token works, the old one no longer authenticates, and exactly one
+        # active token remains.
+        self.assertIsNotNone(authenticate(self.store, f"Bearer {t2}"))
+        self.assertIsNone(authenticate(self.store, f"Bearer {t1}"))
+        self.assertEqual(self.store.active_token_count(caller["id"]), 1)
+        self.assertEqual(len(self._admin_events("token_rotated")), 1)
+
     def test_revoke_token_denies_next_auth_and_audits(self):
         token = operations.create_caller(self.store, "hermes", ["echo.say"], None, "op")
         self.assertIsNotNone(authenticate(self.store, f"Bearer {token}"))
@@ -62,6 +73,40 @@ class Operations(unittest.TestCase):
         self.assertEqual(self.store.policy_for(caller["id"]),
                          {"tools": {"echo": {"say": "allow", "skip": "review"}}})
         self.assertEqual(len(self._admin_events("policy_changed")), 1)
+
+    def test_enabled_tools_derives_from_explicit_and_granted(self):
+        # Explicit enablement plus any tool already carrying ops (back-compat).
+        self.assertEqual(operations.enabled_tools({}), [])
+        self.assertEqual(
+            operations.enabled_tools({"enabled": ["spotify"],
+                                      "tools": {"echo": {"say": "allow"}}}),
+            ["echo", "spotify"])
+
+    def test_set_enabled_tools_persists_and_audits(self):
+        operations.create_caller(self.store, "hermes", None, None, "op")
+        operations.set_enabled_tools(self.store, "hermes", ["spotify", "echo"], "op")
+        caller = self.store.caller_by_name("hermes")
+        self.assertEqual(self.store.policy_for(caller["id"]),
+                         {"tools": {}, "enabled": ["spotify", "echo"]})
+        self.assertEqual(len(self._admin_events("tools_changed")), 1)
+
+    def test_disabling_a_tool_clears_its_granted_ops(self):
+        operations.create_caller(self.store, "hermes", None, None, "op")
+        operations.set_enabled_tools(self.store, "hermes", ["echo", "spotify"], "op")
+        operations.set_policy(self.store, "hermes", ["echo.say", "spotify.play_track"], None, "op")
+        # Disable echo: it is dropped from enabled AND its granted ops are removed.
+        operations.set_enabled_tools(self.store, "hermes", ["spotify"], "op")
+        caller = self.store.caller_by_name("hermes")
+        self.assertEqual(self.store.policy_for(caller["id"]),
+                         {"tools": {"spotify": {"play_track": "allow"}}, "enabled": ["spotify"]})
+
+    def test_set_policy_preserves_enablement(self):
+        operations.create_caller(self.store, "hermes", None, None, "op")
+        operations.set_enabled_tools(self.store, "hermes", ["echo"], "op")
+        operations.set_policy(self.store, "hermes", ["echo.say"], None, "op")
+        caller = self.store.caller_by_name("hermes")
+        self.assertEqual(self.store.policy_for(caller["id"]),
+                         {"tools": {"echo": {"say": "allow"}}, "enabled": ["echo"]})
 
     def test_missing_caller_raises_lookup_error(self):
         for call in (
