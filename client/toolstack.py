@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """toolstack — the agent's generic client for calling tools through the broker.
 
 Discover, describe, call, and wait on any tool the caller is allowed to use, in a
