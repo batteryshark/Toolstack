@@ -33,7 +33,7 @@ def _csrf(html_text: str) -> str:
 
 
 def _token_from_banner(html_text: str) -> str:
-    m = re.search(r"shown once: <code>([^<]+)</code>", html_text)
+    m = re.search(r"class='token-field' readonly value='([^']+)'", html_text)
     assert m, "no one-time token in banner"
     return m.group(1)
 
@@ -97,18 +97,36 @@ class AdminApp(unittest.TestCase):
         token = _token_from_banner(r.text)
         self.assertIsNotNone(authenticate(self._store(), f"Bearer {token}"))
 
+        # A new caller has no tools enabled yet: the policy page is empty and
+        # points at the tools page.
+        pol = self.client.get("/callers/hermes/policy")
+        self.assertNotIn("op__echo__say", pol.text)
+        self.assertIn("/callers/hermes/tools", pol.text)
+
+        # Enable echo for this caller on the tools page.
+        tools = self.client.get("/callers/hermes/tools")
+        self.assertIn("echo", tools.text)
+        r = self.client.post("/callers/hermes/tools",
+                             data={"tool__echo": "on", "_csrf": _csrf(tools.text)},
+                             follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+
+        # Now echo's operations show up on the policy page.
         pol = self.client.get("/callers/hermes/policy")
         self.assertIn("echo", pol.text)
         self.assertIn("say", pol.text)
 
         r = self.client.post("/callers/hermes/policy",
-                             data={"op__echo__say": "review", "_csrf": _csrf(pol.text)})
-        self.assertEqual(r.status_code, 200)
+                             data={"op__echo__say": "review", "_csrf": _csrf(pol.text)},
+                             follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
 
         store = self._store()
         caller = store.caller_by_name("hermes")
-        self.assertEqual(store.policy_for(caller["id"]), {"tools": {"echo": {"say": "review"}}})
+        self.assertEqual(store.policy_for(caller["id"]),
+                         {"tools": {"echo": {"say": "review"}}, "enabled": ["echo"]})
         self.assertTrue(any(e["event_type"] == "policy_changed" for e in store.audit_events()))
+        self.assertTrue(any(e["event_type"] == "tools_changed" for e in store.audit_events()))
 
     def test_revoke_token_via_panel(self):
         self._login()

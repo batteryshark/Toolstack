@@ -52,11 +52,37 @@ pre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:aut
 .card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}
 .argrow,.secrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
 .argrow input,.secrow input{min-width:120px;}
+.brand{display:flex;align-items:center;gap:18px;}
+nav.appnav{display:flex;gap:4px;align-items:center;}
+nav.appnav a{color:#c7d0dc;text-decoration:none;padding:6px 12px;border-radius:6px;font-weight:550;}
+nav.appnav a:hover{background:rgba(255,255,255,.08);color:#fff;}
+nav.appnav a.active{background:rgba(255,255,255,.16);color:#fff;}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;}
+.tab-button{background:transparent;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 16px;color:var(--muted);cursor:pointer;font-weight:550;}
+.tab-button:hover{color:var(--ink);}
+.tab-button.active{background:var(--panel);border-color:var(--line);color:var(--ink);margin-bottom:-1px;}
+.tab-panel.hidden{display:none;}
 """
 
 _JS = """
 function setAll(effect){document.querySelectorAll('select[name^="op__"]').forEach(function(s){s.value=effect;});}
 function setTool(tool,effect){document.querySelectorAll('select[name^="op__'+tool+'__"]').forEach(function(s){s.value=effect;});}
+function showTab(name){
+  document.querySelectorAll('[data-tab-panel]').forEach(function(p){
+    p.classList.toggle('hidden', p.getAttribute('data-tab-panel')!==name);});
+  document.querySelectorAll('.tab-button').forEach(function(b){
+    b.classList.toggle('active', b.getAttribute('data-tab')===name);});
+}
+document.addEventListener('DOMContentLoaded', function(){
+  var tabs = document.querySelectorAll('.tab-button');
+  if(!tabs.length) return;
+  tabs.forEach(function(b){b.addEventListener('click', function(){
+    var n=b.getAttribute('data-tab'); showTab(n); history.replaceState(null,'','#'+n);});});
+  var want=(location.hash||'').replace('#','');
+  if(!want || !document.querySelector('[data-tab-panel="'+want+'"]'))
+    want=tabs[0].getAttribute('data-tab');
+  showTab(want);
+});
 """
 
 # Tool editor: builds repeating operation/argument/secret rows from real widgets,
@@ -160,18 +186,29 @@ def _csrf_field(csrf: str) -> str:
     return f'<input type="hidden" name="_csrf" value="{esc(csrf)}">'
 
 
-def page(title: str, body: str, *, user: str | None, csrf: str = "") -> str:
-    nav = (
-        f"<form method='post' action='/logout'>{_csrf_field(csrf)}"
-        f"<span class='muted'>{esc(user)}</span> <button>Sign out</button></form>"
-        if user else ""
-    )
+_NAV_LINKS = (("/", "Dashboard", "dashboard"),
+              ("/tools", "Tools", "tools"),
+              ("/config", "Config", "config"))
+
+
+def page(title: str, body: str, *, user: str | None, csrf: str = "", nav: str = "") -> str:
+    if user:
+        links = "".join(
+            f"<a href='{href}'{' class=\"active\"' if nav == key else ''}>{esc(label)}</a>"
+            for href, label, key in _NAV_LINKS)
+        header = (
+            f"<div class='brand'><h1>Toolstack Admin</h1><nav class='appnav'>{links}</nav></div>"
+            f"<form method='post' action='/logout'>{_csrf_field(csrf)}"
+            f"<span class='muted'>{esc(user)}</span> <button>Sign out</button></form>"
+        )
+    else:
+        header = "<h1>Toolstack Admin</h1>"
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         f"<title>{esc(title)} · Toolstack Admin</title>"
         f"<style>{_CSS}</style><script>{_JS}</script></head>"
-        f"<body><header><h1>Toolstack Admin</h1>{nav}</header>"
+        f"<body><header>{header}</header>"
         f"<main>{body}</main></body></html>"
     )
 
@@ -232,6 +269,21 @@ def _broker_section(broker: dict, log_tail: str, config: dict, csrf: str) -> str
     )
 
 
+def token_reveal_banner(lead: str, token: str) -> str:
+    """A one-time token reveal for the dashboard banner: a lead line plus a readonly,
+    click-to-select field and a Copy button. ``lead`` is caller-supplied HTML; ``token``
+    is URL-safe (so it is safe inline in the JS string and, via esc, in HTML)."""
+    return (
+        f"{lead}"
+        "<div class='row' style='margin-top:10px'>"
+        f"<input class='token-field' readonly value='{esc(token)}' onclick='this.select()' "
+        "style='flex:1;min-width:340px;font-family:ui-monospace,Menlo,Consolas,monospace'>"
+        f"<button type='button' onclick=\"navigator.clipboard.writeText('{esc(token)}');"
+        "this.textContent='Copied!'\">Copy</button>"
+        "</div>"
+    )
+
+
 def _callers_section(callers, csrf: str) -> str:
     rows = "".join(
         "<tr>"
@@ -239,7 +291,11 @@ def _callers_section(callers, csrf: str) -> str:
         f"<td>{'revoked' if c['revoked_at'] else 'active'}</td>"
         "<td class='actions'>"
         f"<a class='button' href='/callers/{esc(c['name'])}/policy'>Policy</a>"
-        f"<form method='post' action='/callers/refresh-token' class='inline-form'>{_csrf_field(csrf)}"
+        f"<a class='button' href='/callers/{esc(c['name'])}/tools'>Tools</a>"
+        f"<form method='post' action='/callers/refresh-token' class='inline-form' "
+        "onsubmit=\"return confirm('Rotate this caller\\'s token? Its current token stops "
+        "working immediately and a new one is shown once.')\">"
+        f"{_csrf_field(csrf)}"
         f"<input type='hidden' name='name' value='{esc(c['name'])}'><button type='submit'>Refresh token</button></form>"
         f"<form method='post' action='/callers/revoke' class='inline-form'>{_csrf_field(csrf)}"
         f"<input type='hidden' name='name' value='{esc(c['name'])}'><button type='submit'>Revoke</button></form>"
@@ -257,20 +313,22 @@ def _callers_section(callers, csrf: str) -> str:
 
 
 def _tokens_section(tokens, csrf: str) -> str:
+    # Active tokens only — revocations and rotations are recorded in the Audit log.
     rows = "".join(
         "<tr>"
         f"<td><code>{esc(t['token_hash'][:12])}…</code></td>"
         f"<td>{esc(t['caller'])}</td>"
-        f"<td>{'revoked' if t['revoked_at'] else 'active'}</td>"
         "<td>"
         f"<form method='post' action='/tokens/revoke' class='inline-form'>{_csrf_field(csrf)}"
         f"<input type='hidden' name='prefix' value='{esc(t['token_hash'][:12])}'>"
         "<button type='submit'>Revoke</button></form></td>"
         "</tr>"
         for t in tokens
-    ) or "<tr><td colspan='4' class='muted'>No tokens yet.</td></tr>"
-    return ("<section><h2>Tokens</h2>"
-            "<table><thead><tr><th>Hash prefix</th><th>Caller</th><th>Status</th><th></th></tr></thead>"
+    ) or "<tr><td colspan='3' class='muted'>No active tokens.</td></tr>"
+    return ("<section><h2>Active tokens</h2>"
+            "<p class='muted'>Only active tokens are listed. Revoked and rotated tokens "
+            "appear in the Audit log.</p>"
+            "<table><thead><tr><th>Hash prefix</th><th>Caller</th><th></th></tr></thead>"
             f"<tbody>{rows}</tbody></table></section>")
 
 
@@ -306,15 +364,27 @@ def _audit_section(events) -> str:
 
 def dashboard_view(*, user, csrf, broker, log_tail, config, callers, tokens,
                    requests, audit, caller_names, banner=None, error=None) -> str:
+    panels = [
+        ("broker", "Broker", _broker_section(broker, log_tail, config, csrf)),
+        ("callers", "Callers", _callers_section(callers, csrf)),
+        ("tokens", "Tokens", _tokens_section(tokens, csrf)),
+        ("requests", "Requests", _requests_section(requests, caller_names)),
+        ("audit", "Audit", _audit_section(audit)),
+    ]
+    bar = "".join(
+        f"<button class='tab-button{' active' if i == 0 else ''}' type='button' "
+        f"data-tab='{key}'>{esc(label)}</button>"
+        for i, (key, label, _) in enumerate(panels))
+    # The first panel renders visible and the rest hidden, so the page is usable before
+    # (or without) JS; showTab() then honours any URL hash on load.
     body = (
         _alerts(banner, error)
-        + _broker_section(broker, log_tail, config, csrf)
-        + _callers_section(callers, csrf)
-        + _tokens_section(tokens, csrf)
-        + _requests_section(requests, caller_names)
-        + _audit_section(audit)
+        + f"<nav class='tabs'>{bar}</nav>"
+        + "".join(f"<div class='tab-panel{'' if i == 0 else ' hidden'}' data-tab-panel='{key}'>"
+                  f"{content}</div>"
+                  for i, (key, _, content) in enumerate(panels))
     )
-    return page("Dashboard", body, user=user, csrf=csrf)
+    return page("Dashboard", body, user=user, csrf=csrf, nav="dashboard")
 
 
 def config_view(*, user, csrf, config, error=None) -> str:
@@ -344,7 +414,7 @@ def config_view(*, user, csrf, config, error=None) -> str:
         "<p class='muted'>Saving does not restart the broker — restart it from the dashboard to apply changes.</p>"
         "</form></section>"
     )
-    return page("Config", body, user=user, csrf=csrf)
+    return page("Config", body, user=user, csrf=csrf, nav="config")
 
 
 def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str:
@@ -394,10 +464,40 @@ def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str
         "edited tool is only registered after the broker is restarted (its registry is read at startup).</p>"
         "</section>"
     )
-    return page("Tools", body, user=user, csrf=csrf)
+    return page("Tools", body, user=user, csrf=csrf, nav="tools")
 
 
-def policy_view(*, user, csrf, caller, ops_by_tool, current, error=None) -> str:
+def caller_tools_view(*, user, csrf, caller, all_tools, enabled, error=None) -> str:
+    err = f"<div class='error'>{esc(error)}</div>" if error else ""
+    rows = "".join(
+        "<tr>"
+        f"<td><input type='checkbox' name='tool__{esc(tool)}'"
+        f"{' checked' if tool in enabled else ''}></td>"
+        f"<td>{esc(tool)}</td>"
+        f"<td class='muted'>{len(ops)} operation{'' if len(ops) == 1 else 's'}</td>"
+        "</tr>"
+        for tool, ops in all_tools
+    ) or "<tr><td colspan='3' class='muted'>No tools registered on the broker.</td></tr>"
+    body = (
+        f"{err}<form method='post' action='/callers/{esc(caller)}/tools'>"
+        f"{_csrf_field(csrf)}"
+        "<section class='row'>"
+        "<a class='button' href='/'>Back</a>"
+        f"<strong>Tools for {esc(caller)}</strong>"
+        f"<a class='button' href='/callers/{esc(caller)}/policy'>Edit policy</a>"
+        "<button type='submit'>Save tools</button>"
+        "</section>"
+        "<section><p class='muted'>Enabling a tool lets you grant its operations on the "
+        "policy page. Disabling a tool revokes the caller's access (its granted operations "
+        "are cleared).</p>"
+        "<table><thead><tr><th>Enabled</th><th>Tool</th><th>Operations</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></section>"
+        "</form>"
+    )
+    return page(f"Tools · {caller}", body, user=user, csrf=csrf)
+
+
+def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, error=None) -> str:
     err = f"<div class='error'>{esc(error)}</div>" if error else ""
     tool_policies = current.get("tools", {})
     sections = [
@@ -413,8 +513,14 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, error=None) -> str:
         "</section>",
     ]
     if not ops_by_tool:
-        sections.append("<section><p class='muted'>No tools found in the configured tools "
-                        "root. Start the broker with a valid tools root to manage policy.</p></section>")
+        if has_tools:
+            msg = ("No tools enabled for this caller yet. "
+                   f"<a href='/callers/{esc(caller)}/tools'>Enable tools</a> first, "
+                   "then set per-operation policy here.")
+        else:
+            msg = ("No tools found in the configured tools root. Start the broker with a "
+                   "valid tools root to manage policy.")
+        sections.append(f"<section><p class='muted'>{msg}</p></section>")
     for tool, ops in sorted(ops_by_tool.items()):
         current_ops = tool_policies.get(tool, {})
         op_rows = []
@@ -489,4 +595,4 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", error=None) -> str
         f"<script>window.TOOL_INITIAL = {initial};</script>"
         f"<script>{_TOOL_EDITOR_JS}</script>"
     )
-    return page("Add tool" if mode == "new" else "Edit tool", body, user=user, csrf=csrf)
+    return page("Add tool" if mode == "new" else "Edit tool", body, user=user, csrf=csrf, nav="tools")

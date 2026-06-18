@@ -130,6 +130,18 @@ class Store:
         )
         self._conn.commit()
 
+    def revoke_tokens_for_caller(self, caller_id: int, except_hash: str | None = None) -> int:
+        """Revoke every active token for a caller, optionally sparing one hash. Used to
+        rotate a caller down to a single active token. Returns how many were revoked."""
+        sql = "UPDATE tokens SET revoked_at = ? WHERE caller_id = ? AND revoked_at IS NULL"
+        params: list = [time.time(), caller_id]
+        if except_hash is not None:
+            sql += " AND token_hash != ?"
+            params.append(except_hash)
+        cur = self._conn.execute(sql, params)
+        self._conn.commit()
+        return cur.rowcount
+
     def caller_by_token_hash(self, token_hash: str) -> Caller | None:
         """Resolve a live caller from a token hash. Revoked tokens or revoked
         callers return None, so revocation takes effect on the next request."""

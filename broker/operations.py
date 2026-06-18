@@ -37,6 +37,30 @@ def build_policy(allow, review) -> dict:
     return {"tools": tools}
 
 
+def enabled_tools(policy: dict) -> list[str]:
+    """The tools a caller may manage policy for: the explicit ``enabled`` list plus
+    any tool that already carries granted ops (back-compat for policies written
+    before tool-enablement existed). Sorted, de-duplicated."""
+    granted = policy.get("tools", {})
+    return sorted(set(policy.get("enabled", [])) | set(granted.keys()))
+
+
+def set_enabled_tools(store: Store, name: str, enabled, operator: str) -> None:
+    """Set which tools a caller may use. Disabling a tool drops its granted ops
+    too (so disabling revokes access, not just hides it). The ``enabled`` key is
+    only persisted when non-empty, keeping the stored shape unchanged for callers
+    with no tools enabled."""
+    caller = require_caller(store, name)
+    enabled = list(dict.fromkeys(enabled))  # de-dupe, preserve order
+    prior = store.policy_for(caller["id"]).get("tools", {})
+    tools = {t: ops for t, ops in prior.items() if t in enabled}
+    policy: dict = {"tools": tools}
+    if enabled:
+        policy["enabled"] = enabled
+    store.set_policy(caller["id"], policy)
+    record_admin_event(store, operator, "tools_changed", {"name": name, "enabled": enabled})
+
+
 def record_admin_event(store: Store, operator: str, event_type: str, details: dict) -> None:
     """Append an ``admin.<event_type>`` audit event tagged with the operator."""
     store.append_audit(time.time(), "admin", event_type, "ok", uuid.uuid4().hex, None,
@@ -98,7 +122,11 @@ def revoke_caller(store: Store, name: str, operator: str, surface=None) -> int:
 
 def set_policy(store: Store, name: str, allow, review, operator: str) -> None:
     caller = require_caller(store, name)
-    store.set_policy(caller["id"], build_policy(allow, review))
+    policy = build_policy(allow, review)
+    enabled = store.policy_for(caller["id"]).get("enabled")  # preserve tool-enablement
+    if enabled:
+        policy["enabled"] = enabled
+    store.set_policy(caller["id"], policy)
     record_admin_event(store, operator, "policy_changed", {"name": name})
 
 
@@ -108,6 +136,22 @@ def issue_token(store: Store, name: str, operator: str) -> str:
     token = secrets.token_urlsafe(32)
     store.add_token(caller["id"], hash_token(token))
     record_admin_event(store, operator, "token_issued", {"name": name})
+    return token
+
+
+def rotate_token(store: Store, name: str, operator: str) -> str:
+    """Replace a caller's tokens with a single fresh one and return it once.
+
+    Issues the new token first, then revokes every other active token for the caller —
+    add-then-revoke so the caller is never momentarily tokenless (its in-flight
+    approvals survive the rotation). This enforces one active token per caller; for a
+    distinct identity, create a distinct caller."""
+    caller = require_caller(store, name)
+    token = secrets.token_urlsafe(32)
+    new_hash = hash_token(token)
+    store.add_token(caller["id"], new_hash)
+    revoked = store.revoke_tokens_for_caller(caller["id"], except_hash=new_hash)
+    record_admin_event(store, operator, "token_rotated", {"name": name, "revoked": revoked})
     return token
 
 

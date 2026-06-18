@@ -61,7 +61,7 @@ def create_app() -> FastAPI:
         config = broker_config.load()
         with open_store(config) as store:
             callers = store.list_callers(include_revoked=True)
-            tokens = store.list_tokens(include_revoked=True)
+            tokens = store.list_tokens(include_revoked=False)  # active only; log shows revocations
             requests = store.list_requests(limit=25)
             audit = store.recent_audit(limit=25)
             caller_names = {c["id"]: c["name"] for c in callers}
@@ -194,8 +194,9 @@ def create_app() -> FastAPI:
                 token = operations.create_caller(store, name, None, None, user)
         except Exception as exc:
             return render_dashboard(request, user, error=f"Could not create caller: {exc}")
-        banner = (f"Created caller {views.esc(name)}. Save this token now — it is shown once: "
-                  f"<code>{views.esc(token)}</code>")
+        banner = views.token_reveal_banner(
+            f"Created caller <code>{views.esc(name)}</code>. Save this token now — "
+            "it is shown once and cannot be retrieved later:", token)
         return render_dashboard(request, user, banner=banner)
 
     @app.post("/callers/refresh-token")
@@ -210,10 +211,12 @@ def create_app() -> FastAPI:
         config = broker_config.load()
         try:
             with open_store(config) as store:
-                token = operations.issue_token(store, name, user)
+                token = operations.rotate_token(store, name, user)
         except LookupError as exc:
             return render_dashboard(request, user, error=str(exc))
-        banner = (f"New token for {views.esc(name)} — shown once: <code>{views.esc(token)}</code>")
+        banner = views.token_reveal_banner(
+            f"Rotated token for <code>{views.esc(name)}</code>. Its previous token is now "
+            "revoked. New token — shown once and cannot be retrieved later:", token)
         return render_dashboard(request, user, banner=banner)
 
     @app.post("/callers/revoke")
@@ -260,9 +263,12 @@ def create_app() -> FastAPI:
                 current = store.policy_for(caller["id"])
         except LookupError as exc:
             return render_dashboard(request, user, error=str(exc))
+        all_ops = ops_by_tool(config)
+        enabled = operations.enabled_tools(current)
+        shown = {t: ops for t, ops in all_ops.items() if t in enabled}
         return HTMLResponse(views.policy_view(
             user=user, csrf=csrf_for(request), caller=name,
-            ops_by_tool=ops_by_tool(config), current=current))
+            ops_by_tool=shown, current=current, has_tools=bool(all_ops)))
 
     @app.post("/callers/{name}/policy")
     async def save_policy(request: Request, name: str):
@@ -272,9 +278,17 @@ def create_app() -> FastAPI:
         data = await read_form(request)
         config = broker_config.load()
         if not csrf_ok(request, data):
+            try:
+                with open_store(config) as store:
+                    current = store.policy_for(operations.require_caller(store, name)["id"])
+            except LookupError:
+                current = {}
+            all_ops = ops_by_tool(config)
+            shown = {t: ops for t, ops in all_ops.items() if t in operations.enabled_tools(current)}
             return HTMLResponse(views.policy_view(
                 user=user, csrf=csrf_for(request), caller=name,
-                ops_by_tool=ops_by_tool(config), current={}, error="Invalid CSRF token."))
+                ops_by_tool=shown, current=current, has_tools=bool(all_ops),
+                error="Invalid CSRF token."))
         allow, review = [], []
         for key, value in data.items():
             if not key.startswith("op__"):
@@ -288,6 +302,41 @@ def create_app() -> FastAPI:
         try:
             with open_store(config) as store:
                 operations.set_policy(store, name, allow, review, user)
+        except LookupError as exc:
+            return render_dashboard(request, user, error=str(exc))
+        return redirect(f"/callers/{name}/policy")
+
+    @app.get("/callers/{name}/tools")
+    async def edit_caller_tools(request: Request, name: str):
+        user = current_user(request)
+        if not user:
+            return redirect("/login")
+        config = broker_config.load()
+        try:
+            with open_store(config) as store:
+                caller = operations.require_caller(store, name)
+                current = store.policy_for(caller["id"])
+        except LookupError as exc:
+            return render_dashboard(request, user, error=str(exc))
+        all_tools = sorted(ops_by_tool(config).items())
+        return HTMLResponse(views.caller_tools_view(
+            user=user, csrf=csrf_for(request), caller=name,
+            all_tools=all_tools, enabled=set(operations.enabled_tools(current))))
+
+    @app.post("/callers/{name}/tools")
+    async def save_caller_tools(request: Request, name: str):
+        user = current_user(request)
+        if not user:
+            return redirect("/login")
+        data = await read_form(request)
+        config = broker_config.load()
+        if not csrf_ok(request, data):
+            return render_dashboard(request, user, error="Invalid CSRF token.")
+        enabled = [k[len("tool__"):] for k, v in data.items()
+                   if k.startswith("tool__") and v == "on"]
+        try:
+            with open_store(config) as store:
+                operations.set_enabled_tools(store, name, enabled, user)
         except LookupError as exc:
             return render_dashboard(request, user, error=str(exc))
         return redirect(f"/callers/{name}/policy")
