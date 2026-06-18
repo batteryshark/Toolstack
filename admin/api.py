@@ -17,6 +17,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, HTTPException, Request
 
 from broker import operations
+from broker.registry import Registry
 
 from . import auth, broker_config, settings, supervisor, toolyard_ops
 from .store_access import open_store
@@ -187,9 +188,20 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
     async def api_tools(user: str = Depends(require_user)):
         config = broker_config.load()
         try:
-            return {"tools": toolyard_ops.list_tools(config.tools_root, config.tool_dirs)}
+            tools = toolyard_ops.list_tools(config.tools_root, config.tool_dirs)
         except Exception as exc:  # a single bad toolyard.toml -> an error field, not a 500
             return {"tools": [], "error": f"could not read tools: {exc}"}
+        # attach each tool's ops (op/risk/description) so a client can build a policy editor
+        ops_by_tool: dict[str, list] = {}
+        try:
+            for op in Registry.from_sources(config.tools_root, config.tool_dirs).list_ops():
+                ops_by_tool.setdefault(op["tool"], []).append(
+                    {"op": op["op"], "risk": op["risk"], "description": op["description"]})
+        except Exception:
+            pass  # tools still listed (without ops) if the registry can't be read
+        for tool in tools:
+            tool["ops"] = ops_by_tool.get(tool["id"], [])
+        return {"tools": tools}
 
     @app.get("/api/config")
     async def api_config(user: str = Depends(require_user)):

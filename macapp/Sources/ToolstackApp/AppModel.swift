@@ -11,6 +11,7 @@ final class AppModel: ObservableObject {
     @Published var broker: BrokerStatus?
     @Published var callers: [Caller] = []
     @Published var tokens: [TokenInfo] = []
+    @Published var tools: [ToolInfo] = []
     @Published var banner: String?   // e.g. a freshly minted token to copy once
     @Published var error: String?
     @Published var busy = false
@@ -60,6 +61,32 @@ final class AppModel: ObservableObject {
     func refreshAll() async {
         await refreshBroker()
         await refreshCallers()
+        await refreshTools()
+    }
+
+    func refreshTools() async {
+        await run { self.tools = try await self.client.listTools() }
+    }
+
+    /// Load one caller's policy for the editor (returns it rather than storing globally).
+    func loadPolicy(for caller: String) async -> Policy? {
+        do {
+            return try await client.policy(for: caller).policy
+        } catch let apiError as ApiError {
+            if case .unauthorized = apiError { authenticated = false }
+            error = apiError.message
+            return nil
+        } catch let other {
+            error = other.localizedDescription
+            return nil
+        }
+    }
+
+    func savePolicy(caller: String, allow: [String], review: [String]) async {
+        await run {
+            _ = try await self.client.setPolicy(caller: caller, allow: allow, review: review)
+            await self.refreshCallers()
+        }
     }
 
     func refreshBroker() async {
