@@ -29,14 +29,16 @@ port = 4601
 
 [[operations]]
 name = "say"
-risk = "low"
+risk = "read"
 
 [[secrets]]
 name = "api_key"             # the tool reads $TOOLSTACK_SECRETS_DIR/api_key
 field = "API_KEY"            # looked up in the secret backend
 ```
 
-A sample tool lives in [../tools/echo_api/](../tools/echo_api/).
+A tool's `type` is one of `api` / `mcp` / `rest` — the three transports; see
+[../tools/README.md](../tools/README.md) for choosing one. A sample of each lives in
+[../tools/](../tools/).
 
 ## Secrets
 
@@ -46,14 +48,15 @@ hands the values to the tool — never to the broker.
 - **Dev (shipped):** `FileBackend` reads a local TOML file shaped as
   `[<tool_id>]  FIELD = "value"`. Copy [../secrets.example.toml](../secrets.example.toml)
   to `secrets.toml` (gitignored) and fill it in.
+- **Local encrypted (shipped, opt-in):** `VaultBackend` keeps secrets in an scrypt+AEAD
+  encrypted file unlocked by `$TOOLSTACK_VAULT_PASSPHRASE` (`pip install '.[vault]'`).
 - **Production (shipped):** `InfisicalBackend` resolves each secret from Infisical
   over its HTTP API (stdlib only — no added dependency). A `[[secrets]]` entry adds
   `vault` (Infisical project) and `item` (secret path; defaults to the tool id) next
   to `field` (the secret key). Each tool authenticates with its own machine identity
   read from `<credentials_dir>/<item>.env`. Configure with `TOOLSTACK_INFISICAL_HOST`
-  / `_ENVIRONMENT` / `_CREDENTIALS_DIR` / `_VAULT` (legacy `TOOLYARD_INFISICAL_*` are
-  read as a fallback).
-- **Backend selection:** `get_backend(name)` picks `file` (default) or `infisical`;
+  / `_ENVIRONMENT` / `_CREDENTIALS_DIR` / `_VAULT`.
+- **Backend selection:** `get_backend(name)` picks `file` (default), `vault`, or `infisical`;
   the CLI exposes `--secret-backend` and honors `$TOOLSTACK_SECRET_BACKEND`.
 - SOPS can follow behind the same `resolve()` interface.
 
@@ -112,7 +115,7 @@ stop. No backend credential is ever mounted in the container.
 ## Modules
 
 - `config.py` — parse `toolyard.toml` into a `ToolDef`.
-- `secrets.py` — secret backends (`FileBackend`, `InfisicalBackend`; `get_backend()`).
+- `secrets.py` — secret backends (`FileBackend`, `VaultBackend`, `InfisicalBackend`; `get_backend()`).
 - `runner.py` — `ProcessRunner` and `DockerRunner` (`get_runner(backend)`).
 - `write_proxy.py` — the writable-secret socket server (message-contracts §4).
 - `cli.py` — `up` / `down` / `ls`, with a small JSON state file.
@@ -124,4 +127,4 @@ stop. No backend credential is ever mounted in the container.
 - Writable secrets go host-side through the write-proxy; the container only ever sees
   the socket, never a backend credential.
 - Hardening to add: inject secrets into a container **tmpfs** at start so they never
-  touch host disk (the Phase 2 backends write to a `0700` dir removed on stop).
+  touch host disk (the process/docker backends write to a `0700` dir removed on stop).

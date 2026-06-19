@@ -172,7 +172,7 @@ class HttpRuntime:
             {
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name": "tsr-broker", "version": "1"},
+                "clientInfo": {"name": "toolstack-broker", "version": "0.1.0"},
             },
         )
         if not isinstance(init_result, dict):

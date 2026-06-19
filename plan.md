@@ -220,7 +220,7 @@ in the request path (the broker calls the tool container directly).
 
 ```toml
 id = "echo"
-type = "rest"
+type = "api"
 
 [entrypoint]
 command = "python3 app.py"   # process backend (dev/CI)
@@ -229,7 +229,7 @@ port = 4601
 
 [[operations]]               # read by the broker's registry (op + risk)
 name = "say"
-risk = "low"
+risk = "read"
 
 [[secrets]]                  # READ BY TOOLYARD ONLY — the broker never parses this
 name = "api_key"             # -> $TOOLSTACK_SECRETS_DIR/api_key (default /run/secrets)

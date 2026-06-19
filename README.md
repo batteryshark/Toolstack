@@ -3,6 +3,9 @@
 A brokered, action-without-access tool layer for agents: the agent can *ask*, the
 broker *decides*, tools *execute*, and secrets stay with the tools.
 
+(`tsr` is the repository name; **Toolstack** is the product — the package, the `toolstack` /
+`brokerctl` / `toolyard` CLIs, and the `TOOLSTACK_*` env vars.)
+
 Start with **[docs/walkthrough.md](docs/walkthrough.md)** — the review walkthrough
 (what it is, how it runs, the security properties). [plan.md](plan.md) is the
 component-by-component build plan, [PROJECT.md](PROJECT.md) is the nerve center, and
@@ -24,6 +27,8 @@ trust boundaries.
 - **Admin web app** — the operator's control panel: run the broker, manage
   callers/tokens/policies, author/edit tools (form → `toolyard.toml`), and watch
   requests + audit. Local/homelab, loopback-only; see [admin/README.md](admin/README.md).
+- **Operator apps** — a cross-platform desktop shell ([desktop/](desktop/), an OS-WebKit window
+  around the admin) and a native macOS app ([macapp/](macapp/), SwiftUI over the JSON API).
 
 ## What you deploy
 
