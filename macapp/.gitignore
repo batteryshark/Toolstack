@@ -5,3 +5,5 @@ build/
 *.app
 *.dmg
 *.zip
+# Local signing config (Developer ID identity / team id / notary profile name)
+packaging/signing.env

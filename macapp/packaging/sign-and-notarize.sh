@@ -1,25 +1,27 @@
 #!/bin/bash
-# Code-sign (Hardened Runtime), notarize, and staple build/ToolstackApp.app for distribution
-# outside the App Store. Run ./packaging/build-app.sh first.
+# Build → code-sign (Hardened Runtime) → notarize → staple build/ToolstackApp.app for distribution
+# outside the App Store. Config (identity / team id / notary profile) is read from the gitignored
+# packaging/signing.env, so this is one command:
 #
-# One-time setup (stores your Apple ID + app-specific password in the login keychain):
-#   xcrun notarytool store-credentials toolstack-notary \
-#       --apple-id "you@example.com" --team-id "TEAMID" --password "app-specific-password"
-#
-# Then:
-#   DEVELOPER_ID_APP="Developer ID Application: Your Name (TEAMID)" \
-#   NOTARY_PROFILE="toolstack-notary" \
 #   ./packaging/sign-and-notarize.sh
 #
-# Find your identity with:  security find-identity -v -p codesigning
+# ONE-TIME, run by YOU (it needs your Apple ID + an app-specific password — not stored in the repo):
+#   xcrun notarytool store-credentials toolstack-notary \
+#       --apple-id "<your-apple-id>" --team-id "Y734633UDM" --password "<app-specific-password>"
+# (Create the app-specific password at appleid.apple.com → Sign-In and Security.)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Local, gitignored signing config (identity / team id / notary profile). Env vars still override.
+[ -f packaging/signing.env ] && . packaging/signing.env
+
 APP="build/ToolstackApp.app"
 ZIP="build/ToolstackApp.zip"
-: "${DEVELOPER_ID_APP:?set DEVELOPER_ID_APP to your 'Developer ID Application: Name (TEAMID)' identity}"
-: "${NOTARY_PROFILE:?set NOTARY_PROFILE to the notarytool keychain profile you created (see header)}"
-[ -d "$APP" ] || { echo "error: $APP not found — run ./packaging/build-app.sh first" >&2; exit 1; }
+: "${DEVELOPER_ID_APP:?set it in packaging/signing.env (or the env) to your 'Developer ID Application: …' identity}"
+: "${NOTARY_PROFILE:?set it in packaging/signing.env (or the env) to your notarytool keychain profile}"
+
+echo "› building a fresh bundle"
+./packaging/build-app.sh >/dev/null
 
 echo "› signing (Hardened Runtime, secure timestamp)"
 # No sandbox (Developer ID, not App Store). Hardened Runtime needs no entitlements here: outgoing

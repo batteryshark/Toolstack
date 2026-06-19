@@ -13,34 +13,32 @@ open build/ToolstackApp.app     # run it
 (`MacOS/ToolstackApp` + `Info.plist`). Because it's a real bundle, the app activates as a normal
 windowed app — the `AppDelegate` activation-policy shim only mattered for `swift run`.
 
-## 2. Sign + notarize (needs your Developer ID)
+## 2. Sign + notarize (one command)
 
-One-time: store your Apple credentials for `notarytool` in the login keychain:
+Config lives in **`packaging/signing.env`** (gitignored) — already filled in with this Mac's
+Developer ID identity, team id `Y734633UDM`, and the notary profile name `toolstack-notary`.
+Nothing in that file is a secret.
+
+**One-time, run by you** — stores your Apple credential in the login keychain (the app-specific
+password never goes in the repo, and the assistant won't enter it for you):
 
 ```sh
 xcrun notarytool store-credentials toolstack-notary \
-    --apple-id "you@example.com" --team-id "TEAMID" --password "APP_SPECIFIC_PASSWORD"
+    --apple-id "<your-apple-id>" --team-id "Y734633UDM" --password "<app-specific-password>"
 ```
 
-(Create the app-specific password at appleid.apple.com → Sign-In and Security.)
+Create the app-specific password at appleid.apple.com → Sign-In and Security. (Use the same
+profile name as `NOTARY_PROFILE` in `signing.env`.)
 
-Find your signing identity:
-
-```sh
-security find-identity -v -p codesigning      # look for "Developer ID Application: …"
-```
-
-Then:
+Then, every release — one command (builds, signs, notarizes, staples):
 
 ```sh
-DEVELOPER_ID_APP="Developer ID Application: Your Name (TEAMID)" \
-NOTARY_PROFILE="toolstack-notary" \
 ./packaging/sign-and-notarize.sh
 ```
 
-This signs with Hardened Runtime + a secure timestamp, submits to Apple, waits for the result,
-and staples the ticket. `spctl --assess` at the end should report **accepted / Notarized Developer
-ID** — i.e. it opens on any Mac with no Gatekeeper warning.
+It signs with Hardened Runtime + a secure timestamp, submits to Apple, waits, and staples the
+ticket. `spctl --assess` at the end should report **accepted / Notarized Developer ID** — i.e. it
+opens on any Mac with no Gatekeeper warning.
 
 ### Entitlements
 
