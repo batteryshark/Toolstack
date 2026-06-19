@@ -871,7 +871,7 @@ struct AddToolSheet: View {
 struct EditableOp: Identifiable {
     let id = UUID()
     var name = ""
-    var risk = "low"
+    var risk = "read"
     var description = ""
     var args: [EditableArg] = []
 }
@@ -902,7 +902,7 @@ struct ToolAuthoringForm: View {
     @State private var secrets: [EditableSecret] = []
     @State private var saveError: String?
 
-    private let risks = ["low", "medium", "high"]
+    private let risks = ["read", "write", "destructive"]   // matches admin RISK_CHOICES
     private let argTypes = ["string", "number", "integer", "boolean", "object", "array"]
 
     var body: some View {
