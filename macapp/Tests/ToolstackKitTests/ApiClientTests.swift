@@ -253,6 +253,33 @@ final class ApiClientTests: XCTestCase {
         }
     }
 
+    func testResyncToolPostsToUpdatePath() async throws {
+        let json = #"{"id":"weather","type":"rest","description":"wx","path":"/data/tools/weather"}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let updated = try await makeClient(token: "t").resyncTool(id: "weather")
+        XCTAssertEqual(updated.id, "weather")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/weather/update")
+    }
+
+    func testListToolsDecodesGitHubSource() async throws {
+        let json = #"{"tools":[{"id":"gh","type":"rest","ops":[],"secrets":[],"#
+                 + #""source":{"type":"github","url":"https://github.com/x/y","subdir":"t/a","ref":"main"}}]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let tools = try await makeClient(token: "t").listTools()
+        XCTAssertEqual(tools.first?.source?.type, "github")
+        XCTAssertEqual(tools.first?.source?.url, "https://github.com/x/y")
+        XCTAssertEqual(tools.first?.source?.subdir, "t/a")
+    }
+
+    func testListToolsToleratesNullSource() async throws {
+        // a hand-authored tool has source:null (and an older admin omits it) — both decode to nil
+        let json = #"{"tools":[{"id":"echo","type":"rest","ops":[],"secrets":[],"source":null}]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let tools = try await makeClient(token: "t").listTools()
+        XCTAssertNil(tools.first?.source)
+    }
+
     func testListToolsDecodesDescription() async throws {
         let json = #"{"tools":[{"id":"echo","type":"rest","description":"echoes input","port":4601,"#
                  + #""running":false,"ops":[],"secrets":[]}]}"#

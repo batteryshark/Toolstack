@@ -230,8 +230,20 @@ struct ToolsPane: View {
                             }
                             Spacer()
                             Button("Edit…") { editing = tool }.font(.caption)
+                            if let source = tool.source {
+                                Menu {
+                                    Button("Update from \(sourceKind(source))") {
+                                        Task { await model.resyncTool(id: tool.id) }
+                                    }
+                                } label: { Image(systemName: "ellipsis.circle") }
+                                    .menuStyle(.borderlessButton).fixedSize()
+                                    .help("Re-pull this tool from its source")
+                            }
                         }
                         .padding(.vertical, 2)
+                        if let source = tool.source {
+                            Text(sourceProvenance(source)).font(.caption2).foregroundStyle(.secondary)
+                        }
                         if !tool.ops.isEmpty {
                             Divider().padding(.vertical, 2)
                             Text("Operations").font(.caption.bold()).foregroundStyle(.secondary)
@@ -276,6 +288,19 @@ struct ToolsPane: View {
                 .sheet(isPresented: $addingTool) { AddToolSheet().environmentObject(model) }
         }
         .padding(.horizontal).padding(.vertical, 8)
+    }
+
+    private func sourceKind(_ source: ToolSource) -> String {
+        source.type == "github" ? "GitHub" : "folder"
+    }
+
+    private func sourceProvenance(_ source: ToolSource) -> String {
+        if source.type == "github" {
+            let sub = (source.subdir?.isEmpty == false) ? " /\(source.subdir!)" : ""
+            let ref = (source.ref?.isEmpty == false) ? " @\(source.ref!)" : ""
+            return "from \(source.url ?? "a git repo")\(sub)\(ref)"
+        }
+        return "from \(source.source ?? "a folder")"
     }
 
     private func opRow(_ op: OpInfo) -> some View {

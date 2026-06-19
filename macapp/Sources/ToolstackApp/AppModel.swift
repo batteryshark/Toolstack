@@ -76,6 +76,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Re-pull a tool from its recorded source, keeping the operator's description/secret edits.
+    func resyncTool(id: String) async {
+        await run {
+            _ = try await self.client.resyncTool(id: id)
+            await self.refreshTools()
+            self.banner = "Updated \(id) from its source. Restart the broker if its entrypoint or operations changed."
+        }
+    }
+
     /// Add a tool by copying a local folder into the broker's tools dir.
     func addTool(source: String) async {
         await performAdd { try await self.client.addTool(source: source) }

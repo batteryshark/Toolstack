@@ -214,6 +214,7 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
                 {"name": s.name, "field": s.field, "writable": s.writable, "vault": s.vault, "item": s.item}
                 for s in (td.secrets if td else ())
             ]
+            tool["source"] = tool_sources.read_source(tool["path"])  # sidecar (path/github) or null
         return {"tools": tools}
 
     @app.post("/api/tools")
@@ -290,6 +291,29 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
         with open_store(config) as store:
             operations.record_admin_event(store, user, "tool_edited", {"tool": tool_id, "dir": dir_path})
         return {"id": tool["id"], "description": tool["description"], "secrets": tool["secrets"]}
+
+    @app.post("/api/tools/{tool_id}/update")
+    async def api_update_tool_source(tool_id: str, user: str = Depends(require_user)):
+        """Re-pull a tool from its recorded source (the local folder or git repo it was added from),
+        keeping the operator's description + secret declarations. Only works for tools added through
+        TSR (those with a ``.tsr-source.json``). Restart the broker if the entrypoint/ops changed."""
+        config = broker_config.load()
+        try:
+            tools = toolyard_ops.list_tools(config.tools_root, config.tool_dirs)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"could not read tools: {exc}")
+        by_id = {t["id"]: t for t in tools}
+        if tool_id not in by_id:
+            raise HTTPException(status_code=404, detail=f"no such tool: {tool_id}")
+        try:
+            tool = tool_sources.update(by_id[tool_id]["path"])
+        except tool_sources.NoManifest:
+            raise HTTPException(status_code=422, detail="the tool's source no longer has a toolyard.toml")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        with open_store(config) as store:
+            operations.record_admin_event(store, user, "tool_updated", {"tool": tool_id, "dir": tool["path"]})
+        return tool
 
     @app.get("/api/config")
     async def api_config(user: str = Depends(require_user)):

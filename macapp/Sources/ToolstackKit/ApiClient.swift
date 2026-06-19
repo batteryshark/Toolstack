@@ -133,6 +133,13 @@ public actor ApiClient {
         return try await send("POST", "/api/tools", body: body)
     }
 
+    /// Re-pull a tool from its recorded source (the folder or repo it was added from), keeping the
+    /// operator's description + secret edits. Only valid for tools added through TSR (have a sidecar).
+    @discardableResult
+    public func resyncTool(id: String) async throws -> CreatedTool {
+        try await send("POST", "/api/tools/\(id)/update", body: [:])
+    }
+
     public func policy(for caller: String) async throws -> PolicyResponse {
         try await send("GET", "/api/callers/\(caller)/policy")
     }
