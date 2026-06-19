@@ -10,6 +10,9 @@ are no default credentials). ``serve`` imports FastAPI/uvicorn lazily, so
 
 from __future__ import annotations
 
+import logging
+import os
+
 import argparse
 import getpass
 import sys
@@ -40,6 +43,8 @@ def _serve(args) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    logging.basicConfig(level=os.environ.get("TOOLSTACK_LOG_LEVEL", "INFO").upper(),
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(prog="admin")
     sub = parser.add_subparsers(required=True)
 

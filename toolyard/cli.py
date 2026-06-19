@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 from dataclasses import asdict
 from pathlib import Path
@@ -133,6 +134,8 @@ def cmd_vault_set(args) -> None:
 
 
 def main() -> None:
+    logging.basicConfig(level=os.environ.get("TOOLSTACK_LOG_LEVEL", "INFO").upper(),
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(prog="toolyard")
     sub = parser.add_subparsers(required=True)
 

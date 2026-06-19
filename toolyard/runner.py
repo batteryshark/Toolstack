@@ -12,6 +12,7 @@ mount here is the simple Phase 2 form.)
 
 from __future__ import annotations
 
+import logging
 import os
 import shlex
 import shutil
@@ -28,6 +29,17 @@ from .config import ToolDef
 # §4); matches the tool's default TOOLYARD_SECRETS_SOCKET.
 _CONTAINER_SOCKET = "/run/toolyard/secrets.sock"
 _REPO_ROOT = Path(__file__).resolve().parents[1]  # so `-m toolyard.write_proxy` imports
+
+log = logging.getLogger(__name__)
+
+
+def _tool_log_path(tool_id: str) -> Path:
+    """Per-tool logfile under the state dir, so a tool's stdout/stderr can be tailed to
+    diagnose a failed start or a crash (the process runner dup's the child onto it)."""
+    state = Path(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"))
+    d = state / "toolstack" / "tools"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{tool_id}.log"
 
 
 @dataclass(frozen=True)
@@ -110,7 +122,21 @@ class ProcessRunner:
         # posix_spawn (not Popen) so the detached child has no lifecycle object to
         # warn about; setpgroup=0 gives it its own group so stop() can killpg it.
         script = f"cd {shlex.quote(str(tool_def.path))} && exec {tool_def.command}"
-        pid = os.posix_spawn("/bin/sh", ["/bin/sh", "-c", script], env, setpgroup=0)
+        # Capture the tool's stdout/stderr onto a per-tool logfile (the child's fd 1/2) so a
+        # crash or a noisy start is diagnosable, not lost into the toolyard's own stream.
+        log_path = _tool_log_path(tool_def.id)
+        log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        try:
+            pid = os.posix_spawn(
+                "/bin/sh", ["/bin/sh", "-c", script], env, setpgroup=0,
+                file_actions=[(os.POSIX_SPAWN_DUP2, log_fd, 1),
+                              (os.POSIX_SPAWN_DUP2, log_fd, 2),
+                              (os.POSIX_SPAWN_CLOSE, log_fd)],
+            )
+        finally:
+            os.close(log_fd)
+        log.info("started tool %s on 127.0.0.1:%s (pid %s, log %s)",
+                 tool_def.id, tool_def.port, pid, log_path)
         return RunningTool(tool_def.id, tool_def.port, self.backend, str(pid), secrets_dir,
                            proxy_pid, proxy_dir)
 
@@ -126,6 +152,7 @@ class ProcessRunner:
             pass
         _stop_proxy(running)
         shutil.rmtree(running.workdir, ignore_errors=True)
+        log.info("stopped tool %s (pid %s)", running.tool_id, running.handle)
 
     def is_alive(self, running: RunningTool) -> bool:
         try:
@@ -169,6 +196,8 @@ class DockerRunner:
                     "-e", f"TOOLYARD_SECRETS_SOCKET={_CONTAINER_SOCKET}"]
         cmd.append(image)
         subprocess.run(cmd, check=True)
+        log.info("started tool %s in container %s on :%s (docker logs %s)",
+                 tool_def.id, name, tool_def.port, name)
         return RunningTool(tool_def.id, tool_def.port, self.backend, name, secrets_dir,
                            proxy_pid, proxy_dir)
 
@@ -176,6 +205,7 @@ class DockerRunner:
         subprocess.run(["docker", "rm", "-f", running.handle], capture_output=True)
         _stop_proxy(running)
         shutil.rmtree(running.workdir, ignore_errors=True)
+        log.info("stopped tool %s (container %s)", running.tool_id, running.handle)
 
     def is_alive(self, running: RunningTool) -> bool:
         result = subprocess.run(
