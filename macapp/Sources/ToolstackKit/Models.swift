@@ -65,29 +65,45 @@ public struct SecretDecl: Codable, Sendable, Identifiable, Equatable {
     public let vault: String?
     public let item: String?
     public var id: String { name }
+
+    public init(name: String, field: String, writable: Bool,
+                vault: String? = nil, item: String? = nil) {
+        self.name = name; self.field = field; self.writable = writable
+        self.vault = vault; self.item = item
+    }
 }
 
 public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
     public let id: String
     public let type: String
+    public let description: String
     public let port: Int?
     public let running: Bool
     public let ops: [OpInfo]
     public let secrets: [SecretDecl]
 
-    enum CodingKeys: String, CodingKey { case id, type, port, running, ops, secrets }
+    enum CodingKeys: String, CodingKey { case id, type, description, port, running, ops, secrets }
 
-    // Tolerate an admin that doesn't report `ops` / `running` / `secrets` (e.g. an older version,
-    // or a different deployment) rather than failing the whole response — default them.
+    // Tolerate an admin that doesn't report `description` / `ops` / `running` / `secrets` (e.g. an
+    // older version, or a different deployment) rather than failing the whole response — default them.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         type = try c.decodeIfPresent(String.self, forKey: .type) ?? "rest"
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         port = try c.decodeIfPresent(Int.self, forKey: .port)
         running = try c.decodeIfPresent(Bool.self, forKey: .running) ?? false
         ops = try c.decodeIfPresent([OpInfo].self, forKey: .ops) ?? []
         secrets = try c.decodeIfPresent([SecretDecl].self, forKey: .secrets) ?? []
     }
+}
+
+/// The echo returned by `POST /api/tools/{id}` — the edited fields only (ops/entrypoint are
+/// preserved server-side and re-fetched via `listTools`).
+public struct ToolEdit: Codable, Sendable {
+    public let id: String
+    public let description: String
+    public let secrets: [SecretDecl]
 }
 
 /// The active secret backend (deployment-wide). `path` (file/vault) or `host`/`environment`/

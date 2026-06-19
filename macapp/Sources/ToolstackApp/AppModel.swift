@@ -68,6 +68,14 @@ final class AppModel: ObservableObject {
         await run { self.tools = try await self.client.listTools() }
     }
 
+    func updateTool(id: String, description: String, secrets: [SecretDecl]) async {
+        await run {
+            _ = try await self.client.updateTool(id: id, description: description, secrets: secrets)
+            await self.refreshTools()
+            self.banner = "Saved \(id). Restart the tool if you changed its secrets."
+        }
+    }
+
     @Published var secretBackend: SecretBackend?
 
     func refreshSecretBackend() async {

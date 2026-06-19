@@ -84,6 +84,7 @@ def normalize(data: dict) -> dict:
     return {
         "id": s(data.get("id")),
         "type": s(data.get("type")) or "rest",
+        "description": s(data.get("description")),
         "command": s(data.get("command")),
         "image": s(data.get("image")),
         "port": port,
@@ -131,7 +132,11 @@ def validate(data: dict) -> list[str]:
 
 
 def _s(value) -> str:
-    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+    # TOML basic strings can't contain a literal newline/tab; escape control chars too so a
+    # multi-line description (or op description) round-trips instead of producing broken TOML.
+    text = (str(value).replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t"))
+    return '"' + text + '"'
 
 
 def _arg_inline(arg: dict) -> str:
@@ -145,7 +150,10 @@ def _arg_inline(arg: dict) -> str:
 
 def to_toml(data: dict) -> str:
     """Serialize a normalized tool dict to idiomatic toolyard.toml."""
-    out = [f"id = {_s(data['id'])}", f"type = {_s(data['type'])}", "", "[entrypoint]"]
+    out = [f"id = {_s(data['id'])}", f"type = {_s(data['type'])}"]
+    if data.get("description"):
+        out.append(f"description = {_s(data['description'])}")
+    out += ["", "[entrypoint]"]
     if data["command"]:
         out.append(f"command = {_s(data['command'])}")
     if data["image"]:
@@ -176,6 +184,7 @@ def read(dir_path: str | Path) -> dict:
     return normalize({
         "id": data.get("id", ""),
         "type": data.get("type", "rest"),
+        "description": data.get("description", ""),
         "command": entry.get("command", ""),
         "image": entry.get("image", ""),
         "port": entry.get("port"),
