@@ -10,6 +10,7 @@ here at all.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -289,30 +290,35 @@ def create_app() -> FastAPI:
                 user=user, csrf=csrf_for(request), caller=name,
                 ops_by_tool=shown, current=current, has_tools=bool(all_ops),
                 error="Invalid CSRF token."))
-        allow, review = [], []
+        allow, review, deny = [], [], []
         for key, value in data.items():
-            if not key.startswith("op__"):
-                continue
-            _, tool, op = key.split("__", 2)
-            spec = f"{tool}.{op}"
-            if value == "allow":
-                allow.append(spec)
-            elif value == "review":
-                review.append(spec)
+            if key.startswith("op__"):  # api/mcp: one effect per op; deny == omitted
+                _, tool, op = key.split("__", 2)
+                spec = f"{tool}.{op}"
+                if value == "allow":
+                    allow.append(spec)
+                elif value == "review":
+                    review.append(spec)
+            elif key.startswith("rest_rules__"):  # rest: a JSON array of {verb, pattern, effect}
+                tool = key[len("rest_rules__"):]
+                try:
+                    rules = json.loads(value) if value else []
+                except (json.JSONDecodeError, TypeError):
+                    rules = []
+                for rule in rules if isinstance(rules, list) else []:
+                    if not isinstance(rule, dict):
+                        continue
+                    verb = str(rule.get("verb", "")).strip()
+                    if not verb:
+                        continue
+                    pattern = str(rule.get("pattern", "")).strip()
+                    spec = f"{tool}.{verb}" if not pattern else f"{tool}.{verb} {pattern}"
+                    bucket = {"allow": allow, "review": review, "deny": deny}.get(rule.get("effect"))
+                    if bucket is not None:
+                        bucket.append(spec)
         try:
             with open_store(config) as store:
-                # The web editor is verb-level (path-blind) — refuse a save that would silently
-                # flatten a caller's rest path rules. Manage those in the macapp or with brokerctl.
-                if operations.coarse_update_drops_scope(store, name, allow, review):
-                    current = store.policy_for(operations.require_caller(store, name)["id"])
-                    all_ops = ops_by_tool(config)
-                    shown = {t: o for t, o in all_ops.items() if t in operations.enabled_tools(current)}
-                    return HTMLResponse(views.policy_view(
-                        user=user, csrf=csrf_for(request), caller=name,
-                        ops_by_tool=shown, current=current, has_tools=bool(all_ops),
-                        error="This caller has path-scoped rules; the web editor is verb-level "
-                              "only. Edit path rules in the macapp app or with brokerctl."))
-                operations.set_policy(store, name, allow, review, user)
+                operations.set_policy(store, name, allow, review, user, deny=deny)
         except LookupError as exc:
             return render_dashboard(request, user, error=str(exc))
         return redirect(f"/callers/{name}/policy")

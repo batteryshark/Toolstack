@@ -130,5 +130,46 @@ class PortValidation(unittest.TestCase):
         self.assertIn("unknown type", str(cm.exception))
 
 
+class IdValidation(unittest.TestCase):
+    """A tool id must match the routing charset — and especially carry no dot: the broker splits
+    a policy spec on the FIRST dot into (tool, op), so a dotted id silently misroutes policy.
+    Reject it at load(). Parallel to the broker's registry check
+    (broker/tests/test_registry.py::IdValidation)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _write(self, toml: str) -> Path:
+        p = Path(self.tmp, "toolyard.toml")
+        p.write_text(toml)
+        return p
+
+    def test_dotted_id_raises_naming_the_id(self):
+        with self.assertRaises(ValueError) as cm:
+            load(self._write('id = "my.tool"\ntype = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n'))
+        msg = str(cm.exception)
+        self.assertIn("my.tool", msg)
+        self.assertIn("id", msg)
+
+    def test_slash_in_id_raises(self):
+        with self.assertRaises(ValueError):
+            load(self._write('id = "my/tool"\ntype = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n'))
+
+    def test_missing_id_raises(self):
+        with self.assertRaises(ValueError):
+            load(self._write('type = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n'))
+
+    def test_id_with_leading_underscore_raises(self):
+        # the charset requires a leading alphanumeric
+        with self.assertRaises(ValueError):
+            load(self._write('id = "_tool"\ntype = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n'))
+
+    def test_valid_id_with_dash_and_underscore_loads(self):
+        tool = load(self._write(
+            'id = "my-cool_tool2"\ntype = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n'))
+        self.assertEqual(tool.id, "my-cool_tool2")
+
+
 if __name__ == "__main__":
     unittest.main()
