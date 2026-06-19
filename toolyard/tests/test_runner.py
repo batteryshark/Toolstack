@@ -274,6 +274,37 @@ class RestProcessRunnerE2E(unittest.TestCase):
         self.assertEqual(result["body"]["error"], "not_found")
 
 
+class ProcessRunnerHardening(unittest.TestCase):
+    """start() fails cleanly: a taken port and an immediately-exiting command both raise, and a
+    failed start never leaves the plaintext secrets dir behind."""
+
+    def test_port_in_use_raises_clearly(self):
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        self.addCleanup(s.close)
+        tool = dataclasses.replace(load(TOOL_TOML), port=port)
+        with self.assertRaises(RuntimeError) as cm:
+            ProcessRunner().start(tool, {"api_key": SECRET})
+        self.assertIn(str(port), str(cm.exception))
+
+    def test_failed_start_cleans_up_the_secrets_dir(self):
+        import toolyard.runner as runner_mod
+        captured = {}
+        orig = runner_mod._write_secrets
+
+        def spy(tool_id, secrets):
+            d = orig(tool_id, secrets)
+            captured["dir"] = d
+            return d
+
+        bad = dataclasses.replace(load(TOOL_TOML), port=_free_port(), command="false")
+        with mock.patch.object(runner_mod, "_write_secrets", spy):
+            with self.assertRaises(RuntimeError):
+                ProcessRunner().start(bad, {"api_key": SECRET})
+        self.assertFalse(Path(captured["dir"]).exists())   # no plaintext secrets left on disk
+
+
 class ProcessRunnerLogging(unittest.TestCase):
     """The process runner captures a tool's stdout/stderr onto a per-tool logfile under the
     state dir, so a crashed/noisy tool is diagnosable instead of lost."""
