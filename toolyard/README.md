@@ -36,7 +36,7 @@ name = "api_key"             # the tool reads $TOOLSTACK_SECRETS_DIR/api_key
 field = "API_KEY"            # looked up in the secret backend
 ```
 
-A sample tool lives in [../tools/echo_rest/](../tools/echo_rest/).
+A sample tool lives in [../tools/echo_api/](../tools/echo_api/).
 
 ## Secrets
 

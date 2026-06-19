@@ -29,7 +29,7 @@ from toolyard.config import load
 from toolyard.runner import DockerRunner, ProcessRunner
 
 REPO = Path(__file__).resolve().parents[2]
-TOOL_TOML = REPO / "tools" / "echo_rest" / "toolyard.toml"
+TOOL_TOML = REPO / "tools" / "echo_api" / "toolyard.toml"
 TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
 TOOL_REST_TOML = REPO / "tools" / "rest_kv" / "toolyard.toml"
 SECRET = "dev-secret-123"
@@ -328,7 +328,7 @@ class DockerRunnerE2E(unittest.TestCase):
         # AND bind-mounts its socket dir into the container at /run/toolyard. Run a distinct
         # tool id (echowp, no container collision) FROM the reused echo image (image= in the
         # toml -> the runner skips its own build, so this leaves no throwaway/dangling image).
-        subprocess.run(["docker", "build", "-t", "toolstack-echo", str(REPO / "tools" / "echo_rest")],
+        subprocess.run(["docker", "build", "-t", "toolstack-echo", str(REPO / "tools" / "echo_api")],
                        check=True, capture_output=True)
         d = Path(tempfile.mkdtemp(prefix="tsr-t012-"))
         self.addCleanup(shutil.rmtree, str(d), ignore_errors=True)

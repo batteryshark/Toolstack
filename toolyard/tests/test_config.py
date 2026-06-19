@@ -8,7 +8,7 @@ from pathlib import Path
 from toolyard.config import discover, load
 
 REPO = Path(__file__).resolve().parents[2]
-TOOL_TOML = REPO / "tools" / "echo_rest" / "toolyard.toml"
+TOOL_TOML = REPO / "tools" / "echo_api" / "toolyard.toml"
 TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
 TOOL_REST_TOML = REPO / "tools" / "rest_kv" / "toolyard.toml"
 
