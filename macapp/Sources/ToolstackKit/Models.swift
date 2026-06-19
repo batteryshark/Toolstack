@@ -101,7 +101,7 @@ public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
-        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "rest"
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "api"
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         port = try c.decodeIfPresent(Int.self, forKey: .port)
         running = try c.decodeIfPresent(Bool.self, forKey: .running) ?? false

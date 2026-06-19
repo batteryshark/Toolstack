@@ -15,7 +15,7 @@ class Load(unittest.TestCase):
     def test_parses_echo_tool(self):
         tool = load(TOOL_TOML)
         self.assertEqual(tool.id, "echo")
-        self.assertEqual(tool.type, "rest")
+        self.assertEqual(tool.type, "api")
         self.assertEqual(tool.port, 4601)
         self.assertEqual(tool.command, "python3 app.py")
         self.assertEqual(tool.secrets, ())   # the demo tool ships with no secrets
@@ -34,7 +34,7 @@ class Secrets(unittest.TestCase):
 
     def _load(self, secrets_toml: str):
         p = Path(self.tmp, "toolyard.toml")
-        p.write_text('id = "fix"\ntype = "rest"\n[entrypoint]\nport = 4700\ncommand = "x"\n\n' + secrets_toml)
+        p.write_text('id = "fix"\ntype = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n\n' + secrets_toml)
         return load(p)
 
     def test_parses_name_and_field(self):
@@ -58,7 +58,7 @@ class Description(unittest.TestCase):
 
     def test_parses_top_level_description(self):
         p = Path(self.tmp, "toolyard.toml")
-        p.write_text('id = "weather"\ntype = "rest"\ndescription = "Weather lookups"\n'
+        p.write_text('id = "weather"\ntype = "api"\ndescription = "Weather lookups"\n'
                      '[entrypoint]\nport = 4700\ncommand = "x"\n')
         self.assertEqual(load(p).description, "Weather lookups")
 
@@ -79,26 +79,26 @@ class PortValidation(unittest.TestCase):
 
     def test_missing_port_raises_naming_the_tool(self):
         with self.assertRaises(ValueError) as cm:
-            load(self._write('id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "x"\n'))
+            load(self._write('id = "weather"\ntype = "api"\n[entrypoint]\ncommand = "x"\n'))
         msg = str(cm.exception)
         self.assertIn("weather", msg)
         self.assertIn("port", msg)
 
     def test_non_integer_port_raises(self):
         with self.assertRaises(ValueError):
-            load(self._write('id = "weather"\ntype = "rest"\n[entrypoint]\nport = "4601"\n'))
+            load(self._write('id = "weather"\ntype = "api"\n[entrypoint]\nport = "4601"\n'))
 
     def test_boolean_port_raises(self):
         with self.assertRaises(ValueError):
-            load(self._write('id = "weather"\ntype = "rest"\n[entrypoint]\nport = true\n'))
+            load(self._write('id = "weather"\ntype = "api"\n[entrypoint]\nport = true\n'))
 
     def test_out_of_range_port_raises(self):
         with self.assertRaises(ValueError):
-            load(self._write('id = "weather"\ntype = "rest"\n[entrypoint]\nport = 0\n'))
+            load(self._write('id = "weather"\ntype = "api"\n[entrypoint]\nport = 0\n'))
 
     def test_valid_port_loads(self):
         tool = load(self._write(
-            'id = "weather"\ntype = "rest"\n[entrypoint]\nport = 4700\ncommand = "x"\n'))
+            'id = "weather"\ntype = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n'))
         self.assertEqual(tool.port, 4700)
 
 

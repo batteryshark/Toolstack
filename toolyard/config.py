@@ -38,20 +38,20 @@ def load(toml_path: str | Path) -> ToolDef:
     with open(path, "rb") as f:
         data = tomllib.load(f)
     entry = data.get("entrypoint", {})
-    tool_type = data.get("type", "rest")
+    tool_type = data.get("type", "api")
     port = entry.get("port")
-    # A rest tool is served at 127.0.0.1:<port>; a missing/invalid port would otherwise
+    # An api tool is served at 127.0.0.1:<port>; a missing/invalid port would otherwise
     # reach the runner as TOOLSTACK_PORT="None" (process) or `-p 127.0.0.1:None:None`
     # (docker) and fail opaquely — reject it at load instead. This mirrors the broker's
     # registry check (broker/registry.py); the two packages stay independent, so the
     # small predicate is duplicated rather than shared. bool is an int subclass, so a
     # `port = true` must not slip through.
-    if tool_type == "rest" and not (
+    if tool_type == "api" and not (
         isinstance(port, int) and not isinstance(port, bool) and 1 <= port <= 65535
     ):
         raise ValueError(
             f"{path}: tool {data.get('id')!r} needs an [entrypoint] port "
-            f"(integer 1-65535) for a 'rest' tool; got {port!r}"
+            f"(integer 1-65535) for an 'api' tool; got {port!r}"
         )
     secrets = tuple(
         SecretSpec(

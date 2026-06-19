@@ -48,7 +48,7 @@ class Forward(unittest.TestCase):
         self.server.server_close()
 
     def test_forwards_with_context_and_returns_result(self):
-        tool_op = ToolOp("echo", "say", "low", self.port, "rest")
+        tool_op = ToolOp("echo", "say", "low", self.port, "api")
         result = HttpRuntime().execute(tool_op, {"m": "hi"}, 7, "hermes")
 
         self.assertEqual(_FakeTool.received["path"], "/v1/actions/say")
@@ -59,18 +59,18 @@ class Forward(unittest.TestCase):
         self.assertTrue(result["ok"])
 
     def test_unreachable_tool_raises(self):
-        tool_op = ToolOp("echo", "say", "low", 1, "rest")  # nothing listening on :1
+        tool_op = ToolOp("echo", "say", "low", 1, "api")  # nothing listening on :1
         with self.assertRaises(RuntimeError):
             HttpRuntime(timeout=2).execute(tool_op, {}, 1, "hermes")
 
     def test_sends_shared_secret_header_when_configured(self):
-        tool_op = ToolOp("echo", "say", "low", self.port, "rest")
+        tool_op = ToolOp("echo", "say", "low", self.port, "api")
         rt = HttpRuntime(tool_secret=lambda tool_id: "sekret" if tool_id == "echo" else None)
         rt.execute(tool_op, {}, 1, "hermes")
         self.assertEqual(_FakeTool.received["shared_secret"], "sekret")
 
     def test_omits_shared_secret_header_when_unconfigured(self):
-        tool_op = ToolOp("echo", "say", "low", self.port, "rest")
+        tool_op = ToolOp("echo", "say", "low", self.port, "api")
         rt = HttpRuntime(tool_secret=lambda tool_id: None)
         rt.execute(tool_op, {}, 1, "hermes")
         self.assertIsNone(_FakeTool.received["shared_secret"])

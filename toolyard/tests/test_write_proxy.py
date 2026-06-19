@@ -18,7 +18,7 @@ from toolyard.write_proxy import serve
 
 
 def _tool(*secrets: SecretSpec) -> ToolDef:
-    return ToolDef(id="demo", type="rest", port=1, command=None, image=None,
+    return ToolDef(id="demo", type="api", port=1, command=None, image=None,
                    secrets=tuple(secrets), path=Path("."))
 
 
@@ -84,7 +84,7 @@ class WriteProxyThroughRunner(unittest.TestCase):
     def _write_tool(self, *, writable: bool) -> "ToolDef":
         d = Path(tempfile.mkdtemp(prefix="tsr-t011-"))
         self.addCleanup(shutil.rmtree, str(d), ignore_errors=True)
-        toml = ('id = "demo"\ntype = "rest"\n[entrypoint]\nport = 4601\ncommand = "true"\n'
+        toml = ('id = "demo"\ntype = "api"\n[entrypoint]\nport = 4601\ncommand = "true"\n'
                 '[[secrets]]\nname = "token"\nfield = "TOKEN"\n'
                 f'writable = {"true" if writable else "false"}\n')
         (d / "toolyard.toml").write_text(toml)

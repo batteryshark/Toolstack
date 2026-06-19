@@ -85,7 +85,7 @@ def normalize(data: dict) -> dict:
 
     return {
         "id": s(data.get("id")),
-        "type": s(data.get("type")) or "rest",
+        "type": s(data.get("type")) or "api",
         "description": s(data.get("description")),
         "command": s(data.get("command")),
         "image": s(data.get("image")),
@@ -104,8 +104,8 @@ def validate(data: dict) -> list[str]:
     elif len(data["id"]) > 64:
         # the id is used as a directory name (tools_root/<id>); keep it well under filesystem limits
         errors.append("id must be at most 64 characters")
-    if data["type"] != "rest":
-        errors.append('type must be "rest"')
+    if data["type"] != "api":
+        errors.append('type must be "api"')
     # An entrypoint may be a process command, a docker image, or neither — a docker tool
     # that builds the Dockerfile in its own directory. Since that last case depends on the
     # directory (which validate can't see), write() enforces the "must have *some*
@@ -200,7 +200,7 @@ def read(dir_path: str | Path) -> dict:
     entry = data.get("entrypoint", {})
     return normalize({
         "id": data.get("id", ""),
-        "type": data.get("type", "rest"),
+        "type": data.get("type", "api"),
         "description": data.get("description", ""),
         "command": entry.get("command", ""),
         "image": entry.get("image", ""),

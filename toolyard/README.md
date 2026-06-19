@@ -20,7 +20,7 @@ callable by anyone until a caller policy grants it (`brokerctl create-caller --a
 
 ```toml
 id = "echo"
-type = "rest"
+type = "api"
 
 [entrypoint]
 command = "python3 app.py"   # process backend (dev/CI)

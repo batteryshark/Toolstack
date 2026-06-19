@@ -9,7 +9,7 @@ from unittest import mock
 
 from admin import tool_sources
 
-MANIFEST = ('id = "weather"\ntype = "rest"\ndescription = "wx"\n\n'
+MANIFEST = ('id = "weather"\ntype = "api"\ndescription = "wx"\n\n'
             '[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
             '[[operations]]\nname = "today"\nrisk = "read"\n')
 
@@ -60,7 +60,7 @@ class AddFromPath(unittest.TestCase):
         bad.mkdir()
         # no entrypoint command/image -> validate() fails, so we don't copy a broken tool
         (bad / "toolyard.toml").write_text(
-            'id = "bad"\ntype = "rest"\n[entrypoint]\nport = 4700\n\n'
+            'id = "bad"\ntype = "api"\n[entrypoint]\nport = 4700\n\n'
             '[[operations]]\nname = "a"\nrisk = "read"\n', encoding="utf-8")
         with self.assertRaises(ValueError):
             tool_sources.add_from_path(str(bad), str(self.root))
@@ -79,7 +79,7 @@ class AddFromPath(unittest.TestCase):
         d = self.tmp / name
         d.mkdir()
         (d / "toolyard.toml").write_text(
-            f'id = "{tool_id}"\ntype = "rest"\n[entrypoint]\ncommand = "x"\nport = 4700\n\n'
+            f'id = "{tool_id}"\ntype = "api"\n[entrypoint]\ncommand = "x"\nport = 4700\n\n'
             '[[operations]]\nname = "a"\nrisk = "read"\n', encoding="utf-8")
         return d
 
@@ -91,7 +91,7 @@ class AddFromPath(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
             d.mkdir()
             (d / "toolyard.toml").write_text(
-                f'id = "{evil}"\ntype = "rest"\n[entrypoint]\ncommand = "x"\nport = 4700\n\n'
+                f'id = "{evil}"\ntype = "api"\n[entrypoint]\ncommand = "x"\nport = 4700\n\n'
                 '[[operations]]\nname = "a"\nrisk = "read"\n', encoding="utf-8")
             with self.assertRaises(ValueError, msg=evil):
                 tool_sources.add_from_path(str(d), str(self.root))
@@ -224,7 +224,7 @@ class AddFromGithub(unittest.TestCase):
 
 class AddWithManifest(unittest.TestCase):
     MANIFEST = {
-        "id": "authored", "type": "rest", "command": "python3 app.py", "port": 4800,
+        "id": "authored", "type": "api", "command": "python3 app.py", "port": 4800,
         "operations": [{"name": "go", "risk": "read", "description": "do it", "args": []}],
         "secrets": [],
     }
@@ -290,7 +290,7 @@ class Update(unittest.TestCase):
         self.tool_authoring.write(self.dest, managed)
         # upstream advances: new code, a new operation, and its OWN description/secret
         (self.src / "app.py").write_text("v2\n", encoding="utf-8")
-        self._write_src('id = "weather"\ntype = "rest"\ndescription = "upstream desc"\n'
+        self._write_src('id = "weather"\ntype = "api"\ndescription = "upstream desc"\n'
                         '[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
                         '[[operations]]\nname = "today"\nrisk = "read"\n\n'
                         '[[operations]]\nname = "tomorrow"\nrisk = "read"\n\n'
@@ -318,7 +318,7 @@ class Update(unittest.TestCase):
         self.assertTrue((self.dest / "toolyard.toml").exists())   # swap never started
 
     def test_update_id_change_rejected_original_intact(self):
-        self._write_src('id = "renamed"\ntype = "rest"\n[entrypoint]\ncommand = "x"\nport = 4700\n\n'
+        self._write_src('id = "renamed"\ntype = "api"\n[entrypoint]\ncommand = "x"\nport = 4700\n\n'
                         '[[operations]]\nname = "today"\nrisk = "read"\n')
         with self.assertRaises(ValueError):
             tool_sources.update(self.dest)
@@ -326,7 +326,7 @@ class Update(unittest.TestCase):
 
     def test_successful_update_leaves_tools_root_clean(self):
         from toolyard.config import discover
-        self._write_src('id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
+        self._write_src('id = "weather"\ntype = "api"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
                         '[[operations]]\nname = "today"\nrisk = "read"\n\n'
                         '[[operations]]\nname = "extra"\nrisk = "read"\n')
         tool_sources.update(self.dest)
@@ -336,7 +336,7 @@ class Update(unittest.TestCase):
 
     def test_swap_failure_restores_original_no_orphan(self):
         from toolyard.config import discover
-        self._write_src('id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
+        self._write_src('id = "weather"\ntype = "api"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
                         '[[operations]]\nname = "changed"\nrisk = "read"\n')
         real_replace = tool_sources.os.replace
         calls = {"n": 0}
@@ -360,7 +360,7 @@ class Update(unittest.TestCase):
             d = Path(cmd[-1])
             d.mkdir(parents=True)
             (d / "toolyard.toml").write_text(
-                'id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
+                'id = "weather"\ntype = "api"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
                 '[[operations]]\nname = "fresh"\nrisk = "read"\n', encoding="utf-8")
             return subprocess.CompletedProcess(cmd, 0, b"", b"")
         with mock.patch.object(tool_sources.shutil, "which", return_value="/usr/bin/git"), \

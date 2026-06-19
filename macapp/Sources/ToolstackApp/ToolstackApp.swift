@@ -1027,7 +1027,7 @@ struct ToolAuthoringForm: View {
     private func manifest() -> [String: Any] {
         func s(_ v: String) -> String { v.trimmingCharacters(in: .whitespaces) }
         return [
-            "id": s(id), "type": "rest", "description": s(description),
+            "id": s(id), "type": "api", "description": s(description),
             "command": s(command), "image": s(image), "port": Int(s(port)) ?? 0,
             "operations": operations.compactMap { op -> [String: Any]? in
                 guard !s(op.name).isEmpty else { return nil }

@@ -12,7 +12,7 @@ from broker.registry import Registry
 from toolyard.config import load as load_tool
 
 FULL = {
-    "id": "weather", "type": "rest", "command": "python3 app.py", "image": "",
+    "id": "weather", "type": "api", "command": "python3 app.py", "image": "",
     "description": "Weather lookups", "port": 4700,
     "operations": [
         {"name": "today", "risk": "read", "description": "Today's weather",

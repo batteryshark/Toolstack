@@ -55,7 +55,7 @@ def _wait_for_tool(port: int, tries: int = 80) -> bool:
 
 
 def _call(port, op, arguments, request_id=1, caller="hermes"):
-    return HttpRuntime().execute(ToolOp("echo", op, "low", port, "rest"),
+    return HttpRuntime().execute(ToolOp("echo", op, "low", port, "api"),
                                  arguments, request_id, caller)
 
 
@@ -108,7 +108,7 @@ class SharedSecretE2E(unittest.TestCase):
 
     def _signed_call(self, secret, op="say", arguments=None):
         rt = HttpRuntime(tool_secret=lambda tool_id: secret)
-        return rt.execute(ToolOp("echo", op, "low", self.tool.port, "rest"),
+        return rt.execute(ToolOp("echo", op, "low", self.tool.port, "api"),
                           arguments or {}, 1, "hermes")
 
     def _ready(self, tries: int = 80) -> bool:
@@ -148,7 +148,7 @@ class McpOverHttpE2E(unittest.TestCase):
             self.fail("echo tool did not start")
 
         # a real broker whose registry forwards echo.say to the running tool's port
-        registry = Registry({"echo": {"port": self.tool.port, "type": "rest",
+        registry = Registry({"echo": {"port": self.tool.port, "type": "api",
                                       "ops": {"say": {"risk": "read", "description": "", "args": []}}}})
         self.server = build_server(port=0, db_path=":memory:", audit_sink=None, registry=registry)
         store = self.server.ctx.store
@@ -244,7 +244,7 @@ class DockerRunnerE2E(unittest.TestCase):
         d = Path(tempfile.mkdtemp(prefix="tsr-t012-"))
         self.addCleanup(shutil.rmtree, str(d), ignore_errors=True)
         (d / "toolyard.toml").write_text(
-            'id = "echowp"\ntype = "rest"\n[entrypoint]\nport = 4601\nimage = "toolstack-echo"\n'
+            'id = "echowp"\ntype = "api"\n[entrypoint]\nport = 4601\nimage = "toolstack-echo"\n'
             '[[secrets]]\nname = "api_key"\nfield = "API_KEY"\nwritable = true\n')
         secrets_file = d / "secrets.toml"
         secrets_file.write_text('[echowp]\nAPI_KEY = "old"\n')

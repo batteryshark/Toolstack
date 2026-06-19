@@ -172,7 +172,7 @@ final class ApiClientTests: XCTestCase {
 
     func testToolActionPostsToActionPath() async throws {
         StubURLProtocol.handler = { _ in
-            (200, [:], Data(#"{"id":"echo","type":"rest","running":true,"ops":[],"secrets":[]}"#.utf8))
+            (200, [:], Data(#"{"id":"echo","type":"api","running":true,"ops":[],"secrets":[]}"#.utf8))
         }
         let tool = try await makeClient(token: "t").toolAction(id: "echo", action: "restart")
         XCTAssertTrue(tool.running)
@@ -181,7 +181,7 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testListToolsDecodesOps() async throws {
-        let json = #"{"tools":[{"id":"echo","type":"rest","port":4601,"running":false,"#
+        let json = #"{"tools":[{"id":"echo","type":"api","port":4601,"running":false,"#
                  + #""ops":[{"op":"say","risk":"low","description":"echo it"}]}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let tools = try await makeClient(token: "t").listTools()
@@ -192,7 +192,7 @@ final class ApiClientTests: XCTestCase {
 
     func testListToolsToleratesMissingOps() async throws {
         // an admin that doesn't report `ops` (older version) must not break the whole response
-        let json = #"{"tools":[{"id":"echo","type":"rest","port":4601,"path":"x","running":false,"#
+        let json = #"{"tools":[{"id":"echo","type":"api","port":4601,"path":"x","running":false,"#
                  + #""alive":false,"backend":null,"removable":false}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let tools = try await makeClient(token: "t").listTools()
@@ -201,7 +201,7 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testListToolsDecodesSecrets() async throws {
-        let json = #"{"tools":[{"id":"echo","type":"rest","port":4601,"running":false,"ops":[],"#
+        let json = #"{"tools":[{"id":"echo","type":"api","port":4601,"running":false,"ops":[],"#
                  + #""secrets":[{"name":"api_key","field":"API_KEY","writable":true,"vault":null,"item":null}]}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let tools = try await makeClient(token: "t").listTools()
@@ -217,7 +217,7 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testAddToolPostsSource() async throws {
-        let json = #"{"id":"weather","type":"rest","description":"wx","path":"/data/tools/weather"}"#
+        let json = #"{"id":"weather","type":"api","description":"wx","path":"/data/tools/weather"}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let created = try await makeClient(token: "t").addTool(source: "/src/weather")
         XCTAssertEqual(created.id, "weather")
@@ -228,7 +228,7 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testAddToolFromGitHubPostsRepoSubdirRef() async throws {
-        let json = #"{"id":"gh","type":"rest","description":"","path":"/data/tools/gh"}"#
+        let json = #"{"id":"gh","type":"api","description":"","path":"/data/tools/gh"}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let created = try await makeClient(token: "t").addToolFromGitHub(
             repo: "https://github.com/x/y", subdir: "tools/a", ref: "main")
@@ -242,7 +242,7 @@ final class ApiClientTests: XCTestCase {
 
     func testAddToolFromGitHubOmitsEmptyOptionals() async throws {
         StubURLProtocol.handler = { _ in
-            (200, [:], Data(#"{"id":"gh","type":"rest","description":"","path":"/p"}"#.utf8))
+            (200, [:], Data(#"{"id":"gh","type":"api","description":"","path":"/p"}"#.utf8))
         }
         _ = try await makeClient(token: "t").addToolFromGitHub(repo: "https://github.com/x/y")
         let body = try bodyJSON()
@@ -253,9 +253,9 @@ final class ApiClientTests: XCTestCase {
 
     func testAuthorToolPostsSourceAndManifest() async throws {
         StubURLProtocol.handler = { _ in
-            (200, [:], Data(#"{"id":"authored","type":"rest","description":"","path":"/p"}"#.utf8))
+            (200, [:], Data(#"{"id":"authored","type":"api","description":"","path":"/p"}"#.utf8))
         }
-        let manifest: [String: Any] = ["id": "authored", "type": "rest", "command": "python3 app.py",
+        let manifest: [String: Any] = ["id": "authored", "type": "api", "command": "python3 app.py",
                                        "port": 4800, "operations": [["name": "go", "risk": "low"]]]
         let created = try await makeClient(token: "t").addToolWithManifest(source: "/code", manifest: manifest)
         XCTAssertEqual(created.id, "authored")
@@ -317,7 +317,7 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testResyncToolPostsToUpdatePath() async throws {
-        let json = #"{"id":"weather","type":"rest","description":"wx","path":"/data/tools/weather"}"#
+        let json = #"{"id":"weather","type":"api","description":"wx","path":"/data/tools/weather"}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let updated = try await makeClient(token: "t").resyncTool(id: "weather")
         XCTAssertEqual(updated.id, "weather")
@@ -326,7 +326,7 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testListToolsDecodesGitHubSource() async throws {
-        let json = #"{"tools":[{"id":"gh","type":"rest","ops":[],"secrets":[],"#
+        let json = #"{"tools":[{"id":"gh","type":"api","ops":[],"secrets":[],"#
                  + #""source":{"type":"github","url":"https://github.com/x/y","subdir":"t/a","ref":"main"}}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let tools = try await makeClient(token: "t").listTools()
@@ -337,14 +337,14 @@ final class ApiClientTests: XCTestCase {
 
     func testListToolsToleratesNullSource() async throws {
         // a hand-authored tool has source:null (and an older admin omits it) — both decode to nil
-        let json = #"{"tools":[{"id":"echo","type":"rest","ops":[],"secrets":[],"source":null}]}"#
+        let json = #"{"tools":[{"id":"echo","type":"api","ops":[],"secrets":[],"source":null}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let tools = try await makeClient(token: "t").listTools()
         XCTAssertNil(tools.first?.source)
     }
 
     func testListToolsDecodesDescription() async throws {
-        let json = #"{"tools":[{"id":"echo","type":"rest","description":"echoes input","port":4601,"#
+        let json = #"{"tools":[{"id":"echo","type":"api","description":"echoes input","port":4601,"#
                  + #""running":false,"ops":[],"secrets":[]}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let tools = try await makeClient(token: "t").listTools()
