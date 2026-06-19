@@ -96,7 +96,7 @@ _TOOL_EDITOR_JS = """
 (function(){
   var ARG_TYPES = ["string","number","integer","boolean","object","array"];
   var RISK_CHOICES = ["read","write","destructive"];
-  var TOOL_TYPES = ["api","mcp"];   // matches admin TOOL_TYPES
+  var TOOL_TYPES = ["api","mcp","rest"];   // matches admin TOOL_TYPES
   function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
   function opts(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+v+'</option>';}).join('');}
   function riskOpts(sel){return RISK_CHOICES.indexOf(sel)<0 ? [sel].concat(RISK_CHOICES) : RISK_CHOICES;}
@@ -620,7 +620,8 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         f"{_csrf_field(csrf)}{dir_field}"
         f"<label class='field'>id <input id='f_id' placeholder='weather'{id_attr} required></label>"
         "<label class='field'>transport <span class='muted'>(api = POST /v1/actions; "
-        "mcp = streamable-HTTP MCP server)</span><select id='f_type'></select></label>"
+        "mcp = streamable-HTTP MCP server; rest = verb-as-op passthrough)</span>"
+        "<select id='f_type'></select></label>"
         "<label class='field'>description <span class='muted'>(optional)</span>"
         "<textarea id='f_description' rows='2' placeholder='what this tool does'></textarea></label>"
         "<label class='field'>entrypoint command <span class='muted'>(process backend)</span>"

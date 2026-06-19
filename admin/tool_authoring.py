@@ -22,10 +22,25 @@ RISK_CHOICES = ("read", "write", "destructive")
 RISKS = RISK_CHOICES
 ARG_TYPES = ("string", "number", "integer", "boolean", "object", "array")
 # Tool transports the panel can author. "api" POSTs /v1/actions/<op>; "mcp" is a
-# streamable-HTTP MCP server the broker calls via tools/call. ("rest" passthrough lands
-# in a later slice.) Both authorable types are served on a port, so the entrypoint form
-# is identical — only the `type` differs.
-TOOL_TYPES = ("api", "mcp")
+# streamable-HTTP MCP server the broker calls via tools/call; "rest" is a verb-as-op
+# passthrough. All are served on a port, so the entrypoint form is identical — only the
+# `type` (and, for rest, the op shape) differs.
+TOOL_TYPES = ("api", "mcp", "rest")
+
+# For a "rest" tool the op IS an HTTP verb, and its risk is DERIVED from the verb (not
+# operator-chosen) so a DELETE can't be mislabelled "read". The op's args are fixed too:
+# every verb takes the same {path, body, query} passthrough shape.
+REST_VERBS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+REST_VERB_RISK = {"GET": "read", "POST": "write", "PUT": "write",
+                  "PATCH": "write", "DELETE": "destructive"}
+REST_ARGS = (
+    {"name": "path", "type": "string", "required": True,
+     "description": "request path on the tool, e.g. /items/42"},
+    {"name": "body", "type": "object", "required": False,
+     "description": "JSON request body (POST/PUT/PATCH)"},
+    {"name": "query", "type": "object", "required": False,
+     "description": "query-string parameters"},
+)
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
 _NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")             # operation / argument names
@@ -45,10 +60,23 @@ def normalize(data: dict) -> dict:
     def s(x) -> str:
         return str(x if x is not None else "").strip()
 
+    tool_type = s(data.get("type")) or "api"
     operations = []
     for o in data.get("operations") or []:
         name = s(o.get("name"))
         if not name:
+            continue
+        if tool_type == "rest":
+            # A rest op IS a verb: uppercase it, derive its risk, and give it the fixed
+            # passthrough arg shape. The operator only picks which verbs to expose; risk and
+            # args are not theirs to set (validate rejects a name that isn't a verb).
+            verb = name.upper()
+            operations.append({
+                "name": verb,
+                "risk": REST_VERB_RISK.get(verb, "write"),
+                "description": s(o.get("description")),
+                "args": [dict(a) for a in REST_ARGS],
+            })
             continue
         args = []
         for a in o.get("args") or []:
@@ -90,7 +118,7 @@ def normalize(data: dict) -> dict:
 
     return {
         "id": s(data.get("id")),
-        "type": s(data.get("type")) or "api",
+        "type": tool_type,
         "description": s(data.get("description")),
         "command": s(data.get("command")),
         "image": s(data.get("image")),
@@ -119,6 +147,7 @@ def validate(data: dict) -> list[str]:
         errors.append("port must be an integer between 1 and 65535")
     if not data["operations"]:
         errors.append("add at least one operation")
+    is_rest = data["type"] == "rest"
     seen = set()
     for o in data["operations"]:
         if not _NAME_RE.match(o["name"]):
@@ -126,6 +155,10 @@ def validate(data: dict) -> list[str]:
         if o["name"] in seen:
             errors.append(f"duplicate operation '{o['name']}'")
         seen.add(o["name"])
+        # For a rest tool the op must be one of the HTTP verbs (normalize uppercases it and
+        # derives the risk, so risk is always valid here — only the verb itself can be wrong).
+        if is_rest and o["name"] not in REST_VERBS:
+            errors.append(f"rest op '{o['name']}' must be an HTTP verb ({', '.join(REST_VERBS)})")
         if o["risk"] not in RISKS:
             errors.append(f"operation '{o['name']}' risk must be one of {', '.join(RISKS)}")
         for a in o["args"]:

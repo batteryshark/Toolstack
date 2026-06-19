@@ -16,10 +16,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Tool transports the broker knows how to route. "api" -> POST /v1/actions/<op>; "mcp" ->
-# streamable-HTTP MCP client (see broker/runtime.py). (The passthrough "rest" type lands in
-# a later slice.) An unknown type is rejected at load. Mirrors toolyard/config.py and
-# admin/tool_authoring.py (independent packages, so the set is duplicated, not shared).
-TOOL_TYPES = ("api", "mcp")
+# streamable-HTTP MCP client; "rest" -> verb-as-op passthrough (see broker/runtime.py). An
+# unknown type is rejected at load. Mirrors toolyard/config.py and admin/tool_authoring.py
+# (independent packages, so the set is duplicated, not shared).
+TOOL_TYPES = ("api", "mcp", "rest")
+
+# For a "rest" tool the risk is DEFINED by the verb, not the manifest, so the broker derives
+# it here — the approval card and discovery then show the right risk even for a hand-written
+# toolyard.toml. Mirrors admin/tool_authoring.REST_VERB_RISK (independent package, duplicated).
+REST_VERB_RISK = {"GET": "read", "POST": "write", "PUT": "write",
+                  "PATCH": "write", "DELETE": "destructive"}
 
 
 @dataclass(frozen=True)
@@ -63,8 +69,13 @@ class Registry:
             )
         ops = {}
         for o in data.get("operations", []):
+            risk = o.get("risk", "unknown")
+            if tool_type == "rest":
+                # the verb defines the risk — override the manifest (case-insensitively) so a
+                # mislabelled or hand-written rest op can't misrepresent risk on the approval card
+                risk = REST_VERB_RISK.get(o["name"].upper(), risk)
             ops[o["name"]] = {
-                "risk": o.get("risk", "unknown"),
+                "risk": risk,
                 "description": o.get("description", ""),
                 "args": o.get("args", []),
             }

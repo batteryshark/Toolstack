@@ -22,6 +22,16 @@ FULL = {
     "secrets": [{"name": "api_key", "field": "API_KEY", "writable": False}],
 }
 
+REST_FIXTURE = {
+    "id": "kv", "type": "rest", "command": "python3 app.py", "image": "",
+    "description": "KV store", "port": 4621,
+    "operations": [
+        {"name": "get", "risk": "read", "description": "read a key", "args": []},  # lowercased -> GET
+        {"name": "DELETE", "risk": "read", "description": "", "args": []},          # wrong risk -> derived
+    ],
+    "secrets": [],
+}
+
 
 class Serialize(unittest.TestCase):
     def test_to_toml_parses_back(self):
@@ -123,6 +133,35 @@ class Validate(unittest.TestCase):
 
     def test_unknown_type_rejected(self):
         self.assertTrue(any("type must be one of" in e for e in self._errs(type="banana")))
+
+
+class RestAuthoring(unittest.TestCase):
+    """A rest tool's ops are HTTP verbs: normalize uppercases them, derives risk from the
+    verb, and gives them the fixed {path, body, query} shape; validate rejects non-verbs."""
+
+    def test_normalize_uppercases_verbs_derives_risk_and_sets_args(self):
+        norm = tool_authoring.normalize(REST_FIXTURE)
+        ops = {o["name"]: o for o in norm["operations"]}
+        self.assertEqual(set(ops), {"GET", "DELETE"})            # "get" -> "GET"
+        self.assertEqual(ops["GET"]["risk"], "read")
+        self.assertEqual(ops["DELETE"]["risk"], "destructive")   # derived, not the "read" we passed
+        self.assertEqual([a["name"] for a in ops["GET"]["args"]], ["path", "body", "query"])
+
+    def test_validate_accepts_verb_ops(self):
+        self.assertEqual(tool_authoring.validate(tool_authoring.normalize(REST_FIXTURE)), [])
+
+    def test_validate_rejects_a_non_verb_op(self):
+        bad = {**REST_FIXTURE, "operations": [{"name": "frobnicate", "risk": "read", "args": []}]}
+        errs = tool_authoring.validate(tool_authoring.normalize(bad))
+        self.assertTrue(any("HTTP verb" in e for e in errs))
+
+    def test_written_rest_tool_is_consumable_by_broker_and_toolyard(self):
+        tmp = tempfile.mkdtemp(prefix="admin-rest-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        tool_authoring.write(tmp, tool_authoring.normalize(REST_FIXTURE))
+        op = Registry.from_sources(None, [tmp]).lookup("kv", "DELETE")
+        self.assertEqual((op.type, op.risk), ("rest", "destructive"))
+        self.assertEqual(load_tool(Path(tmp, "toolyard.toml")).type, "rest")
 
 
 class ReadWrite(unittest.TestCase):

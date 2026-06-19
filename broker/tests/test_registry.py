@@ -118,6 +118,39 @@ class McpType(unittest.TestCase):
         self.assertEqual(op.port, 4611)
 
 
+class RestType(unittest.TestCase):
+    """A type='rest' tool registers with its verbs as ops; the ToolOp carries type='rest'
+    so the runtime routes it through the verb-as-op passthrough."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        d = Path(self.tmp, "kv")
+        d.mkdir(parents=True)
+        (d / "toolyard.toml").write_text(
+            'id = "kv"\ntype = "rest"\n[entrypoint]\nport = 4621\ncommand = "x"\n'
+            '[[operations]]\nname = "GET"\nrisk = "read"\n'
+            '[[operations]]\nname = "DELETE"\nrisk = "destructive"\n')
+        self.registry = Registry.from_tools_root(self.tmp)
+
+    def test_lookup_carries_rest_type_and_verb_op(self):
+        op = self.registry.lookup("kv", "DELETE")
+        self.assertIsNotNone(op)
+        self.assertEqual(op.type, "rest")
+        self.assertEqual(op.risk, "destructive")
+        self.assertEqual(op.port, 4621)
+
+    def test_rest_risk_is_derived_from_the_verb_overriding_the_manifest(self):
+        # a hand-written rest toml that mislabels DELETE as "read" must not misrepresent risk
+        d = Path(self.tmp, "kv2")
+        d.mkdir(parents=True)
+        (d / "toolyard.toml").write_text(
+            'id = "kv2"\ntype = "rest"\n[entrypoint]\nport = 4622\ncommand = "x"\n'
+            '[[operations]]\nname = "DELETE"\nrisk = "read"\n')   # wrong on purpose
+        op = Registry.from_tools_root(self.tmp).lookup("kv2", "DELETE")
+        self.assertEqual(op.risk, "destructive")   # derived from the verb, not the manifest
+
+
 class PortValidation(unittest.TestCase):
     """An api or mcp tool with no/invalid port must fail at load, naming the file + tool —
     not register silently and 502 at call time."""

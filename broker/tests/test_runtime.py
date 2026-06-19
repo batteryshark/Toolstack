@@ -237,6 +237,139 @@ class McpForward(unittest.TestCase):
                                            {}, 1, "hermes")
 
 
+class _FakeRestTool(BaseHTTPRequestHandler):
+    """A plain HTTP service for exercising the rest passthrough. Records the last request;
+    class attributes set the response status/body."""
+
+    received: dict = {}
+    status = 200
+    resp_body = None         # None -> {"ok": True}
+    resp_ctype = "application/json"
+    resp_location = None      # if set, sent as a Location header (to test redirect handling)
+
+    def _handle(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""
+        try:
+            body = json.loads(raw) if raw else None
+        except json.JSONDecodeError:
+            body = None
+        type(self).received = {
+            "method": self.command,
+            "path": self.path,
+            "body": body,
+            "request_id": self.headers.get("X-Toolstack-Request-Id"),
+            "caller": self.headers.get("X-Toolstack-Caller"),
+            "secret": self.headers.get("X-Toolstack-Secret"),
+        }
+        obj = type(self).resp_body if type(self).resp_body is not None else {"ok": True}
+        payload = json.dumps(obj).encode("utf-8")
+        self.send_response(type(self).status)
+        self.send_header("Content-Type", type(self).resp_ctype)
+        self.send_header("Content-Length", str(len(payload)))
+        if type(self).resp_location:
+            self.send_header("Location", type(self).resp_location)
+        self.end_headers()
+        self.wfile.write(payload)
+
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = _handle
+
+    def log_message(self, *args):
+        pass
+
+
+class RestForward(unittest.TestCase):
+    """The broker as a verb-as-op passthrough: a type='rest' ToolOp forwards
+    <verb> <path> + body to the tool and returns its {status, body}."""
+
+    def setUp(self):
+        _FakeRestTool.received = {}
+        _FakeRestTool.status = 200
+        _FakeRestTool.resp_body = None
+        _FakeRestTool.resp_ctype = "application/json"
+        _FakeRestTool.resp_location = None
+        self.server = HTTPServer(("127.0.0.1", 0), _FakeRestTool)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.thread.join(timeout=5)
+        self.server.server_close()
+
+    def _op(self, verb="GET"):
+        return ToolOp("kv", verb, "read", self.port, "rest")
+
+    def test_forwards_verb_path_body_and_returns_status_body(self):
+        result = HttpRuntime().execute(
+            self._op("POST"), {"path": "/items", "body": {"key": "a", "value": 1}}, 7, "hermes")
+        self.assertEqual(_FakeRestTool.received["method"], "POST")  # op IS the verb
+        self.assertEqual(_FakeRestTool.received["path"], "/items")
+        self.assertEqual(_FakeRestTool.received["body"], {"key": "a", "value": 1})
+        self.assertEqual(result, {"status": 200, "body": {"ok": True}})
+
+    def test_sends_broker_context_in_headers(self):
+        HttpRuntime().execute(self._op("GET"), {"path": "/items"}, 99, "hermes")
+        self.assertEqual(_FakeRestTool.received["request_id"], "99")
+        self.assertEqual(_FakeRestTool.received["caller"], "hermes")
+
+    def test_4xx_passes_through_without_raising(self):
+        # a 404 for a missing resource is a legitimate REST answer, not a broker error
+        _FakeRestTool.status = 404
+        _FakeRestTool.resp_body = {"error": "not_found"}
+        result = HttpRuntime().execute(self._op("GET"), {"path": "/items/nope"}, 1, "hermes")
+        self.assertEqual(result, {"status": 404, "body": {"error": "not_found"}})
+
+    def test_query_dict_is_appended(self):
+        HttpRuntime().execute(self._op("GET"), {"path": "/items", "query": {"limit": "5"}}, 1, "hermes")
+        self.assertIn("limit=5", _FakeRestTool.received["path"])
+
+    def test_sends_shared_secret_when_configured(self):
+        rt = HttpRuntime(tool_secret=lambda t: "sek" if t == "kv" else None)
+        rt.execute(self._op("GET"), {"path": "/items"}, 1, "hermes")
+        self.assertEqual(_FakeRestTool.received["secret"], "sek")
+
+    def test_missing_path_raises(self):
+        with self.assertRaises(RuntimeError):
+            HttpRuntime().execute(self._op("GET"), {}, 1, "hermes")
+
+    def test_path_must_start_with_a_single_slash(self):
+        # "@evil/x" -> http://127.0.0.1:port@evil/x would smuggle a host into the authority
+        with self.assertRaises(RuntimeError):
+            HttpRuntime().execute(self._op("GET"), {"path": "@evil/x"}, 1, "hermes")
+        # "//evil/x" -> protocol-relative host
+        with self.assertRaises(RuntimeError):
+            HttpRuntime().execute(self._op("GET"), {"path": "//evil/x"}, 1, "hermes")
+
+    def test_non_printable_ascii_in_path_raises(self):
+        # CRLF (smuggling), NUL, space, and raw non-ASCII all rejected with one clean error
+        for bad in ["/x\r\nHost: evil", "/x\x00y", "/a b", "/café"]:
+            with self.assertRaises(RuntimeError):
+                HttpRuntime().execute(self._op("GET"), {"path": bad}, 1, "hermes")
+
+    def test_non_verb_op_raises(self):
+        # method-injection guard: the registry only registers declared verb ops, but never
+        # use an arbitrary op string as an HTTP method
+        with self.assertRaises(RuntimeError):
+            HttpRuntime().execute(ToolOp("kv", "FROBNICATE", "read", self.port, "rest"),
+                                  {"path": "/x"}, 1, "hermes")
+
+    def test_does_not_follow_tool_redirects(self):
+        # a tool-issued 3xx must NOT be auto-followed (SSRF guard) — it returns as data, and
+        # the broker never re-requests the Location target.
+        _FakeRestTool.status = 302
+        _FakeRestTool.resp_location = "/elsewhere"
+        result = HttpRuntime().execute(self._op("GET"), {"path": "/items"}, 1, "hermes")
+        self.assertEqual(result["status"], 302)
+        self.assertEqual(_FakeRestTool.received["path"], "/items")  # not "/elsewhere"
+
+    def test_unreachable_tool_raises(self):
+        with self.assertRaises(RuntimeError):
+            HttpRuntime(timeout=2).execute(ToolOp("kv", "GET", "read", 1, "rest"),
+                                           {"path": "/x"}, 1, "hermes")
+
+
 class EnvToolSecret(unittest.TestCase):
     """_env_tool_secret: the default resolver mapping a tool id to its env var."""
 
