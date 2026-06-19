@@ -26,17 +26,8 @@ public struct Caller: Codable, Sendable, Identifiable, Equatable {
     public var isActive: Bool { revokedAt == nil }
 }
 
-public struct TokenInfo: Codable, Sendable, Identifiable, Equatable {
-    public let tokenHash: String
-    public let caller: String
-    public let createdAt: Double?
-    public let revokedAt: Double?
-    public var id: String { tokenHash }
-}
-
 public struct CallersResponse: Codable, Sendable {
     public let callers: [Caller]
-    public let tokens: [TokenInfo]
 }
 
 public struct CreatedCaller: Codable, Sendable {
@@ -45,8 +36,7 @@ public struct CreatedCaller: Codable, Sendable {
 }
 
 public struct RevokeResult: Codable, Sendable {
-    public let name: String
-    public let cancelledApprovals: Int
+    public let name: String   // the revoke response is otherwise ignored
 }
 
 public struct OpInfo: Codable, Sendable, Identifiable, Equatable {
@@ -183,7 +173,7 @@ public struct BrokerConfigInfo: Codable, Sendable {
 }
 
 /// A decoded arbitrary JSON value — audit `details` can be any shape. Rendered compactly for a cell.
-public indirect enum AnyJSON: Codable, Sendable, Equatable {
+public indirect enum AnyJSON: Decodable, Sendable, Equatable {
     case string(String), number(Double), bool(Bool), object([String: AnyJSON]), array([AnyJSON]), null
 
     public init(from decoder: Decoder) throws {
@@ -195,18 +185,6 @@ public indirect enum AnyJSON: Codable, Sendable, Equatable {
         else if let o = try? c.decode([String: AnyJSON].self) { self = .object(o) }
         else if let a = try? c.decode([AnyJSON].self) { self = .array(a) }
         else { throw DecodingError.dataCorruptedError(in: c, debugDescription: "unsupported JSON value") }
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var c = encoder.singleValueContainer()
-        switch self {
-        case .string(let s): try c.encode(s)
-        case .number(let n): try c.encode(n)
-        case .bool(let b): try c.encode(b)
-        case .object(let o): try c.encode(o)
-        case .array(let a): try c.encode(a)
-        case .null: try c.encodeNil()
-        }
     }
 
     /// Compact one-line rendering for a table cell (not strict JSON — readability over fidelity).
@@ -225,7 +203,7 @@ public indirect enum AnyJSON: Codable, Sendable, Equatable {
 }
 
 /// One audit event (admin.* or broker.*). `details` is free-form. (snake_case → camelCase.)
-public struct AuditEvent: Codable, Sendable, Identifiable, Equatable {
+public struct AuditEvent: Decodable, Sendable, Identifiable, Equatable {
     public let id: Int
     public let at: Double
     public let component: String
@@ -249,7 +227,7 @@ public struct RequestRow: Codable, Sendable, Identifiable, Equatable {
     public let updatedAt: Double?
 }
 
-public struct AuditResponse: Codable, Sendable {
+public struct AuditResponse: Decodable, Sendable {
     public let audit: [AuditEvent]
     public let requests: [RequestRow]
 }

@@ -3,15 +3,14 @@ import SwiftUI
 import ToolstackKit
 
 /// The app's single source of UI state. Wraps the `ApiClient` (an actor) and republishes
-/// results on the main actor for SwiftUI. The bearer token lives in the client for the
-/// session (Keychain persistence is a T-031 item). Auth errors drop back to the login screen.
+/// results on the main actor for SwiftUI. The bearer token lives in the client and
+/// persists across launches in the Keychain. Auth errors drop back to the login screen.
 @MainActor
 final class AppModel: ObservableObject {
     @Published var authenticated = false
     @Published var restoring = true   // true until a stored token is checked on launch (avoids a login flash)
     @Published var broker: BrokerStatus?
     @Published var callers: [Caller] = []
-    @Published var tokens: [TokenInfo] = []
     @Published var tools: [ToolInfo] = []
     @Published var banner: String?   // e.g. a freshly minted token to copy once
     @Published var error: String?
@@ -80,7 +79,7 @@ final class AppModel: ObservableObject {
         await client.setToken(nil)
         TokenStore.delete(account: serverURL)
         authenticated = false
-        broker = nil; callers = []; tokens = []; banner = nil
+        broker = nil; callers = []; banner = nil
     }
 
     func refreshAll() async {
@@ -118,6 +117,11 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Banner after a tool is added (any source): it lands on disk but needs a broker restart to register.
+    private func addedBanner(_ id: String, authored: Bool = false) -> String {
+        "Added \(id)\(authored ? " (authored)" : ""). Restart the broker to register it, then grant a caller access."
+    }
+
     /// Outcome of adding from a local folder: it landed, or the folder has no toolyard.toml (so the
     /// UI offers to author one), or it failed (with `error` set).
     enum AddOutcome { case added, needsManifest, failed }
@@ -131,7 +135,7 @@ final class AppModel: ObservableObject {
         do {
             let created = try await client.addTool(source: source)
             await refreshTools()
-            banner = "Added \(created.id). Restart the broker to register it, then grant a caller access."
+            banner = addedBanner(created.id)
             return .added
         } catch ApiError.http(422, _) {
             return .needsManifest
@@ -146,20 +150,12 @@ final class AppModel: ObservableObject {
 
     /// Author a tool from a folder of code: copy it in and write the manifest you built in the app.
     func authorTool(source: String, manifest: [String: Any]) async -> Bool {
-        busy = true
-        error = nil
-        defer { busy = false }
-        do {
-            let created = try await client.addToolWithManifest(source: source, manifest: manifest)
-            await refreshTools()
-            banner = "Added \(created.id) (authored). Restart the broker to register it, then grant a caller access."
+        await run {
+            let created = try await self.client.addToolWithManifest(source: source, manifest: manifest)
+            await self.refreshTools()
+            self.banner = self.addedBanner(created.id, authored: true)
             return true
-        } catch let apiError as ApiError {
-            if case .unauthorized = apiError { authenticated = false }
-            error = apiError.message; return false
-        } catch let other {
-            error = other.localizedDescription; return false
-        }
+        } ?? false
     }
 
     /// Add a tool by cloning a git repo (optionally a subdir, at a branch/tag) into the tools dir.
@@ -170,7 +166,7 @@ final class AppModel: ObservableObject {
         do {
             let created = try await client.addToolFromGitHub(repo: repo, subdir: subdir, ref: ref)
             await refreshTools()
-            banner = "Added \(created.id). Restart the broker to register it, then grant a caller access."
+            banner = addedBanner(created.id)
         } catch ApiError.http(422, _) {
             error = "That repo/subdir has no toolyard.toml — point at one that does, or add it from a local folder to author it."
         } catch ApiError.unauthorized {
@@ -196,33 +192,12 @@ final class AppModel: ObservableObject {
 
     /// Load a tool's secret set/unset status (returns it rather than storing — used by the sheet).
     func secretStatus(toolId: String) async -> SecretStatus? {
-        do {
-            return try await client.secretStatus(toolId: toolId)
-        } catch let apiError as ApiError {
-            if case .unauthorized = apiError { authenticated = false }
-            error = apiError.message
-            return nil
-        } catch let other {
-            error = other.localizedDescription
-            return nil
-        }
+        await run { try await self.client.secretStatus(toolId: toolId) }
     }
 
     /// Provision a secret value into the vault. Returns whether it succeeded (the value is never stored here).
     func setSecretValue(toolId: String, field: String, value: String) async -> Bool {
-        busy = true
-        error = nil
-        defer { busy = false }
-        do {
-            return try await client.setSecretValue(toolId: toolId, field: field, value: value)
-        } catch let apiError as ApiError {
-            if case .unauthorized = apiError { authenticated = false }
-            error = apiError.message
-            return false
-        } catch let other {
-            error = other.localizedDescription
-            return false
-        }
+        await run { try await self.client.setSecretValue(toolId: toolId, field: field, value: value) } ?? false
     }
 
     @Published var config: BrokerConfigInfo?
@@ -243,16 +218,7 @@ final class AppModel: ObservableObject {
 
     /// Load one caller's policy + enabled tools for the editors (returns it rather than storing).
     func loadPolicy(for caller: String) async -> PolicyResponse? {
-        do {
-            return try await client.policy(for: caller)
-        } catch let apiError as ApiError {
-            if case .unauthorized = apiError { authenticated = false }
-            error = apiError.message
-            return nil
-        } catch let other {
-            error = other.localizedDescription
-            return nil
-        }
+        await run { try await self.client.policy(for: caller) }
     }
 
     func setEnabledTools(caller: String, enabled: [String]) async {
@@ -293,11 +259,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshCallers() async {
-        await run {
-            let response = try await self.client.listCallers()
-            self.callers = response.callers
-            self.tokens = response.tokens
-        }
+        await run { self.callers = try await self.client.listCallers().callers }
     }
 
     func createCaller(name: String) async {
@@ -311,17 +273,21 @@ final class AppModel: ObservableObject {
     }
 
     /// Run an async operation with busy/error bookkeeping; an `unauthorized` drops to login.
-    private func run(_ operation: @escaping () async throws -> Void) async {
+    /// Returns the operation's value (nil if it threw); a Void operation returns an ignored Void?.
+    @discardableResult
+    private func run<T>(_ operation: @escaping () async throws -> T) async -> T? {
         busy = true
         error = nil
+        defer { busy = false }
         do {
-            try await operation()
+            return try await operation()
         } catch let apiError as ApiError {
             if case .unauthorized = apiError { authenticated = false }
             error = apiError.message
+            return nil
         } catch let other {
             error = other.localizedDescription
+            return nil
         }
-        busy = false
     }
 }
