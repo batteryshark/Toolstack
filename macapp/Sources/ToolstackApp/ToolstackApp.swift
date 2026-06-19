@@ -207,7 +207,7 @@ struct CallersPane: View {
 struct ToolsPane: View {
     @EnvironmentObject var model: AppModel
     @State private var editing: ToolInfo?
-    @State private var importing = false
+    @State private var addingTool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -259,11 +259,6 @@ struct ToolsPane: View {
         .sheet(item: $editing) { tool in
             ToolEditor(tool: tool).environmentObject(model)
         }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result {
-                Task { await model.addTool(source: url.path) }
-            }
-        }
         .task { await model.refreshTools(); await model.refreshSecretBackend() }
     }
 
@@ -278,7 +273,8 @@ struct ToolsPane: View {
                 }
             }
             Spacer()
-            Button { importing = true } label: { Label("Add tool", systemImage: "plus") }
+            Button { addingTool = true } label: { Label("Add tool", systemImage: "plus") }
+                .sheet(isPresented: $addingTool) { AddToolSheet().environmentObject(model) }
         }
         .padding(.horizontal).padding(.vertical, 8)
     }
@@ -583,6 +579,51 @@ struct EditableSecret: Identifiable {
     }
 
     init() { name = ""; field = ""; writable = false; vault = ""; item = "" }
+}
+
+/// Add a tool by pointing at a folder that contains a toolyard.toml. The path is on the ADMIN's
+/// machine: for a local admin that's this Mac (use "Choose…"); for a remote/Docker admin, type a
+/// path it can see. The folder is copied into the broker's managed tools dir.
+struct AddToolSheet: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var path = ""
+    @State private var picking = false
+    @State private var addError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add a tool").font(.title2.bold())
+            Text("Point at a folder containing a toolyard.toml. The path is on the admin's machine — "
+                 + "for a local admin that's this Mac; for a remote or Docker admin, a path it can see.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                TextField("/path/to/tool-folder", text: $path).textFieldStyle(.roundedBorder)
+                Button("Choose…") { picking = true }
+            }
+            HStack {
+                if let addError {
+                    Label(addError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.red).lineLimit(3)
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Add") { Task { await add() } }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(path.trimmingCharacters(in: .whitespaces).isEmpty || model.busy)
+            }
+        }
+        .padding()
+        .frame(minWidth: 500, minHeight: 190)
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
+            if case .success(let url) = result { path = url.path }   // a local pick fills the field
+        }
+    }
+
+    private func add() async {
+        await model.addTool(source: path.trimmingCharacters(in: .whitespaces))
+        if model.error == nil { dismiss() } else { addError = model.error }
+    }
 }
 
 /// Editable broker settings (broker.toml). The nod token is write-only — blank keeps the stored
