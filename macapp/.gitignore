@@ -1,0 +1,7 @@
+# SwiftPM build products
+.build/
+# Packaged app bundle / notarization artifacts (produced by scripts/build-app.sh)
+build/
+*.app
+*.dmg
+*.zip
