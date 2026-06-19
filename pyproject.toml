@@ -27,7 +27,9 @@ classifiers = [
 # The local encrypted-vault secret backend (toolyard.secrets.VaultBackend) is the only
 # part that needs a crypto library — stdlib has KDFs (scrypt) but no AEAD. It's imported
 # lazily, so the toolyard stays zero-dependency unless you opt in:  pip install '.[vault]'
-vault = ["cryptography>=42"]
+# Upper bound caps the major so a future cryptography release can't silently break a
+# deploy; widen it deliberately after testing the vault backend against the new major.
+vault = ["cryptography>=42,<46"]
 
 [project.scripts]
 toolstack = "client.toolstack:main"        # the agent's generic tool client (CLI)

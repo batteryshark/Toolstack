@@ -59,6 +59,42 @@ if [[ -f "$SERVICE_FILE" ]]; then
   done < "$SERVICE_FILE"
 fi
 
+# Resolve the broker's DB path + port from the saved run-config (using the XDG paths
+# loaded above), so the pre-restart snapshot and the post-restart health-gate target
+# the right SQLite file and ports. Best-effort: a fresh box may have no config yet.
+# Admin panel port: parse it from the unit's ExecStart (--port N), default 8780 — the same
+# "repo template tracks the installed unit" assumption as the Environment= parse above (the
+# admin's `serve` reads the port only from --port, so this is the single source of truth).
+ADMIN_PORT=8780
+if [[ -f "$SERVICE_FILE" ]]; then
+  p="$(awk '/^ExecStart=.*serve/{for(i=1;i<=NF;i++)if($i=="--port")print $(i+1)}' "$SERVICE_FILE" | head -1)"
+  [[ -n "$p" ]] && ADMIN_PORT="$p"
+fi
+BROKER_DB=""
+BROKER_PORT=""
+if [[ -x "$VENV_PY" ]] && cfg_out="$("$VENV_PY" - <<'PY' 2>/dev/null
+from admin import broker_config
+c = broker_config.load()
+print(c.db_path)
+print(c.port)
+PY
+)"; then
+  BROKER_DB="$(printf '%s\n' "$cfg_out" | awk 'NR==1')"
+  BROKER_PORT="$(printf '%s\n' "$cfg_out" | awk 'NR==2')"
+fi
+
+# Poll an endpoint until it answers 2xx/3xx, or fail after ~30s.
+http_gate() {
+  local url="$1" name="$2" code=""
+  for _ in $(seq 1 30); do
+    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "$url" 2>/dev/null || true)"
+    if [[ "$code" =~ ^[23] ]]; then echo "  ✓ $name ($code)"; return 0; fi
+    sleep 1
+  done
+  echo "  ✗ $name did not come up (last: ${code:-no response} — $url)" >&2
+  return 1
+}
+
 if [[ "$PULL" -eq 1 ]]; then
   echo "==> Pulling latest code"
   git pull --ff-only
@@ -74,11 +110,51 @@ if [[ "$SKIP_VENV" -eq 0 ]]; then
 fi
 
 if [[ "$SKIP_SERVICE" -eq 0 ]]; then
+  if [[ -n "$BROKER_DB" && -f "$BROKER_DB" ]]; then
+    echo "==> Snapshotting broker DB before restart"
+    "$VENV_PY" - "$BROKER_DB" <<'PY'
+import os, sqlite3, sys, time
+from pathlib import Path
+db = Path(sys.argv[1])
+backups = db.parent / "backups"
+backups.mkdir(parents=True, exist_ok=True)
+dest = backups / f"{db.stem}-{time.strftime('%Y%m%d-%H%M%S')}.sqlite3"
+src = sqlite3.connect(str(db))
+try:
+    dst = sqlite3.connect(str(dest))
+    try:
+        src.backup(dst)   # online, consistent copy — safe while the broker is running
+    finally:
+        dst.close()
+finally:
+    src.close()
+os.chmod(dest, 0o600)
+snaps = sorted(backups.glob(f"{db.stem}-*.sqlite3"))
+for old in snaps[:-7]:   # keep the newest 7
+    old.unlink()
+print(f"  ✓ {dest}")
+PY
+  fi
+
   echo "==> Restarting $SERVICE_NAME"
   if systemctl restart "$SERVICE_NAME" 2>/dev/null; then
     :
   else
     sudo systemctl restart "$SERVICE_NAME"
+  fi
+
+  # Gate on health before touching tools: restarting tools against a broker that
+  # didn't come back up just turns one outage into a confusing partial one.
+  echo "==> Health-gating the stack"
+  gate_ok=1
+  if [[ -n "$BROKER_PORT" ]]; then
+    http_gate "http://127.0.0.1:$BROKER_PORT/v1/health" "broker" || gate_ok=0
+  fi
+  http_gate "http://127.0.0.1:$ADMIN_PORT/login" "admin panel" || gate_ok=0
+  if [[ "$gate_ok" -ne 1 ]]; then
+    echo "Stack is not healthy after restart — NOT restarting tools." >&2
+    echo "Inspect: journalctl -u $SERVICE_NAME -n 50 --no-pager" >&2
+    exit 1
   fi
 fi
 
