@@ -764,8 +764,19 @@ struct AddToolSheet: View {
     @State private var ref = ""
     @State private var picking = false
     @State private var addError: String?
+    @State private var authoringFor: String?   // set when a picked folder has no toolyard.toml
 
     var body: some View {
+        if let source = authoringFor {
+            // The folder is code with no manifest — author one in place (the "Either" other half).
+            ToolAuthoringForm(source: source, onCreated: { dismiss() }, onBack: { authoringFor = nil })
+                .environmentObject(model)
+        } else {
+            addForm
+        }
+    }
+
+    @ViewBuilder private var addForm: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Add a tool").font(.title2.bold())
             Picker("", selection: $mode) {
@@ -822,13 +833,197 @@ struct AddToolSheet: View {
     private func add() async {
         switch mode {
         case .folder:
-            await model.addTool(source: path.trimmingCharacters(in: .whitespaces))
+            let source = path.trimmingCharacters(in: .whitespaces)
+            switch await model.addTool(source: source) {
+            case .added: dismiss()
+            case .needsManifest: addError = nil; authoringFor = source   // morph into the authoring form
+            case .failed: addError = model.error
+            }
         case .github:
             await model.addToolFromGitHub(repo: repo.trimmingCharacters(in: .whitespaces),
                                           subdir: subdir.trimmingCharacters(in: .whitespaces),
                                           ref: ref.trimmingCharacters(in: .whitespaces))
+            if model.error == nil { dismiss() } else { addError = model.error }
         }
-        if model.error == nil { dismiss() } else { addError = model.error }
+    }
+}
+
+/// A mutable operation row for the authoring form (→ a manifest `[[operations]]` entry).
+struct EditableOp: Identifiable {
+    let id = UUID()
+    var name = ""
+    var risk = "low"
+    var description = ""
+    var args: [EditableArg] = []
+}
+
+/// A mutable argument row (→ an operation's `args` entry).
+struct EditableArg: Identifiable {
+    let id = UUID()
+    var name = ""
+    var type = "string"
+    var required = false
+}
+
+/// Author a tool's manifest for a folder of code that has no toolyard.toml — id, entrypoint,
+/// operations (+ args), and secret declarations. The server normalizes + validates, so it reports
+/// precise errors (bad id, port range, missing op, …) inline.
+struct ToolAuthoringForm: View {
+    let source: String
+    let onCreated: () -> Void
+    let onBack: () -> Void
+
+    @EnvironmentObject var model: AppModel
+    @State private var id = ""
+    @State private var description = ""
+    @State private var command = ""
+    @State private var image = ""
+    @State private var port = ""
+    @State private var operations: [EditableOp] = [EditableOp()]
+    @State private var secrets: [EditableSecret] = []
+    @State private var saveError: String?
+
+    private let risks = ["low", "medium", "high"]
+    private let argTypes = ["string", "number", "integer", "boolean", "object", "array"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Button { onBack() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(.borderless)
+                Spacer()
+            }
+            Text("Author a tool").font(.title2.bold())
+            Text("No toolyard.toml in \(source) — describe the tool. The folder is copied into the "
+                 + "broker's tools dir with the manifest you write here.")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Form {
+                Section("Tool") {
+                    TextField("id (letters, digits, _ or -)", text: $id)
+                    TextField("description (optional)", text: $description, axis: .vertical).lineLimit(1...3)
+                }
+                Section {
+                    TextField("command — e.g. python3 app.py", text: $command)
+                    TextField("image (docker, optional)", text: $image)
+                    TextField("port", text: $port)
+                } header: { Text("Entrypoint") } footer: {
+                    Text("Give a command (process) or an image (docker), plus the port the tool serves on.")
+                        .font(.caption)
+                }
+                Section("Operations") {
+                    ForEach(operations) { op in opEditor(op) }
+                    Button { operations.append(EditableOp()) } label: { Label("Add operation", systemImage: "plus") }
+                }
+                Section("Secrets (optional)") {
+                    ForEach(secrets) { sec in secretEditor(sec) }
+                    Button { secrets.append(EditableSecret()) } label: { Label("Add secret", systemImage: "plus") }
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                if let saveError {
+                    Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.red).lineLimit(3)
+                }
+                Spacer()
+                Button("Create tool") { Task { await create() } }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(id.trimmingCharacters(in: .whitespaces).isEmpty || model.busy)
+            }
+        }
+        .padding()
+        .frame(minWidth: 580, minHeight: 560)
+    }
+
+    private func opEditor(_ op: EditableOp) -> some View {
+        let b = opBinding(op)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                TextField("operation name", text: b.name)
+                Picker("", selection: b.risk) { ForEach(risks, id: \.self) { Text($0).tag($0) } }
+                    .labelsHidden().frame(width: 96)
+                Button(role: .destructive) { operations.removeAll { $0.id == op.id } } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+            }
+            TextField("description (optional)", text: b.description).font(.caption)
+            ForEach(op.args) { arg in argEditor(op: op, arg: arg) }
+            Button { b.wrappedValue.args.append(EditableArg()) } label: { Label("Add argument", systemImage: "plus") }
+                .font(.caption2)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func argEditor(op: EditableOp, arg: EditableArg) -> some View {
+        let a = argBinding(op: op, arg: arg)
+        return HStack(spacing: 6) {
+            Image(systemName: "arrow.turn.down.right").font(.caption2).foregroundStyle(.secondary)
+            TextField("arg name", text: a.name).font(.caption)
+            Picker("", selection: a.type) { ForEach(argTypes, id: \.self) { Text($0).tag($0) } }
+                .labelsHidden().frame(width: 96)
+            Toggle("required", isOn: a.required).toggleStyle(.checkbox).font(.caption2).fixedSize()
+            Button(role: .destructive) { removeArg(op: op, arg: arg) } label: { Image(systemName: "minus.circle") }
+                .buttonStyle(.borderless)
+        }
+    }
+
+    private func secretEditor(_ sec: EditableSecret) -> some View {
+        let b = secretBinding(sec)
+        return HStack(spacing: 6) {
+            TextField("name (file)", text: b.name)
+            TextField("field (backend key)", text: b.field)
+            Toggle("writable", isOn: b.writable).toggleStyle(.checkbox).fixedSize()
+            Button(role: .destructive) { secrets.removeAll { $0.id == sec.id } } label: { Image(systemName: "trash") }
+                .buttonStyle(.borderless)
+        }
+    }
+
+    // id-keyed bindings (safe as rows are added/removed; no array-index reliance)
+    private func opBinding(_ op: EditableOp) -> Binding<EditableOp> {
+        Binding(get: { operations.first { $0.id == op.id } ?? op },
+                set: { v in if let i = operations.firstIndex(where: { $0.id == op.id }) { operations[i] = v } })
+    }
+    private func argBinding(op: EditableOp, arg: EditableArg) -> Binding<EditableArg> {
+        Binding(
+            get: { operations.first { $0.id == op.id }?.args.first { $0.id == arg.id } ?? arg },
+            set: { v in
+                guard let oi = operations.firstIndex(where: { $0.id == op.id }),
+                      let ai = operations[oi].args.firstIndex(where: { $0.id == arg.id }) else { return }
+                operations[oi].args[ai] = v
+            })
+    }
+    private func removeArg(op: EditableOp, arg: EditableArg) {
+        guard let oi = operations.firstIndex(where: { $0.id == op.id }) else { return }
+        operations[oi].args.removeAll { $0.id == arg.id }
+    }
+    private func secretBinding(_ sec: EditableSecret) -> Binding<EditableSecret> {
+        Binding(get: { secrets.first { $0.id == sec.id } ?? sec },
+                set: { v in if let i = secrets.firstIndex(where: { $0.id == sec.id }) { secrets[i] = v } })
+    }
+
+    private func create() async {
+        if await model.authorTool(source: source, manifest: manifest()) { onCreated() }
+        else { saveError = model.error }
+    }
+
+    /// Build the tool_authoring manifest dict the server expects (it normalizes + validates).
+    private func manifest() -> [String: Any] {
+        func s(_ v: String) -> String { v.trimmingCharacters(in: .whitespaces) }
+        return [
+            "id": s(id), "type": "rest", "description": s(description),
+            "command": s(command), "image": s(image), "port": Int(s(port)) ?? 0,
+            "operations": operations.compactMap { op -> [String: Any]? in
+                guard !s(op.name).isEmpty else { return nil }
+                return ["name": s(op.name), "risk": op.risk, "description": s(op.description),
+                        "args": op.args.compactMap { a -> [String: Any]? in
+                            s(a.name).isEmpty ? nil : ["name": s(a.name), "type": a.type, "required": a.required] }]
+            },
+            "secrets": secrets.compactMap { sec -> [String: Any]? in
+                guard !s(sec.name).isEmpty else { return nil }
+                var d: [String: Any] = ["name": s(sec.name), "field": s(sec.field), "writable": sec.writable]
+                if !s(sec.vault).isEmpty { d["vault"] = s(sec.vault) }
+                if !s(sec.item).isEmpty { d["item"] = s(sec.item) }
+                return d
+            },
+        ]
     }
 }
 

@@ -241,6 +241,22 @@ final class ApiClientTests: XCTestCase {
         XCTAssertNil(body["ref"])
     }
 
+    func testAuthorToolPostsSourceAndManifest() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, [:], Data(#"{"id":"authored","type":"rest","description":"","path":"/p"}"#.utf8))
+        }
+        let manifest: [String: Any] = ["id": "authored", "type": "rest", "command": "python3 app.py",
+                                       "port": 4800, "operations": [["name": "go", "risk": "low"]]]
+        let created = try await makeClient(token: "t").addToolWithManifest(source: "/code", manifest: manifest)
+        XCTAssertEqual(created.id, "authored")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools")
+        let body = try bodyJSON()
+        XCTAssertEqual(body["source"] as? String, "/code")
+        let sent = try XCTUnwrap(body["manifest"] as? [String: Any])
+        XCTAssertEqual(sent["id"] as? String, "authored")
+        XCTAssertEqual((sent["operations"] as? [[String: Any]])?.first?["name"] as? String, "go")
+    }
+
     func testAddToolNoManifestMapsTo422() async throws {
         StubURLProtocol.handler = { _ in
             (422, [:], Data(#"{"detail":"folder has no toolyard.toml — author one to add it"}"#.utf8))
