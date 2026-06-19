@@ -16,7 +16,7 @@ from toolyard.config import SecretSpec, ToolDef
 from toolyard.secrets import FileBackend, InfisicalBackend, VaultBackend, get_backend
 
 # A self-contained fixture tool that declares a secret (the shipped echo demo no longer does).
-_FIXTURE = ToolDef(id="echo", type="rest", port=4601, command="python3 app.py", image=None,
+_FIXTURE = ToolDef(id="echo", type="api", port=4601, command="python3 app.py", image=None,
                    secrets=(SecretSpec("api_key", "API_KEY"),), path=Path("."))
 
 
@@ -58,7 +58,7 @@ class Resolve(unittest.TestCase):
 
 def _tool(*secrets: SecretSpec) -> ToolDef:
     return ToolDef(
-        id="demo", type="rest", port=1234, command=None, image=None,
+        id="demo", type="api", port=1234, command=None, image=None,
         secrets=tuple(secrets), path=Path("."),
     )
 

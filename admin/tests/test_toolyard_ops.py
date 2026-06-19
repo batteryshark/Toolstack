@@ -21,7 +21,7 @@ class ToolyardOps(unittest.TestCase):
         self.tools_root = Path(self.tmp, "tools")
         (self.tools_root / "echo").mkdir(parents=True)
         (self.tools_root / "echo" / "toolyard.toml").write_text(
-            'id = "echo"\ntype = "rest"\n\n[entrypoint]\ncommand = "python3 app.py"\nport = 4601\n',
+            'id = "echo"\ntype = "api"\n\n[entrypoint]\ncommand = "python3 app.py"\nport = 4601\n',
             encoding="utf-8",
         )
 
@@ -43,7 +43,7 @@ class ToolyardOps(unittest.TestCase):
         other = Path(self.tmp, "elsewhere", "weather")
         other.mkdir(parents=True)
         (other / "toolyard.toml").write_text(
-            'id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n',
+            'id = "weather"\ntype = "api"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n',
             encoding="utf-8")
         ids = {t["id"] for t in toolyard_ops.list_tools(str(self.tools_root), [str(other)])}
         self.assertEqual(ids, {"echo", "weather"})
@@ -52,7 +52,7 @@ class ToolyardOps(unittest.TestCase):
         other = Path(self.tmp, "elsewhere", "weather")
         other.mkdir(parents=True)
         (other / "toolyard.toml").write_text(
-            'id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "x"\nport = 4700\n', encoding="utf-8")
+            'id = "weather"\ntype = "api"\n[entrypoint]\ncommand = "x"\nport = 4700\n', encoding="utf-8")
         tools = {t["id"]: t for t in toolyard_ops.list_tools(str(self.tools_root), [str(other)])}
         self.assertFalse(tools["echo"]["removable"])     # discovered under the tools root
         self.assertTrue(tools["weather"]["removable"])   # registered as an explicit tool dir

@@ -40,7 +40,7 @@ class JsonApi(unittest.TestCase):
         tool_dir = Path(self.tmp, "tools", "echo")
         tool_dir.mkdir(parents=True)
         (tool_dir / "toolyard.toml").write_text(
-            'id = "echo"\ntype = "rest"\ndescription = "echo tool"\n\n'
+            'id = "echo"\ntype = "api"\ndescription = "echo tool"\n\n'
             '[entrypoint]\ncommand = "python3 app.py"\nport = 4601\n\n'
             '[[operations]]\nname = "say"\nrisk = "read"\ndescription = "echo a message"\n\n'
             '[[secrets]]\nname = "api_key"\nfield = "API_KEY"\nwritable = true\n',
@@ -252,7 +252,7 @@ class JsonApi(unittest.TestCase):
         src = Path(self.tmp, name)
         src.mkdir()
         (src / "toolyard.toml").write_text(
-            f'id = "{tool_id}"\ntype = "rest"\ndescription = "wx"\n\n'
+            f'id = "{tool_id}"\ntype = "api"\ndescription = "wx"\n\n'
             f'[entrypoint]\ncommand = "python3 app.py"\nport = {port}\n\n'
             '[[operations]]\nname = "today"\nrisk = "read"\n', encoding="utf-8")
         (src / "app.py").write_text("# code\n", encoding="utf-8")
@@ -290,7 +290,7 @@ class JsonApi(unittest.TestCase):
             dest = Path(cmd[-1])           # `git clone … -- <url> <dest>`
             dest.mkdir(parents=True)
             (dest / "toolyard.toml").write_text(
-                'id = "gh_tool"\ntype = "rest"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4900\n\n'
+                'id = "gh_tool"\ntype = "api"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4900\n\n'
                 '[[operations]]\nname = "go"\nrisk = "read"\n', encoding="utf-8")
             return subprocess.CompletedProcess(cmd, 0, b"", b"")
         with mock.patch("admin.tool_sources.shutil.which", return_value="/usr/bin/git"), \
@@ -312,7 +312,7 @@ class JsonApi(unittest.TestCase):
         (code / "app.py").write_text("# code, no manifest\n", encoding="utf-8")
         r = self.client.post("/api/tools", headers=self._auth(), json={
             "source": str(code),
-            "manifest": {"id": "authored", "type": "rest", "command": "python3 app.py", "port": 4800,
+            "manifest": {"id": "authored", "type": "api", "command": "python3 app.py", "port": 4800,
                          "operations": [{"name": "go", "risk": "read"}]}})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["id"], "authored")

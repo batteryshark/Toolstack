@@ -53,7 +53,7 @@ class AdminApp(unittest.TestCase):
         tool_dir = Path(self.tmp, "tools", "echo")
         tool_dir.mkdir(parents=True)
         (tool_dir / "toolyard.toml").write_text(
-            'id = "echo"\ntype = "rest"\n\n[entrypoint]\nport = 4601\n\n'
+            'id = "echo"\ntype = "api"\n\n[entrypoint]\nport = 4601\n\n'
             '[[operations]]\nname = "say"\nrisk = "read"\ndescription = "echo a message"\n',
             encoding="utf-8",
         )
@@ -164,7 +164,7 @@ class AdminApp(unittest.TestCase):
         bad = Path(self.tmp, "tools", "broken")
         bad.mkdir(parents=True)
         (bad / "toolyard.toml").write_text(  # no [entrypoint] port -> load() raises
-            'id = "broken"\ntype = "rest"\n[entrypoint]\ncommand = "x"\n'
+            'id = "broken"\ntype = "api"\n[entrypoint]\ncommand = "x"\n'
             '[[operations]]\nname = "go"\nrisk = "read"\n', encoding="utf-8")
         self._login()
         csrf = _csrf(self.client.get("/").text)
@@ -190,7 +190,7 @@ class AdminApp(unittest.TestCase):
 
     # --- tool authoring -------------------------------------------------------
     _NEW_TOOL = {
-        "id": "weather", "type": "rest", "command": "python3 app.py", "image": "", "port": 4700,
+        "id": "weather", "type": "api", "command": "python3 app.py", "image": "", "port": 4700,
         "operations": [{"name": "today", "risk": "read", "description": "today's weather",
                         "args": [{"name": "city", "type": "string", "required": True, "description": ""}]}],
         "secrets": [{"name": "api_key", "field": "API_KEY", "writable": False}],
@@ -257,7 +257,7 @@ class AdminApp(unittest.TestCase):
         page = self.client.get("/tools/echo/edit")
         self.assertEqual(page.status_code, 200)
         self.assertIn("Edit tool", page.text)
-        edited = {"id": "echo", "type": "rest", "command": "python3 app.py", "image": "", "port": 4601,
+        edited = {"id": "echo", "type": "api", "command": "python3 app.py", "image": "", "port": 4601,
                   "operations": [{"name": "say", "risk": "destructive", "description": "changed", "args": []}],
                   "secrets": []}
         r = self.client.post("/tools/echo/edit", data={

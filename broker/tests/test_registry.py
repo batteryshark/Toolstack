@@ -10,7 +10,7 @@ from broker.registry import Registry
 
 TOML = """
 id = "media"
-type = "rest"
+type = "api"
 
 [entrypoint]
 port = 4502
@@ -49,7 +49,7 @@ class FromToolsRoot(unittest.TestCase):
         self.assertIsNotNone(op)
         self.assertEqual(op.risk, "destructive")
         self.assertEqual(op.port, 4502)
-        self.assertEqual(op.type, "rest")
+        self.assertEqual(op.type, "api")
 
     def test_unknown_op_is_none(self):
         self.assertIsNone(self.registry.lookup("media", "delete"))
@@ -77,7 +77,7 @@ class FromSources(unittest.TestCase):
         self.standalone = Path(self.tmp, "elsewhere", "weather")
         self.standalone.mkdir(parents=True)
         (self.standalone / "toolyard.toml").write_text(
-            'id = "weather"\ntype = "rest"\n[entrypoint]\nport = 4700\n'
+            'id = "weather"\ntype = "api"\n[entrypoint]\nport = 4700\n'
             '[[operations]]\nname = "today"\nrisk = "read"\n'
         )
         self.root = str(root)
@@ -113,7 +113,7 @@ class PortValidation(unittest.TestCase):
 
     def test_missing_port_raises_naming_the_tool(self):
         with self.assertRaises(ValueError) as cm:
-            self._load('id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "x"\n'
+            self._load('id = "weather"\ntype = "api"\n[entrypoint]\ncommand = "x"\n'
                        '[[operations]]\nname = "today"\nrisk = "read"\n')
         msg = str(cm.exception)
         self.assertIn("weather", msg)
@@ -121,22 +121,22 @@ class PortValidation(unittest.TestCase):
 
     def test_non_integer_port_raises(self):
         with self.assertRaises(ValueError):
-            self._load('id = "weather"\ntype = "rest"\n[entrypoint]\nport = "4700"\n'
+            self._load('id = "weather"\ntype = "api"\n[entrypoint]\nport = "4700"\n'
                        '[[operations]]\nname = "today"\nrisk = "read"\n')
 
     def test_boolean_port_raises(self):
         # bool is an int subclass; `port = true` must not pass as a port
         with self.assertRaises(ValueError):
-            self._load('id = "weather"\ntype = "rest"\n[entrypoint]\nport = true\n'
+            self._load('id = "weather"\ntype = "api"\n[entrypoint]\nport = true\n'
                        '[[operations]]\nname = "today"\nrisk = "read"\n')
 
     def test_out_of_range_port_raises(self):
         with self.assertRaises(ValueError):
-            self._load('id = "weather"\ntype = "rest"\n[entrypoint]\nport = 70000\n'
+            self._load('id = "weather"\ntype = "api"\n[entrypoint]\nport = 70000\n'
                        '[[operations]]\nname = "today"\nrisk = "read"\n')
 
     def test_valid_port_loads(self):
-        reg = self._load('id = "weather"\ntype = "rest"\n[entrypoint]\nport = 4700\n'
+        reg = self._load('id = "weather"\ntype = "api"\n[entrypoint]\nport = 4700\n'
                          '[[operations]]\nname = "today"\nrisk = "read"\n')
         self.assertEqual(reg.lookup("weather", "today").port, 4700)
 

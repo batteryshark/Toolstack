@@ -3,7 +3,7 @@
 # The toolyard additionally reads [entrypoint] and [[secrets]].
 
 id = "echo"
-type = "rest"
+type = "api"
 
 [entrypoint]
 command = "python3 app.py"   # process runner (dev/CI)

@@ -57,7 +57,7 @@ def make_registry(tools: dict | None = None, port: int = 4600) -> Registry:
     for tool, ops in (tools or {}).items():
         catalog[tool] = {
             "port": port,
-            "type": "rest",
+            "type": "api",
             "ops": {op: {"risk": risk, "description": "", "args": []}
                     for op, risk in ops.items()},
         }

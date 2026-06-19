@@ -162,7 +162,7 @@ _TOOL_EDITOR_JS = """
   document.getElementById('tool-form').addEventListener('submit', function(){
     var tool = {
       id: document.getElementById('f_id').value,
-      type: 'rest',
+      type: 'api',
       description: document.getElementById('f_description').value,
       command: document.getElementById('f_command').value,
       image: document.getElementById('f_image').value,
