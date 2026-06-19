@@ -1,4 +1,4 @@
-"""Echo tool — a tiny standalone REST tool for Toolstack (the tool template).
+"""Echo tool — a tiny standalone api tool for Toolstack (the tool template).
 
 A tool is its own program. It binds the port the toolyard gives it, serves
 ``POST /v1/actions/<op>``, and reads its secrets from files under

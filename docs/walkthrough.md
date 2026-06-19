@@ -105,7 +105,7 @@ it **supervises the broker process** and reads/writes the same SQLite file direc
 |---|---|---|
 | **Broker** | [broker/](../broker/) | Authority boundary: auth, policy, request lifecycle, approval orchestration, audit, admin. One process, one SQLite file. |
 | **Toolyard** | [toolyard/](../toolyard/) | Execution boundary: reads `toolyard.toml`, resolves secrets, runs tools (process or docker). |
-| **Tool template** | [tools/echo_rest/](../tools/echo_rest/) | A sample standalone REST tool that reads its own secret. |
+| **Tool template** | [tools/echo_api/](../tools/echo_api/) | A sample standalone api tool that reads its own secret. |
 | **Agent client** | [client/](../client/) | The generic `toolstack` CLI + skill an agent uses to discover and call tools (lazy discovery; hybrid with optional per-domain skills). |
 | **Admin web app** | [admin/](../admin/) | Operator control panel (FastAPI): supervises the broker process, manages callers/tokens/policies, authors/edits/removes tools, shows requests + audit. Loopback-only; the one component with runtime deps. |
 
@@ -373,7 +373,7 @@ docs/
   coding-standards.md         clean-code expectations
 broker/               the authority boundary (see module table above; + operations.py) + tests/
 toolyard/             config.py · secrets.py · runner.py · cli.py + tests/
-tools/echo_rest/      sample tool: app.py · toolyard.toml · Dockerfile
+tools/echo_api/      sample tool: app.py · toolyard.toml · Dockerfile
 client/               agent client: toolstack.py (CLI) · mcp_server.py (MCP) · SKILL.md + tests/
 admin/                control panel (FastAPI): server · views · auth · supervisor ·
                       broker_config · tool_authoring · toolyard_ops + tests/ + .venv (gitignored)
