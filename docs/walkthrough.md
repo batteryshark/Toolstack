@@ -371,7 +371,6 @@ docs/
   message-contracts.md        boundary wire contracts, outcomes, audit taxonomy
   approval-surface-adapter.md the approval-surface "SDK" (write another surface)
   coding-standards.md         clean-code expectations
-  work-log.md                 dated history (Phases 0–4 → admin app)
 broker/               the authority boundary (see module table above; + operations.py) + tests/
 toolyard/             config.py · secrets.py · runner.py · cli.py + tests/
 tools/echo_rest/      sample tool: app.py · toolyard.toml · Dockerfile
@@ -396,8 +395,8 @@ Tick these tomorrow to confirm we're in a good place:
       restart and the client can call it.
 - [ ] **Agent path:** with a broker running, `python3 -m client.toolstack tools` then
       `call` a tool; confirm an approver's note comes back on a reviewed op.
-- [ ] **Approval works:** wire a nod (or the fake-nod approach from the Phase 3
-      work-log) and watch a `review` op gate on approve / reject / timeout.
+- [ ] **Approval works:** wire a nod (or the fake-nod approach) and watch a
+      `review` op gate on approve / reject / timeout.
 - [ ] **Security invariants:** skim [Security properties & evidence](#security-properties--evidence)
       and spot-check one or two tests.
 - [ ] **Boundaries hold:** skim each broker module's "owns / must not" in

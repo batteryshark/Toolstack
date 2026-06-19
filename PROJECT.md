@@ -27,9 +27,6 @@ the earlier decomposition survive as **module seams inside the broker**.
 - How an agent connects and calls tools: [client/SKILL.md](client/SKILL.md).
 - Operator control panel (run the broker, manage clients/tools, watch audit): [admin/README.md](admin/README.md).
 - Clean-code expectations: [docs/coding-standards.md](docs/coding-standards.md).
-- Work history: [docs/work-log.md](docs/work-log.md).
-- Proven detail to port from the previous build (`toolstack-old/`, kept locally —
-  not part of this repo).
 
 ## Working rules
 

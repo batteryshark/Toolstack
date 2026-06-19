@@ -19,6 +19,9 @@ version = "0.1.0"
 description = "Toolstack (TSR) — a brokered, action-without-access tool layer for agents"
 requires-python = ">=3.11"   # tomllib (broker.registry / toolyard.config) is 3.11+
 dependencies = []            # stdlib only
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+]
 
 [project.optional-dependencies]
 # The local encrypted-vault secret backend (toolyard.secrets.VaultBackend) is the only
