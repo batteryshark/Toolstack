@@ -222,5 +222,109 @@ class AddFromGithub(unittest.TestCase):
         self.assertIn("private", str(cm.exception).lower())   # not git's raw "could not read Username"
 
 
+class Update(unittest.TestCase):
+    def setUp(self):
+        from admin import tool_authoring
+        self.tool_authoring = tool_authoring
+        self.tmp = Path(tempfile.mkdtemp(prefix="tool-update-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.src = self.tmp / "src"
+        self.src.mkdir()
+        (self.src / "toolyard.toml").write_text(MANIFEST, encoding="utf-8")
+        (self.src / "app.py").write_text("v1\n", encoding="utf-8")
+        self.root = self.tmp / "tools_root"
+        tool_sources.add_from_path(str(self.src), str(self.root))   # managed copy + path sidecar
+        self.dest = self.root / "weather"
+
+    def _write_src(self, toml: str):
+        (self.src / "toolyard.toml").write_text(toml, encoding="utf-8")
+
+    def test_path_update_pulls_new_code_but_keeps_operator_edits(self):
+        # operator re-wires the managed tool: custom description + a re-mapped secret
+        managed = self.tool_authoring.read(self.dest)
+        managed["description"] = "operator note"
+        managed["secrets"] = [{"name": "api_key", "field": "MY_KEY", "writable": True}]
+        self.tool_authoring.write(self.dest, managed)
+        # upstream advances: new code, a new operation, and its OWN description/secret
+        (self.src / "app.py").write_text("v2\n", encoding="utf-8")
+        self._write_src('id = "weather"\ntype = "rest"\ndescription = "upstream desc"\n'
+                        '[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
+                        '[[operations]]\nname = "today"\nrisk = "low"\n\n'
+                        '[[operations]]\nname = "tomorrow"\nrisk = "low"\n\n'
+                        '[[secrets]]\nname = "api_key"\nfield = "UPSTREAM_KEY"\n')
+        tool_sources.update(self.dest)
+        after = self.tool_authoring.read(self.dest)
+        self.assertEqual((self.dest / "app.py").read_text(), "v2\n")               # new code
+        self.assertEqual({o["name"] for o in after["operations"]}, {"today", "tomorrow"})  # new op
+        self.assertEqual(after["description"], "operator note")                    # operator kept
+        self.assertEqual(after["secrets"][0]["field"], "MY_KEY")                   # operator kept
+        self.assertTrue(after["secrets"][0]["writable"])
+        self.assertEqual(tool_sources.read_source(self.dest)["type"], "path")      # sidecar kept
+
+    def test_update_without_sidecar_is_rejected(self):
+        plain = self.tmp / "plain"
+        plain.mkdir()
+        (plain / "toolyard.toml").write_text(MANIFEST, encoding="utf-8")
+        with self.assertRaises(ValueError):
+            tool_sources.update(plain)
+
+    def test_update_source_gone_leaves_original_intact(self):
+        shutil.rmtree(self.src)
+        with self.assertRaises(ValueError):
+            tool_sources.update(self.dest)
+        self.assertTrue((self.dest / "toolyard.toml").exists())   # swap never started
+
+    def test_update_id_change_rejected_original_intact(self):
+        self._write_src('id = "renamed"\ntype = "rest"\n[entrypoint]\ncommand = "x"\nport = 4700\n\n'
+                        '[[operations]]\nname = "today"\nrisk = "low"\n')
+        with self.assertRaises(ValueError):
+            tool_sources.update(self.dest)
+        self.assertEqual(self.tool_authoring.read(self.dest)["id"], "weather")     # unchanged
+
+    def test_successful_update_leaves_tools_root_clean(self):
+        from toolyard.config import discover
+        self._write_src('id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
+                        '[[operations]]\nname = "today"\nrisk = "low"\n\n'
+                        '[[operations]]\nname = "extra"\nrisk = "low"\n')
+        tool_sources.update(self.dest)
+        # no staging/backup siblings left, and discovery sees exactly one 'weather' (no shadow dir)
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), ["weather"])
+        self.assertEqual([d.id for d in discover(self.root)], ["weather"])
+
+    def test_swap_failure_restores_original_no_orphan(self):
+        from toolyard.config import discover
+        self._write_src('id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
+                        '[[operations]]\nname = "changed"\nrisk = "low"\n')
+        real_replace = tool_sources.os.replace
+        calls = {"n": 0}
+        def flaky(a, b):
+            calls["n"] += 1
+            if calls["n"] == 2:           # fail moving the NEW version into place
+                raise OSError("boom")
+            return real_replace(a, b)
+        with mock.patch.object(tool_sources.os, "replace", side_effect=flaky):
+            with self.assertRaises(OSError):
+                tool_sources.update(self.dest)
+        after = self.tool_authoring.read(self.dest)
+        self.assertEqual({o["name"] for o in after["operations"]}, {"today"})   # original, not "changed"
+        self.assertEqual([d.id for d in discover(self.root)], ["weather"])      # no orphan shadow
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), ["weather"])
+
+    def test_github_update_reclones(self):
+        tool_sources.write_source(self.dest, {"type": "github", "url": "https://github.com/x/y",
+                                              "subdir": "", "ref": ""})
+        def fake_clone(cmd, *a, **k):
+            d = Path(cmd[-1])
+            d.mkdir(parents=True)
+            (d / "toolyard.toml").write_text(
+                'id = "weather"\ntype = "rest"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4700\n\n'
+                '[[operations]]\nname = "fresh"\nrisk = "low"\n', encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        with mock.patch.object(tool_sources.shutil, "which", return_value="/usr/bin/git"), \
+             mock.patch.object(tool_sources.subprocess, "run", side_effect=fake_clone):
+            tool_sources.update(self.dest)
+        self.assertEqual({o["name"] for o in self.tool_authoring.read(self.dest)["operations"]}, {"fresh"})
+
+
 if __name__ == "__main__":
     unittest.main()

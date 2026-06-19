@@ -73,6 +73,17 @@ public struct SecretDecl: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
+/// Where a managed tool came from (the `.tsr-source.json` sidecar) — present only for tools added
+/// through TSR, enabling "Update". `source` is set for a local-path tool; `url`/`subdir`/`ref` for
+/// a github one.
+public struct ToolSource: Codable, Sendable, Equatable {
+    public let type: String      // "path" | "github"
+    public let source: String?
+    public let url: String?
+    public let subdir: String?
+    public let ref: String?
+}
+
 public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
     public let id: String
     public let type: String
@@ -81,11 +92,12 @@ public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
     public let running: Bool
     public let ops: [OpInfo]
     public let secrets: [SecretDecl]
+    public let source: ToolSource?   // nil for hand-authored tools (no sidecar) → no Update
 
-    enum CodingKeys: String, CodingKey { case id, type, description, port, running, ops, secrets }
+    enum CodingKeys: String, CodingKey { case id, type, description, port, running, ops, secrets, source }
 
-    // Tolerate an admin that doesn't report `description` / `ops` / `running` / `secrets` (e.g. an
-    // older version, or a different deployment) rather than failing the whole response — default them.
+    // Tolerate an admin that doesn't report `description` / `ops` / `running` / `secrets` / `source`
+    // (e.g. an older version, or a different deployment) rather than failing the whole response.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -95,6 +107,7 @@ public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
         running = try c.decodeIfPresent(Bool.self, forKey: .running) ?? false
         ops = try c.decodeIfPresent([OpInfo].self, forKey: .ops) ?? []
         secrets = try c.decodeIfPresent([SecretDecl].self, forKey: .secrets) ?? []
+        source = try c.decodeIfPresent(ToolSource.self, forKey: .source)
     }
 }
 

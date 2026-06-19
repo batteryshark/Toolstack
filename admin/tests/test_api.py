@@ -186,6 +186,7 @@ class JsonApi(unittest.TestCase):
         echo = next(t for t in tools.json()["tools"] if t["id"] == "echo")
         self.assertEqual([op["op"] for op in echo["ops"]], ["say"])  # ops attached for the policy editor
         self.assertEqual(echo["description"], "echo tool")
+        self.assertIsNone(echo["source"])   # hand-authored tool: no .tsr-source.json
         self.assertEqual(echo["secrets"], [{"name": "api_key", "field": "API_KEY",
                                             "writable": True, "vault": None, "item": None}])
         cfg = self.client.get("/api/config", headers=self._auth())
@@ -299,6 +300,27 @@ class JsonApi(unittest.TestCase):
     def test_add_tool_bad_repo_url_400(self):
         r = self.client.post("/api/tools", headers=self._auth(), json={"repo": "file:///etc/passwd"})
         self.assertEqual(r.status_code, 400)
+
+    def test_tool_source_in_listing_and_update(self):
+        src = self._tool_folder("src_wtool", "wtool")
+        self.client.post("/api/tools", headers=self._auth(), json={"source": str(src)})
+        wtool = next(t for t in self.client.get("/api/tools", headers=self._auth()).json()["tools"]
+                     if t["id"] == "wtool")
+        self.assertEqual(wtool["source"]["type"], "path")          # provenance surfaced
+        r = self.client.post("/api/tools/wtool/update", headers=self._auth())   # re-pull
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["id"], "wtool")
+
+    def test_update_non_tsr_tool_400(self):
+        # echo (from setUp) was hand-authored — no .tsr-source.json, so it can't be updated
+        r = self.client.post("/api/tools/echo/update", headers=self._auth())
+        self.assertEqual(r.status_code, 400)
+
+    def test_update_unknown_tool_404(self):
+        self.assertEqual(self.client.post("/api/tools/ghost/update", headers=self._auth()).status_code, 404)
+
+    def test_update_needs_auth(self):
+        self.assertEqual(self.client.post("/api/tools/echo/update").status_code, 401)
 
     def test_config_round_trip_write_only_token_and_validation(self):
         # save settings, partial-merge style
