@@ -40,6 +40,8 @@ REST_ARGS = (
      "description": "JSON request body (POST/PUT/PATCH)"},
     {"name": "query", "type": "object", "required": False,
      "description": "query-string parameters"},
+    {"name": "headers", "type": "object", "required": False,
+     "description": "request headers to forward (the broker reserves the X-Toolstack-* namespace)"},
 )
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
