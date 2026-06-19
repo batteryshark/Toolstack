@@ -22,6 +22,7 @@ class Brokerctl(unittest.TestCase):
     def _run(self, func, **kw):
         kw.setdefault("db", self.db)
         kw.setdefault("operator", "op")
+        kw.setdefault("deny", None)  # set-policy gained --deny; argparse always supplies it
         out = io.StringIO()
         with redirect_stdout(out):
             func(argparse.Namespace(**kw))
@@ -63,6 +64,14 @@ class Brokerctl(unittest.TestCase):
         shown = self._run(brokerctl.show_policy, name="hermes")
         self.assertIn("echo", shown)
         self.assertIn("review", shown)
+
+    def test_set_policy_with_path_scoped_deny(self):
+        self._run(brokerctl.create_caller, name="hermes", allow=None, review=None)
+        self._run(brokerctl.set_policy, name="hermes",
+                  allow=["kv.GET /items/**"], review=None, deny=["kv.GET /items/secret"])
+        shown = self._run(brokerctl.show_policy, name="hermes")
+        self.assertIn("GET /items/**", shown)   # path-scoped key round-trips
+        self.assertIn("deny", shown)            # explicit deny carve-out stored
 
     def test_audit_command_shows_admin_events(self):
         self._run(brokerctl.create_caller, name="hermes", allow=["echo.say"], review=None)

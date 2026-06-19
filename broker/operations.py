@@ -21,20 +21,38 @@ from .identity import hash_token
 from .store import Store
 
 
-def build_policy(allow, review) -> dict:
-    """Build a caller policy from ``allow`` / ``review`` op specs (e.g. ``"echo.say"``).
+def build_policy(allow, review, deny=None) -> dict:
+    """Build a caller policy from ``allow`` / ``review`` / ``deny`` op specs (e.g.
+    ``"echo.say"``, or for a rest tool a path-scoped ``"kv.GET /items/**"``).
 
-    ``allow`` wins over ``review`` when both name the same op. The shape matches
-    what :meth:`broker.store.Store.set_policy` expects and the policy engine reads.
+    A later list wins for the same key, applied review -> allow -> deny, so an explicit
+    ``deny`` carves a hole inside a broader grant. The shape matches what
+    :meth:`broker.store.Store.set_policy` expects and the policy engine reads.
     """
     tools: dict[str, dict[str, str]] = {}
-    for spec in review or []:
-        tool, _, op = spec.partition(".")
-        tools.setdefault(tool, {})[op] = "review"
-    for spec in allow or []:
-        tool, _, op = spec.partition(".")
-        tools.setdefault(tool, {})[op] = "allow"
+    for effect, specs in (("review", review), ("allow", allow), ("deny", deny)):
+        for spec in specs or []:
+            tool, _, op = spec.partition(".")
+            tools.setdefault(tool, {})[op] = effect
     return {"tools": tools}
+
+
+def path_scoped_keys(policy: dict) -> set:
+    """The path-scoped op keys in a policy, as ``"<tool>.<key>"`` (a rest key scopes by
+    path, so its op part contains a space, e.g. ``"GET /items/**"``)."""
+    return {f"{tool}.{key}" for tool, ops in policy.get("tools", {}).items()
+            for key in ops if " " in key}
+
+
+def coarse_update_drops_scope(store: Store, name: str, allow, review, deny=None) -> set:
+    """Return the path-scoped keys that a coarse allow/review/deny update would DROP for this
+    caller (empty == safe). The GUI policy editors can only express bare verb/op effects, so
+    saving one over a caller that has path rules would silently flatten them — the editor
+    entry points call this to refuse instead. brokerctl is explicit and stays unguarded."""
+    caller = require_caller(store, name)
+    prior = path_scoped_keys(store.policy_for(caller["id"]))
+    incoming = path_scoped_keys(build_policy(allow, review, deny))
+    return prior - incoming
 
 
 def enabled_tools(policy: dict) -> list[str]:
@@ -75,12 +93,12 @@ def require_caller(store: Store, name: str):
     return caller
 
 
-def create_caller(store: Store, name: str, allow, review, operator: str) -> str:
+def create_caller(store: Store, name: str, allow, review, operator: str, deny=None) -> str:
     """Create a caller with an initial token and policy; return the raw token once."""
     caller_id = store.add_caller(name)
     token = secrets.token_urlsafe(32)
     store.add_token(caller_id, hash_token(token))
-    store.set_policy(caller_id, build_policy(allow, review))
+    store.set_policy(caller_id, build_policy(allow, review, deny))
     record_admin_event(store, operator, "caller_created", {"name": name})
     return token
 
@@ -120,9 +138,9 @@ def revoke_caller(store: Store, name: str, operator: str, surface=None) -> int:
     return cancelled
 
 
-def set_policy(store: Store, name: str, allow, review, operator: str) -> None:
+def set_policy(store: Store, name: str, allow, review, operator: str, deny=None) -> None:
     caller = require_caller(store, name)
-    policy = build_policy(allow, review)
+    policy = build_policy(allow, review, deny)
     enabled = store.policy_for(caller["id"]).get("enabled")  # preserve tool-enablement
     if enabled:
         policy["enabled"] = enabled

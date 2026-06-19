@@ -28,6 +28,36 @@ class Operations(unittest.TestCase):
     def test_build_policy_empty(self):
         self.assertEqual(operations.build_policy(None, None), {"tools": {}})
 
+    def test_build_policy_path_scoped_with_explicit_deny(self):
+        # rest path-scoped keys ride through unchanged; deny carves a hole and wins on a tie
+        policy = operations.build_policy(
+            allow=["kv.GET /items/**"], review=["kv.DELETE /items/**"],
+            deny=["kv.GET /items/secret"])
+        self.assertEqual(policy, {"tools": {"kv": {
+            "GET /items/**": "allow",
+            "DELETE /items/**": "review",
+            "GET /items/secret": "deny",
+        }}})
+
+    def test_coarse_update_drops_scope_detects_flattening(self):
+        operations.create_caller(self.store, "hermes", None, None, "op")
+        operations.set_policy(self.store, "hermes", allow=["kv.GET /items/**"], review=None,
+                              operator="op", deny=["kv.GET /secret"])
+        # a verb-level save that omits the path keys would silently drop them
+        dropped = operations.coarse_update_drops_scope(
+            self.store, "hermes", allow=["kv.GET"], review=None)
+        self.assertEqual(dropped, {"kv.GET /items/**", "kv.GET /secret"})
+        # re-including them (a path-aware client) drops nothing
+        safe = operations.coarse_update_drops_scope(
+            self.store, "hermes", allow=["kv.GET /items/**"], review=None, deny=["kv.GET /secret"])
+        self.assertEqual(safe, set())
+
+    def test_coarse_update_with_no_path_rules_is_safe(self):
+        operations.create_caller(self.store, "hermes", ["echo.say"], None, "op")
+        self.assertEqual(
+            operations.coarse_update_drops_scope(self.store, "hermes", allow=["echo.say"], review=None),
+            set())
+
     def test_create_caller_returns_working_token_and_audits(self):
         token = operations.create_caller(self.store, "hermes", ["echo.say"], None, "op")
         caller = authenticate(self.store, f"Bearer {token}")

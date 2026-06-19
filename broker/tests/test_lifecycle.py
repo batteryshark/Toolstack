@@ -69,5 +69,36 @@ class Submit(BrokerTestCase):
         self.assertIn("execution_completed", types)  # what actually ran
 
 
+class RestPathScoped(BrokerTestCase):
+    """A rest call is authorized against the path-scoped rules: the request path decides
+    allow / review / deny, and a call with no valid path is denied fail-closed."""
+
+    def _ctx(self, allow=None, review=None):
+        # seed_caller turns "kv.GET /items/**" into the policy key {"kv": {"GET /items/**": ...}}
+        ctx = self.make_ctx(catalog={"kv": {"GET": "read", "DELETE": "destructive"}}, tool_type="rest")
+        token = seed_caller(ctx.store, "hermes", allow=allow, review=review)
+        return ctx, authenticate(ctx.store, f"Bearer {token}")
+
+    def test_allowed_path_runs(self):
+        ctx, caller = self._ctx(allow=["kv.GET /items/**"])
+        out = lifecycle.submit(ctx, caller, "kv", "GET", {"path": "/items/42"}, CID)
+        self.assertEqual(out.status, lifecycle.OK)
+
+    def test_path_outside_the_rule_denies(self):
+        ctx, caller = self._ctx(allow=["kv.GET /items/**"])
+        out = lifecycle.submit(ctx, caller, "kv", "GET", {"path": "/admin/secrets"}, CID)
+        self.assertEqual(out.status, lifecycle.DENIED)
+
+    def test_more_specific_review_overrides_broader_allow(self):
+        ctx, caller = self._ctx(allow=["kv.GET /items/**"], review=["kv.GET /items/secret"])
+        out = lifecycle.submit(ctx, caller, "kv", "GET", {"path": "/items/secret"}, CID)
+        self.assertEqual(out.status, lifecycle.PENDING)
+
+    def test_missing_path_denies_fail_closed(self):
+        ctx, caller = self._ctx(allow=["kv.GET /items/**"])
+        out = lifecycle.submit(ctx, caller, "kv", "GET", {}, CID)  # no path argument
+        self.assertEqual(out.status, lifecycle.DENIED)
+
+
 if __name__ == "__main__":
     unittest.main()

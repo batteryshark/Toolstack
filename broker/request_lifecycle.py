@@ -59,7 +59,19 @@ def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Out
     audit.record("request", "received", "accepted", correlation_id,
                  request_id=request_id, details=received)
 
-    decision = policy_rules.decide(ctx.store.policy_for(caller.id), tool, op)
+    # For a rest tool, policy may scope by request path — pass it so decide() can match the
+    # path-glob rules. A rest call with no valid path can't be authorized against those rules,
+    # so deny it fail-closed here (execute would reject it anyway). api / mcp pass no path.
+    target = None  # the rest path, shown on the approval card
+    if tool_op.type == "rest":
+        rest_path = arguments.get("path") if isinstance(arguments, dict) else None
+        if isinstance(rest_path, str) and rest_path.startswith("/"):
+            target = rest_path
+            decision = policy_rules.decide(ctx.store.policy_for(caller.id), tool, op, rest_path)
+        else:
+            decision = policy_rules.DENY
+    else:
+        decision = policy_rules.decide(ctx.store.policy_for(caller.id), tool, op)
 
     if decision == policy_rules.DENY:
         ctx.store.update_request(request_id, status="denied")
@@ -71,7 +83,7 @@ def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Out
         audit.record("policy", "decision_review_required", PENDING, correlation_id,
                      request_id=request_id, details={"tool": tool, "op": op, "risk": tool_op.risk})
         return _open_approval(ctx, request_id, caller.name, tool, op, tool_op.risk,
-                              arguments, correlation_id, reason)
+                              arguments, correlation_id, reason, target=target)
 
     # allow
     audit.record("policy", "decision_allow", "ok", correlation_id,
@@ -79,7 +91,8 @@ def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Out
     return execute_request(ctx, request_id, tool, op, arguments, correlation_id, caller.name)
 
 
-def _open_approval(ctx, request_id, caller_name, tool, op, risk, arguments, correlation_id, reason=None) -> Outcome:
+def _open_approval(ctx, request_id, caller_name, tool, op, risk, arguments, correlation_id,
+                   reason=None, target=None) -> Outcome:
     if ctx.surface is None:
         ctx.store.update_request(request_id, status="failed", error="approval_unavailable")
         ctx.audit.record("approval", "unavailable", UNAVAILABLE, correlation_id,
@@ -90,7 +103,7 @@ def _open_approval(ctx, request_id, caller_name, tool, op, risk, arguments, corr
     ctx.store.update_request(request_id, arguments_json=json.dumps(arguments))
     # the agent's reason (redacted) rides along to the human on the card
     card = approval.build_card(request_id, caller_name, tool, op, risk,
-                               reason="policy review", justification=redact(reason))
+                               reason="policy review", justification=redact(reason), target=target)
     try:
         ref = ctx.surface.open(card)
     except Exception as exc:

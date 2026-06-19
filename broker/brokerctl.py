@@ -82,7 +82,8 @@ def show_policy(args) -> None:
 def set_policy(args) -> None:
     store = _store(args)
     try:
-        operations.set_policy(store, args.name, args.allow, args.review, args.operator)
+        operations.set_policy(store, args.name, args.allow, args.review, args.operator,
+                              deny=args.deny)
     except LookupError as exc:
         raise SystemExit(str(exc))
     finally:
@@ -189,6 +190,8 @@ def main() -> None:
     p.add_argument("--name", required=True)
     p.add_argument("--allow", action="append", metavar="TOOL.OP")
     p.add_argument("--review", action="append", metavar="TOOL.OP")
+    # for a rest tool, OP may be path-scoped, e.g. --deny "kv.GET /admin/**"
+    p.add_argument("--deny", action="append", metavar="TOOL.OP")
     p.set_defaults(func=set_policy)
 
     p = sub.add_parser("issue-token", parents=[common, operator])

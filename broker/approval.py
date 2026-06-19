@@ -27,6 +27,7 @@ class OperationCard:
     risk: str
     reason: str  # why policy routed this to review
     justification: str | None = None  # the agent's (redacted) reason, shown to the human
+    target: str | None = None  # the request path for a rest call — what is being acted on
 
 
 @dataclass(frozen=True)
@@ -38,14 +39,20 @@ class SurfaceState:
 
 
 def build_card(request_id: int, caller: str, tool: str, op: str, risk: str,
-               reason: str, justification: str | None = None) -> OperationCard:
+               reason: str, justification: str | None = None,
+               target: str | None = None) -> OperationCard:
+    # For a rest call the path is part of what's being approved — show it so the human sees
+    # "Approve kv.DELETE /items/42", not a blank verb. (A path is a resource locator, not a
+    # secret argument, so it belongs on the card.)
+    label = f"{tool}.{op}" + (f" {target}" if target else "")
     return OperationCard(
         request_id=request_id,
-        title=f"Approve {tool}.{op} for caller {caller}",
+        title=f"Approve {label} for caller {caller}",
         caller=caller,
         tool=tool,
         op=op,
         risk=risk,
         reason=reason,
         justification=justification,
+        target=target,
     )
