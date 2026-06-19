@@ -35,7 +35,9 @@ def _load_state() -> dict:
 def _save_state(state: dict) -> None:
     path = _state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2))
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(state, indent=2))
+    os.replace(tmp, path)   # atomic: a torn write can't orphan the running tools' records
 
 
 def cmd_up(args) -> None:
