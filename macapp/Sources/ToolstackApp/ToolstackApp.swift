@@ -104,6 +104,7 @@ struct OperatorView: View {
             TabView {
                 CallersPane().tabItem { Label("Callers", systemImage: "person.2") }
                 ToolsPane().tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
+                ActivityPane().tabItem { Label("Activity", systemImage: "list.bullet.rectangle") }
                 ConfigPane().tabItem { Label("Config", systemImage: "gearshape") }
             }
         }
@@ -688,6 +689,96 @@ struct AddToolSheet: View {
                                           ref: ref.trimmingCharacters(in: .whitespaces))
         }
         if model.error == nil { dismiss() } else { addError = model.error }
+    }
+}
+
+/// Read-only observability: recent broker requests (who called what, and its status) and the audit
+/// log (operator + broker events). Both from GET /api/audit.
+struct ActivityPane: View {
+    @EnvironmentObject var model: AppModel
+    @State private var which: Which = .requests
+    enum Which: String, CaseIterable, Identifiable {
+        case requests = "Requests", audit = "Audit"
+        var id: String { rawValue }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Picker("", selection: $which) {
+                    ForEach(Which.allCases) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: 220)
+                Spacer()
+                if model.busy { ProgressView().controlSize(.small) }
+                Button { Task { await model.refreshAudit() } } label: { Image(systemName: "arrow.clockwise") }
+                    .help("Refresh")
+            }
+            if which == .requests { requestsTable } else { auditTable }
+        }
+        .padding()
+        .navigationTitle("Activity")
+        .task { await model.refreshAudit() }
+    }
+
+    @ViewBuilder private var requestsTable: some View {
+        let rows = model.audit?.requests ?? []
+        if rows.isEmpty {
+            emptyState("No requests yet", "Caller tool calls appear here once the broker handles them.")
+        } else {
+            Table(rows) {
+                TableColumn("#") { Text(verbatim: "\($0.id)") }.width(44)
+                TableColumn("Caller") { Text(callerName($0.callerId)) }
+                TableColumn("Operation") { Text(verbatim: "\($0.tool).\($0.op)") }
+                TableColumn("Status") { r in Text(r.status).foregroundStyle(color(r.status)) }
+                TableColumn("When") { Text(Self.when($0.createdAt)) }.width(150)
+            }
+        }
+    }
+
+    @ViewBuilder private var auditTable: some View {
+        let rows = model.audit?.audit ?? []
+        if rows.isEmpty {
+            emptyState("No audit events yet", "Operator and broker actions are recorded here.")
+        } else {
+            Table(rows) {
+                TableColumn("When") { Text(Self.when($0.at)) }.width(150)
+                TableColumn("Event") { Text(verbatim: "\($0.component).\($0.eventType)") }
+                TableColumn("Outcome") { e in Text(e.outcome).foregroundStyle(color(e.outcome)) }
+                TableColumn("Req") { Text(verbatim: $0.requestId.map { "\($0)" } ?? "—") }.width(50)
+                TableColumn("Details") {
+                    Text($0.details?.compact ?? "").font(.caption.monospaced()).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func emptyState(_ title: String, _ sub: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: "tray").font(.largeTitle).foregroundStyle(.secondary)
+            Text(title).foregroundStyle(.secondary)
+            Text(sub).font(.caption).foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func callerName(_ id: Int) -> String {
+        model.callers.first { $0.id == id }?.name ?? "#\(id)"
+    }
+
+    // green = allowed/done, red = denied/failed, orange = pending — others neutral.
+    private func color(_ word: String) -> Color {
+        switch word {
+        case "completed", "allowed", "ok", "success": return .green
+        case "denied", "failed", "error", "rejected": return .red
+        case "pending", "review": return .orange
+        default: return .primary
+        }
+    }
+
+    private static let fmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMM d, HH:mm:ss"; return f
+    }()
+    private static func when(_ epoch: Double) -> String {
+        fmt.string(from: Date(timeIntervalSince1970: epoch))
     }
 }
 

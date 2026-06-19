@@ -91,6 +91,11 @@ public actor ApiClient {
         return try await send("POST", "/api/config", body: body)
     }
 
+    /// Recent audit events + broker requests (newest first, capped server-side at 500).
+    public func audit(limit: Int = 50) async throws -> AuditResponse {
+        try await send("GET", "/api/audit", query: [URLQueryItem(name: "limit", value: String(limit))])
+    }
+
     public func listTools() async throws -> [ToolInfo] {
         let response: ToolsResponse = try await send("GET", "/api/tools")
         return response.tools
@@ -161,8 +166,14 @@ public actor ApiClient {
     // --- transport ------------------------------------------------------------
 
     private func send<T: Decodable>(_ method: String, _ path: String,
-                                    body: [String: Any]? = nil, authed: Bool = true) async throws -> T {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+                                    body: [String: Any]? = nil, query: [URLQueryItem]? = nil,
+                                    authed: Bool = true) async throws -> T {
+        var url = baseURL.appendingPathComponent(path)
+        if let query, var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            comps.queryItems = query                          // appendingPathComponent would escape '?'
+            if let withQuery = comps.url { url = withQuery }
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         if authed, let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

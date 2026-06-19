@@ -253,6 +253,22 @@ final class ApiClientTests: XCTestCase {
         }
     }
 
+    func testAuditDecodesEventsRequestsAndDetails() async throws {
+        let json = #"{"audit":[{"id":1,"at":1.5,"component":"admin","event_type":"tool_created","#
+                 + #""outcome":"ok","correlation_id":"c1","request_id":null,"details":{"tool":"echo","n":2}}],"#
+                 + #""requests":[{"id":7,"correlation_id":"c9","caller_id":3,"tool":"echo","op":"say","#
+                 + #""status":"completed","error":null,"created_at":2.0,"updated_at":3.0}]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let resp = try await makeClient(token: "t").audit(limit: 100)
+        XCTAssertEqual(resp.audit.first?.eventType, "tool_created")   // snake_case mapped
+        XCTAssertNil(resp.audit.first?.requestId)                     // null → nil
+        XCTAssertEqual(resp.audit.first?.details?.compact, "{n: 2, tool: echo}")  // arbitrary JSON rendered
+        XCTAssertEqual(resp.requests.first?.callerId, 3)
+        XCTAssertEqual(resp.requests.first?.op, "say")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/audit")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.query, "limit=100")   // query support works
+    }
+
     func testResyncToolPostsToUpdatePath() async throws {
         let json = #"{"id":"weather","type":"rest","description":"wx","path":"/data/tools/weather"}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
