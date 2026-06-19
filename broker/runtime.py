@@ -1,7 +1,7 @@
 """Tool runtime (the execution seam): forward an approved call to the tool
 container on ``127.0.0.1:<port>``.
 
-Two tool transports share this seam, dispatched on ``ToolOp.type``:
+Three tool transports share this seam, dispatched on ``ToolOp.type``:
 
 * **api** — the broker POSTs ``/v1/actions/<op>`` with the arguments + broker
   context and returns the tool's JSON (the original toolyard contract).
@@ -12,6 +12,13 @@ Two tool transports share this seam, dispatched on ``ToolOp.type``:
   in ``toolyard.toml`` exactly like an api tool; the runtime maps op -> MCP tool
   name. The MCP ``result`` (content blocks + optional ``structuredContent``) is
   returned to the caller unchanged.
+* **rest** — a **verb-as-op passthrough**: the op IS an HTTP verb (GET/POST/PUT/
+  PATCH/DELETE). The caller passes ``{path, body, query}``; the broker forwards the
+  raw ``<verb> 127.0.0.1:<port><path>`` request to the tool and returns its
+  ``{status, body}``. Policy/approval still key on ``(tool, <verb>)``. A 4xx/5xx
+  from the tool is a legitimate REST response and passes through as data — only a
+  transport failure raises. The path is validated to stay on the tool's loopback
+  origin (no scheme/host injection).
 
 The broker attaches NO workload secrets — the tool already has its own, resolved
 by the toolyard at container start. The broker adds ``broker_request_id`` and the
@@ -40,6 +47,7 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from .registry import ToolOp
@@ -47,6 +55,26 @@ from .registry import ToolOp
 # Protocol version the broker advertises in `initialize`. A streamable-HTTP MCP
 # server negotiates down if it speaks an older one; we send a recent dated version.
 MCP_PROTOCOL_VERSION = "2025-06-18"
+
+# The HTTP verbs a "rest" passthrough tool may expose as ops. The op IS the verb, so this
+# also guards against using an arbitrary op string as an HTTP method (method injection).
+REST_VERBS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never auto-follow a tool-issued redirect. The response (including its Location) is
+    controlled by the tool, so following a 3xx would let the tool steer the broker to an
+    arbitrary host — an un-mediated request the broker would never have approved (SSRF). A
+    3xx instead surfaces as an HTTPError: the api/mcp paths treat it as a tool error; the
+    rest passthrough returns it to the caller as data."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+# One opener for every tool hop, with redirect-following disabled. Built once; openers are
+# thread-safe for concurrent .open() calls.
+_OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 def _env_tool_secret(tool_id: str) -> str | None:
@@ -71,8 +99,9 @@ def _env_tool_secret(tool_id: str) -> str | None:
 
 
 class HttpRuntime:
-    """Forwards an approved call over HTTP. Handles both tool transports (api +
-    streamable-HTTP mcp); the constructor and the ``execute`` signature are shared."""
+    """Forwards an approved call over HTTP. Handles all three tool transports (api,
+    streamable-HTTP mcp, rest passthrough); the constructor and ``execute`` signature are
+    shared, dispatched on ``ToolOp.type``."""
 
     def __init__(self, timeout: float = 30.0, tool_secret=_env_tool_secret) -> None:
         self._timeout = timeout
@@ -83,6 +112,8 @@ class HttpRuntime:
             return self._execute_api(tool_op, arguments, request_id, caller_name)
         if tool_op.type == "mcp":
             return self._execute_mcp(tool_op, arguments, request_id, caller_name)
+        if tool_op.type == "rest":
+            return self._execute_rest(tool_op, arguments, request_id, caller_name)
         # The registry rejects unknown types at load, so this guards only a programmer error
         # (a ToolOp built with a type no transport handles) — fail loud, never POST blind.
         raise RuntimeError(f"unsupported tool type {tool_op.type!r}")
@@ -103,7 +134,7 @@ class HttpRuntime:
             headers["X-Toolstack-Secret"] = secret
         req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            with _OPENER.open(req, timeout=self._timeout) as resp:
                 body = resp.read()
         except urllib.error.HTTPError as exc:
             exc.close()
@@ -168,7 +199,7 @@ class HttpRuntime:
         ).encode("utf-8")
         req = urllib.request.Request(base, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            with _OPENER.open(req, timeout=self._timeout) as resp:
                 raw = resp.read()
                 ctype = resp.headers.get("Content-Type", "")
                 new_session = resp.headers.get("Mcp-Session-Id")
@@ -196,7 +227,7 @@ class HttpRuntime:
         body = json.dumps({"jsonrpc": "2.0", "method": method, "params": params}).encode("utf-8")
         req = urllib.request.Request(base, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            with _OPENER.open(req, timeout=self._timeout) as resp:
                 resp.read()
         except (urllib.error.HTTPError, urllib.error.URLError):
             pass  # notification delivery is not acknowledged; the tools/call below is the real probe
@@ -244,3 +275,75 @@ class HttpRuntime:
         if msg is not None and ("result" in msg or "error" in msg):
             return msg
         raise RuntimeError("tool returned no JSON-RPC response in SSE stream")
+
+    # -- rest transport: verb-as-op passthrough to 127.0.0.1:<port><path> ---------
+    def _execute_rest(self, tool_op: ToolOp, arguments: dict, request_id: int, caller_name: str) -> dict:
+        verb = tool_op.op.upper()
+        if verb not in REST_VERBS:
+            # the registry only registers declared ops, but never use an arbitrary string
+            # as an HTTP method — guard against method injection explicitly.
+            raise RuntimeError(f"unsupported REST verb {tool_op.op!r}")
+        path = self._rest_path(arguments)
+        url = f"http://127.0.0.1:{tool_op.port}{path}"
+        # Broker context rides in headers (the body belongs to the caller's request,
+        # unlike the api transport where context shares the JSON body).
+        headers = {
+            "X-Toolstack-Request-Id": str(request_id),
+            "X-Toolstack-Caller": caller_name,
+        }
+        body = arguments.get("body")
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        secret = self._tool_secret(tool_op.tool)
+        if secret:
+            headers["X-Toolstack-Secret"] = secret
+        req = urllib.request.Request(url, data=data, headers=headers, method=verb)
+        try:
+            with _OPENER.open(req, timeout=self._timeout) as resp:
+                status = resp.status
+                raw = resp.read()
+                ctype = resp.headers.get("Content-Type", "")
+        except urllib.error.HTTPError as exc:
+            # A 4xx/5xx is a legitimate REST response in a passthrough (e.g. a 404 for a
+            # missing resource the caller asked about) — return it as data, don't raise.
+            status = exc.code
+            raw = exc.read()
+            ctype = exc.headers.get("Content-Type", "") if exc.headers else ""
+            exc.close()
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"tool unreachable: {exc.reason}")
+        return {"status": status, "body": self._parse_body(raw, ctype)}
+
+    @staticmethod
+    def _rest_path(arguments: dict) -> str:
+        """Validate the caller's ``path`` (and optional ``query`` dict) and return the
+        request target. The path MUST keep the request on the tool's loopback origin: it is
+        appended to ``http://127.0.0.1:<port>``, so a value that doesn't start with a single
+        ``/`` could smuggle a userinfo@host (``@evil``) or a protocol-relative host
+        (``//evil``) into the authority. Reject those, plus anything but printable ASCII —
+        control chars (CR/LF/tab/NUL) enable request smuggling, and a non-ASCII byte would
+        otherwise raise deeper in http.client; a real path encodes those as %XX."""
+        path = arguments.get("path")
+        if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
+            raise RuntimeError("rest call needs a 'path' argument starting with a single '/'")
+        # allow only printable ASCII (0x21-0x7e); rejects control chars, space, DEL, non-ASCII
+        if "\\" in path or any(not (0x21 <= ord(c) <= 0x7e) for c in path):
+            raise RuntimeError("rest path contains invalid characters (use %XX encoding)")
+        query = arguments.get("query")
+        if isinstance(query, dict) and query:
+            pairs = urllib.parse.urlencode({str(k): str(v) for k, v in query.items()})
+            path = path + ("&" if "?" in path else "?") + pairs
+        return path
+
+    @staticmethod
+    def _parse_body(raw: bytes, ctype: str):
+        """Decode the tool's response body: parsed JSON when it says JSON, else text."""
+        text = raw.decode("utf-8", "replace")
+        if "application/json" in ctype:
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return text
+        return text

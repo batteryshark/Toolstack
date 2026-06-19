@@ -10,6 +10,7 @@ from toolyard.config import discover, load
 REPO = Path(__file__).resolve().parents[2]
 TOOL_TOML = REPO / "tools" / "echo_rest" / "toolyard.toml"
 TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
+TOOL_REST_TOML = REPO / "tools" / "rest_kv" / "toolyard.toml"
 
 
 class Load(unittest.TestCase):
@@ -27,10 +28,17 @@ class Load(unittest.TestCase):
         self.assertEqual(tool.type, "mcp")    # the streamable-HTTP MCP transport
         self.assertEqual(tool.port, 4611)
 
-    def test_discover_finds_both_echo_tools(self):
+    def test_parses_rest_kv_tool(self):
+        tool = load(TOOL_REST_TOML)
+        self.assertEqual(tool.id, "kv")
+        self.assertEqual(tool.type, "rest")   # the verb-as-op passthrough
+        self.assertEqual(tool.port, 4621)
+
+    def test_discover_finds_all_example_tools(self):
         ids = {d.id for d in discover(REPO / "tools")}
         self.assertIn("echo", ids)
         self.assertIn("echo-mcp", ids)
+        self.assertIn("kv", ids)
 
 
 class Secrets(unittest.TestCase):

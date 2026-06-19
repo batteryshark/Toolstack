@@ -11,11 +11,12 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-# Tool transports this toolyard knows how to run. "api" answers /v1/actions/<op>; "mcp"
-# is a streamable-HTTP MCP server. (The passthrough "rest" type lands in a later slice.)
-# An unknown type is rejected at load — never accepted silently. Mirrors broker/registry.py
-# and admin/tool_authoring.py (independent packages, so the set is duplicated, not shared).
-TOOL_TYPES = ("api", "mcp")
+# Tool transports this toolyard knows how to run. "api" answers /v1/actions/<op>; "mcp" is
+# a streamable-HTTP MCP server; "rest" is a verb-as-op passthrough. All three are served on
+# a loopback port. An unknown type is rejected at load — never accepted silently. Mirrors
+# broker/registry.py and admin/tool_authoring.py (independent packages, so the set is
+# duplicated, not shared).
+TOOL_TYPES = ("api", "mcp", "rest")
 
 
 @dataclass(frozen=True)

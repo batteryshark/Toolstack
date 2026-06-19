@@ -904,7 +904,8 @@ struct ToolAuthoringForm: View {
     @State private var saveError: String?
 
     private let risks = ["read", "write", "destructive"]   // matches admin RISK_CHOICES
-    private let toolTypes = ["api", "mcp"]                  // matches admin TOOL_TYPES
+    private let toolTypes = ["api", "mcp", "rest"]          // matches admin TOOL_TYPES
+    private let restVerbs = ["GET", "POST", "PUT", "PATCH", "DELETE"]  // matches admin REST_VERBS
     private let argTypes = ["string", "number", "integer", "boolean", "object", "array"]
 
     var body: some View {
@@ -930,14 +931,16 @@ struct ToolAuthoringForm: View {
                     TextField("image (docker, optional)", text: $image)
                     TextField("port", text: $port)
                 } header: { Text("Entrypoint") } footer: {
-                    Text(type == "mcp"
-                         ? "An mcp tool is a streamable-HTTP MCP server: it serves /mcp on this port; the broker calls it via tools/call (op = MCP tool name)."
-                         : "Give a command (process) or an image (docker), plus the port the tool serves on.")
-                        .font(.caption)
+                    Text(entrypointHint).font(.caption)
                 }
-                Section("Operations") {
+                Section {
                     ForEach(operations) { op in opEditor(op) }
                     Button { operations.append(EditableOp()) } label: { Label("Add operation", systemImage: "plus") }
+                } header: { Text("Operations") } footer: {
+                    if type == "rest" {
+                        Text("A rest op IS an HTTP verb; the agent passes {path, body, query}. Risk is derived from the verb and arguments are set automatically.")
+                            .font(.caption)
+                    }
                 }
                 Section("Secrets (optional)") {
                     ForEach(secrets) { sec in secretEditor(sec) }
@@ -960,20 +963,42 @@ struct ToolAuthoringForm: View {
         .frame(minWidth: 580, minHeight: 560)
     }
 
+    private var entrypointHint: String {
+        switch type {
+        case "mcp":
+            return "An mcp tool is a streamable-HTTP MCP server: it serves /mcp on this port; the broker calls it via tools/call (op = MCP tool name)."
+        case "rest":
+            return "A rest tool is any HTTP service on this port; the broker forwards <verb> <path> straight through to it. Give a command (process) or image (docker)."
+        default:
+            return "Give a command (process) or an image (docker), plus the port the tool serves on."
+        }
+    }
+
     private func opEditor(_ op: EditableOp) -> some View {
         let b = opBinding(op)
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
-                TextField("operation name", text: b.name)
-                Picker("", selection: b.risk) { ForEach(risks, id: \.self) { Text($0).tag($0) } }
-                    .labelsHidden().frame(width: 96)
+                if type == "rest" {
+                    // op IS an HTTP verb; risk + args are derived server-side, so no risk/args UI
+                    Picker("", selection: b.name) {
+                        Text("verb…").tag("")
+                        ForEach(restVerbs, id: \.self) { Text($0).tag($0) }
+                    }.labelsHidden().frame(width: 120)
+                    Spacer()
+                } else {
+                    TextField("operation name", text: b.name)
+                    Picker("", selection: b.risk) { ForEach(risks, id: \.self) { Text($0).tag($0) } }
+                        .labelsHidden().frame(width: 96)
+                }
                 Button(role: .destructive) { operations.removeAll { $0.id == op.id } } label: { Image(systemName: "trash") }
                     .buttonStyle(.borderless)
             }
             TextField("description (optional)", text: b.description).font(.caption)
-            ForEach(op.args) { arg in argEditor(op: op, arg: arg) }
-            Button { b.wrappedValue.args.append(EditableArg()) } label: { Label("Add argument", systemImage: "plus") }
-                .font(.caption2)
+            if type != "rest" {
+                ForEach(op.args) { arg in argEditor(op: op, arg: arg) }
+                Button { b.wrappedValue.args.append(EditableArg()) } label: { Label("Add argument", systemImage: "plus") }
+                    .font(.caption2)
+            }
         }
         .padding(.vertical, 3)
     }
