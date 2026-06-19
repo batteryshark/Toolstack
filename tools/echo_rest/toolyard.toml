@@ -33,9 +33,12 @@ risk = "low"
 description = "Report whether the tool can read its api_key secret (length only, never the value)."
 args = []
 
-[[secrets]]
-name = "api_key"      # readable by the tool at $TOOLSTACK_SECRETS_DIR/api_key
-field = "API_KEY"     # field looked up in the secret backend
+# This demo tool ships with NO secrets, so it starts cleanly on any backend (file / vault /
+# infisical) without provisioning anything first — its `secret_status` op just reports "no api_key".
+# To demo secret resolution, declare one here AND provision API_KEY in your backend:
+#   [[secrets]]
+#   name = "api_key"     # readable by the tool at $TOOLSTACK_SECRETS_DIR/api_key
+#   field = "API_KEY"    # field looked up in the secret backend
 
 # Optional defense in depth (off by default — see app.py `verify_broker`). Uncomment to
 # require the broker's per-tool shared secret. Provision the SAME value in both places:
