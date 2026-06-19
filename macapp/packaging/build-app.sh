@@ -14,7 +14,8 @@ CONTENTS="${OUT}/Contents"
 
 echo "› swift build -c release"
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/${APP_NAME}"
+BINDIR="$(swift build -c release --show-bin-path)"
+BIN="$BINDIR/${APP_NAME}"
 [ -x "$BIN" ] || { echo "error: built binary not found at $BIN" >&2; exit 1; }
 
 echo "› assembling ${OUT}"
@@ -22,9 +23,19 @@ rm -rf "$OUT"
 mkdir -p "${CONTENTS}/MacOS" "${CONTENTS}/Resources"
 cp "$BIN" "${CONTENTS}/MacOS/${APP_NAME}"
 cp packaging/Info.plist "${CONTENTS}/Info.plist"
-# Drop an AppIcon.icns into packaging/ and uncomment to brand the app:
-# cp packaging/AppIcon.icns "${CONTENTS}/Resources/AppIcon.icns"
-#   (also add  <key>CFBundleIconFile</key><string>AppIcon</string>  to Info.plist)
+
+# App icon: generate AppIcon.icns from the source logo (Info.plist points at CFBundleIconFile=AppIcon).
+ICONSET="$(mktemp -d)/AppIcon.iconset"
+mkdir -p "$ICONSET"
+for s in 16 32 128 256 512; do
+    sips -z "$s" "$s" packaging/AppIcon-source.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+    sips -z "$((s*2))" "$((s*2))" packaging/AppIcon-source.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "${CONTENTS}/Resources/AppIcon.icns"
+rm -rf "$(dirname "$ICONSET")"
+
+# SwiftPM resource bundle(s) — so Bundle.module (the menu-bar icon) resolves in the packaged app.
+for b in "$BINDIR"/*.bundle; do [ -e "$b" ] && cp -R "$b" "${CONTENTS}/Resources/"; done
 
 # Fail fast if the Info.plist is malformed.
 plutil -lint "${CONTENTS}/Info.plist" >/dev/null

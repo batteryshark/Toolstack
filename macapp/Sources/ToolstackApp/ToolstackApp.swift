@@ -13,7 +13,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    // Keep running when the window closes — the app lives on in the menu bar (systray) and is
+    // reopened from there ("Open Toolstack"). Quit explicitly from the menu bar or ⌘Q.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+}
+
+/// App images bundled as SwiftPM resources. The menu-bar glyph is a template image (alpha-only),
+/// so macOS tints it for the light/dark menu bar automatically.
+enum AppImages {
+    static let menuBar: NSImage = {
+        let image = Bundle.module.url(forResource: "MenuBarIcon", withExtension: "png")
+            .flatMap { NSImage(contentsOf: $0) }
+            ?? NSImage(systemSymbolName: "square.stack.3d.up.fill", accessibilityDescription: "Toolstack")!
+        image.isTemplate = true
+        image.size = NSSize(width: 18, height: 18)
+        return image
+    }()
 }
 
 @main
@@ -22,11 +37,49 @@ struct ToolstackApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("Toolstack") {
+        Window("Toolstack", id: "main") {
             ContentView()
                 .environmentObject(model)
                 .frame(minWidth: 760, minHeight: 520)
         }
+        MenuBarExtra {
+            MenuBarMenu().environmentObject(model)
+        } label: {
+            Image(nsImage: AppImages.menuBar)
+        }
+    }
+}
+
+/// The menu-bar (systray) menu: broker status at a glance, quick broker actions, and open/quit.
+struct MenuBarMenu: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Text(statusLine)
+        Divider()
+        if model.authenticated {
+            Button("Start broker") { Task { await model.brokerAction("start") } }
+                .disabled(model.broker?.running == true || model.busy)
+            Button("Stop broker") { Task { await model.brokerAction("stop") } }
+                .disabled(model.broker?.running != true || model.busy)
+            Button("Restart broker") { Task { await model.brokerAction("restart") } }
+                .disabled(model.busy)
+            Divider()
+        }
+        Button("Open Toolstack") {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            openWindow(id: "main")
+        }
+        Divider()
+        Button("Quit Toolstack") { NSApplication.shared.terminate(nil) }
+    }
+
+    // Plain String (not a localized Text literal), so the port renders without a thousands separator.
+    private var statusLine: String {
+        guard model.authenticated else { return "Toolstack — not signed in" }
+        guard let broker = model.broker else { return "Broker: —" }
+        return broker.running ? "Broker: running" + (broker.port.map { " :\($0)" } ?? "") : "Broker: stopped"
     }
 }
 

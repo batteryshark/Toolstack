@@ -10,6 +10,8 @@
     <string>com.toolstack.operator</string>
     <key>CFBundleExecutable</key>
     <string>ToolstackApp</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
