@@ -149,7 +149,10 @@ def update(dir_path: str | Path) -> dict:
         # the operator never customized still picks up upstream's new description / required secrets).
         merged["description"] = local["description"] or merged["description"]
         merged["secrets"] = local["secrets"] or merged["secrets"]
-        errors = tool_authoring.validate(merged)
+        errors = list(tool_authoring.validate(merged))
+        ep = tool_authoring.entrypoint_error(merged, new_dir)
+        if ep:
+            errors.append(ep)
         if errors:
             raise ValueError("; ".join(errors))
         _swap_in_place(dest, new_dir, merged, source)
@@ -210,7 +213,10 @@ def _ingest(tool_dir: Path, root: Path, existing_ids, meta: dict) -> dict:
     tool = tool_authoring.read(tool_dir)        # normalized dict (id/description/ops/secrets/…)
     # validate() rejects a broken tool now (not at broker start) AND bounds the id to a safe single
     # path component (no separators, length-capped) — that's what makes `root / id` safe.
-    errors = tool_authoring.validate(tool)
+    errors = list(tool_authoring.validate(tool))
+    ep = tool_authoring.entrypoint_error(tool, tool_dir)
+    if ep:
+        errors.append(ep)
     if errors:
         raise ValueError("; ".join(errors))
     tool_id = tool["id"]
@@ -235,7 +241,10 @@ def add_with_manifest(source: str, tools_root: str, existing_ids, manifest: dict
     if src.resolve() == root.resolve() or root.resolve() in src.resolve().parents:
         raise ValueError("source folder is inside the tools dir; choose a folder outside it")
     tool = tool_authoring.normalize(manifest)
-    errors = tool_authoring.validate(tool)   # also bounds the id to a safe single path component
+    errors = list(tool_authoring.validate(tool))   # also bounds the id to a safe single path component
+    ep = tool_authoring.entrypoint_error(tool, src)
+    if ep:
+        errors.append(ep)
     if errors:
         raise ValueError("; ".join(errors))
     tool_id = tool["id"]

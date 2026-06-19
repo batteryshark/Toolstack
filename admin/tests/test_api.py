@@ -42,7 +42,7 @@ class JsonApi(unittest.TestCase):
         (tool_dir / "toolyard.toml").write_text(
             'id = "echo"\ntype = "rest"\ndescription = "echo tool"\n\n'
             '[entrypoint]\ncommand = "python3 app.py"\nport = 4601\n\n'
-            '[[operations]]\nname = "say"\nrisk = "low"\ndescription = "echo a message"\n\n'
+            '[[operations]]\nname = "say"\nrisk = "read"\ndescription = "echo a message"\n\n'
             '[[secrets]]\nname = "api_key"\nfield = "API_KEY"\nwritable = true\n',
             encoding="utf-8")
         self.db_path = str(Path(self.tmp, "broker.sqlite3"))
@@ -228,7 +228,7 @@ class JsonApi(unittest.TestCase):
         # caller could repoint a tool at arbitrary code.
         r = self.client.post("/api/tools/echo", headers=self._auth(), json={
             "description": "x", "command": "rm -rf /", "image": "evil:latest",
-            "port": 9999, "operations": [{"name": "pwn", "risk": "low"}]})
+            "port": 9999, "operations": [{"name": "pwn", "risk": "read"}]})
         self.assertEqual(r.status_code, 200, r.text)
         on_disk = tool_authoring.read(Path(self.tmp, "tools", "echo"))
         self.assertEqual(on_disk["command"], "python3 app.py")  # unchanged
@@ -254,7 +254,7 @@ class JsonApi(unittest.TestCase):
         (src / "toolyard.toml").write_text(
             f'id = "{tool_id}"\ntype = "rest"\ndescription = "wx"\n\n'
             f'[entrypoint]\ncommand = "python3 app.py"\nport = {port}\n\n'
-            '[[operations]]\nname = "today"\nrisk = "low"\n', encoding="utf-8")
+            '[[operations]]\nname = "today"\nrisk = "read"\n', encoding="utf-8")
         (src / "app.py").write_text("# code\n", encoding="utf-8")
         return src
 
@@ -291,7 +291,7 @@ class JsonApi(unittest.TestCase):
             dest.mkdir(parents=True)
             (dest / "toolyard.toml").write_text(
                 'id = "gh_tool"\ntype = "rest"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4900\n\n'
-                '[[operations]]\nname = "go"\nrisk = "low"\n', encoding="utf-8")
+                '[[operations]]\nname = "go"\nrisk = "read"\n', encoding="utf-8")
             return subprocess.CompletedProcess(cmd, 0, b"", b"")
         with mock.patch("admin.tool_sources.shutil.which", return_value="/usr/bin/git"), \
              mock.patch("admin.tool_sources.subprocess.run", side_effect=fake_clone):
@@ -313,7 +313,7 @@ class JsonApi(unittest.TestCase):
         r = self.client.post("/api/tools", headers=self._auth(), json={
             "source": str(code),
             "manifest": {"id": "authored", "type": "rest", "command": "python3 app.py", "port": 4800,
-                         "operations": [{"name": "go", "risk": "low"}]}})
+                         "operations": [{"name": "go", "risk": "read"}]}})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["id"], "authored")
         ids = [t["id"] for t in self.client.get("/api/tools", headers=self._auth()).json()["tools"]]
