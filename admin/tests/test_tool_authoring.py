@@ -145,7 +145,7 @@ class RestAuthoring(unittest.TestCase):
         self.assertEqual(set(ops), {"GET", "DELETE"})            # "get" -> "GET"
         self.assertEqual(ops["GET"]["risk"], "read")
         self.assertEqual(ops["DELETE"]["risk"], "destructive")   # derived, not the "read" we passed
-        self.assertEqual([a["name"] for a in ops["GET"]["args"]], ["path", "body", "query"])
+        self.assertEqual([a["name"] for a in ops["GET"]["args"]], ["path", "body", "query", "headers"])
 
     def test_validate_accepts_verb_ops(self):
         self.assertEqual(tool_authoring.validate(tool_authoring.normalize(REST_FIXTURE)), [])

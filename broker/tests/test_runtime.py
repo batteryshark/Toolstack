@@ -261,6 +261,7 @@ class _FakeRestTool(BaseHTTPRequestHandler):
             "request_id": self.headers.get("X-Toolstack-Request-Id"),
             "caller": self.headers.get("X-Toolstack-Caller"),
             "secret": self.headers.get("X-Toolstack-Secret"),
+            "headers": {k.lower(): v for k, v in self.headers.items()},  # all received, lc names
         }
         obj = type(self).resp_body if type(self).resp_body is not None else {"ok": True}
         payload = json.dumps(obj).encode("utf-8")
@@ -280,7 +281,7 @@ class _FakeRestTool(BaseHTTPRequestHandler):
 
 class RestForward(unittest.TestCase):
     """The broker as a verb-as-op passthrough: a type='rest' ToolOp forwards
-    <verb> <path> + body to the tool and returns its {status, body}."""
+    <verb> <path> + body + caller headers to the tool and returns its {status, headers, body}."""
 
     def setUp(self):
         _FakeRestTool.received = {}
@@ -307,7 +308,8 @@ class RestForward(unittest.TestCase):
         self.assertEqual(_FakeRestTool.received["method"], "POST")  # op IS the verb
         self.assertEqual(_FakeRestTool.received["path"], "/items")
         self.assertEqual(_FakeRestTool.received["body"], {"key": "a", "value": 1})
-        self.assertEqual(result, {"status": 200, "body": {"ok": True}})
+        self.assertEqual(result["status"], 200)
+        self.assertEqual(result["body"], {"ok": True})
 
     def test_sends_broker_context_in_headers(self):
         HttpRuntime().execute(self._op("GET"), {"path": "/items"}, 99, "hermes")
@@ -319,7 +321,8 @@ class RestForward(unittest.TestCase):
         _FakeRestTool.status = 404
         _FakeRestTool.resp_body = {"error": "not_found"}
         result = HttpRuntime().execute(self._op("GET"), {"path": "/items/nope"}, 1, "hermes")
-        self.assertEqual(result, {"status": 404, "body": {"error": "not_found"}})
+        self.assertEqual(result["status"], 404)
+        self.assertEqual(result["body"], {"error": "not_found"})
 
     def test_query_dict_is_appended(self):
         HttpRuntime().execute(self._op("GET"), {"path": "/items", "query": {"limit": "5"}}, 1, "hermes")
@@ -368,6 +371,45 @@ class RestForward(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             HttpRuntime(timeout=2).execute(ToolOp("kv", "GET", "read", 1, "rest"),
                                            {"path": "/x"}, 1, "hermes")
+
+    def test_forwards_caller_headers(self):
+        HttpRuntime().execute(
+            self._op("GET"),
+            {"path": "/items", "headers": {"Accept": "application/xml", "X-Custom": "v"}}, 1, "hermes")
+        got = _FakeRestTool.received["headers"]
+        self.assertEqual(got["accept"], "application/xml")
+        self.assertEqual(got["x-custom"], "v")
+
+    def test_reserved_request_headers_cannot_be_spoofed(self):
+        HttpRuntime().execute(
+            self._op("GET"),
+            {"path": "/items", "headers": {"X-Toolstack-Caller": "evil", "Host": "evil.example",
+                                           "Content-Length": "999"}}, 5, "hermes")
+        got = _FakeRestTool.received["headers"]
+        self.assertEqual(got["x-toolstack-caller"], "hermes")  # broker's identity wins, not "evil"
+        self.assertNotIn("evil", got.get("host", ""))          # Host stays on the loopback target
+
+    def test_invalid_header_name_raises(self):
+        with self.assertRaises(RuntimeError):
+            HttpRuntime().execute(self._op("GET"), {"path": "/x", "headers": {"Bad Name": "v"}}, 1, "hermes")
+
+    def test_invalid_header_value_raises(self):
+        # CRLF injection, non-ASCII (http.client can't latin-1 it), and a non-string value
+        for bad in ["a\r\nEvil: 1", "sn☃wman", {"x": 1}]:
+            with self.assertRaises(RuntimeError):
+                HttpRuntime().execute(self._op("GET"), {"path": "/x", "headers": {"X-H": bad}}, 1, "hermes")
+
+    def test_trailing_newline_header_name_raises(self):
+        with self.assertRaises(RuntimeError):  # \Z anchor, not $ — a terminal \n must not pass
+            HttpRuntime().execute(self._op("GET"), {"path": "/x", "headers": {"X-Inject\n": "v"}}, 1, "hermes")
+
+    def test_returns_response_headers(self):
+        _FakeRestTool.status = 201
+        _FakeRestTool.resp_location = "/items/new"
+        result = HttpRuntime().execute(self._op("POST"), {"path": "/items", "body": {"k": 1}}, 1, "hermes")
+        self.assertEqual(result["status"], 201)
+        self.assertEqual(result["headers"].get("Location"), "/items/new")    # full-fidelity passthrough
+        self.assertEqual(result["headers"].get("Content-Type"), "application/json")
 
 
 class EnvToolSecret(unittest.TestCase):
