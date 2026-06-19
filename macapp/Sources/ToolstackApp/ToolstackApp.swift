@@ -88,47 +88,51 @@ struct OperatorView: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                Section("Broker") { BrokerPane() }
+        VStack(spacing: 0) {
+            BrokerBar()
+            Divider()
+            if let banner = model.banner {
+                HStack(alignment: .top) {
+                    Text(banner).font(.callout.monospaced()).textSelection(.enabled)
+                    Spacer()
+                    Button { model.banner = nil } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.borderless).foregroundStyle(.secondary)
+                }
+                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                .background(.green.opacity(0.15))
             }
-            .navigationTitle("Toolstack")
-        } detail: {
             TabView {
                 CallersPane().tabItem { Label("Callers", systemImage: "person.2") }
                 ToolsPane().tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
                 ConfigPane().tabItem { Label("Config", systemImage: "gearshape") }
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Sign Out") { Task { await model.logout() } }
-            }
-        }
         .task { await model.refreshAll() }
     }
 }
 
-struct BrokerPane: View {
+/// A slim, full-width strip with broker status + start/stop/restart and sign-out. Replaces the old
+/// left sidebar that held only these controls (a whole column for three buttons).
+struct BrokerBar: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
         let running = model.broker?.running == true
-        HStack(spacing: 7) {
+        HStack(spacing: 8) {
+            Image(systemName: "server.rack").foregroundStyle(.secondary)
+            Text("Broker").font(.headline)
             Circle().fill(running ? .green : .secondary).frame(width: 9, height: 9)
-            Text(running ? "running" : "stopped").font(.callout)
+            Text(running ? "running" : "stopped").font(.callout).foregroundStyle(.secondary)
             if let port = model.broker?.port {
                 Text(verbatim: ":\(port)").font(.caption).foregroundStyle(.secondary)  // no thousands separator
             }
-            Spacer(minLength: 0)
-        }
-        // Compact icon controls — the sidebar is too narrow for "Start/Stop/Restart" labels
-        // (they truncated to "St…"). Tooltips name each on hover.
-        HStack(spacing: 6) {
-            control("play.fill", "Start broker", disabled: running)  { await model.brokerAction("start") }
-            control("stop.fill", "Stop broker", disabled: !running)  { await model.brokerAction("stop") }
+            control("play.fill", "Start broker", disabled: running) { await model.brokerAction("start") }
+            control("stop.fill", "Stop broker", disabled: !running) { await model.brokerAction("stop") }
             control("arrow.clockwise", "Restart broker", disabled: false) { await model.brokerAction("restart") }
+            Spacer()
+            Button("Sign Out") { Task { await model.logout() } }
         }
+        .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
     private func control(_ symbol: String, _ help: String, disabled: Bool,
@@ -151,11 +155,6 @@ struct CallersPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let banner = model.banner {
-                Text(banner).font(.callout.monospaced())
-                    .padding(10).background(.green.opacity(0.15), in: .rect(cornerRadius: 8))
-                    .textSelection(.enabled)
-            }
             HStack {
                 TextField("New caller name", text: $newName).textFieldStyle(.roundedBorder)
                 Button("Add") { Task { await model.createCaller(name: newName); newName = "" } }
