@@ -92,6 +92,11 @@ class Validate(unittest.TestCase):
     def test_bad_id_with_dot(self):
         self.assertTrue(self._errs(id="bad.id"))
 
+    def test_overlong_id_rejected(self):
+        # the id becomes a directory name (tools_root/<id>); cap it well under FS limits
+        self.assertTrue(self._errs(id="a" * 100))
+        self.assertEqual(self._errs(id="a" * 64), [])  # 64 is allowed
+
     def test_missing_entrypoint(self):
         self.assertTrue(self._errs(command="", image=""))
 

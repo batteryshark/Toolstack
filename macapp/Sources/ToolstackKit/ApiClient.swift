@@ -115,6 +115,13 @@ public actor ApiClient {
                               body: ["description": description, "secrets": secretsBody])
     }
 
+    /// Add a tool by copying a local folder (which must contain a toolyard.toml) into the broker's
+    /// managed tools dir. Throws `ApiError.http(422, _)` if the folder has no manifest yet.
+    @discardableResult
+    public func addTool(source: String) async throws -> CreatedTool {
+        try await send("POST", "/api/tools", body: ["source": source])
+    }
+
     public func policy(for caller: String) async throws -> PolicyResponse {
         try await send("GET", "/api/callers/\(caller)/policy")
     }

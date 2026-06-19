@@ -76,6 +76,29 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Add a tool by copying a local folder into the broker's tools dir. A folder without a
+    /// toolyard.toml comes back as 422 — surfaced as a friendly note (in-app authoring is next).
+    func addTool(source: String) async {
+        busy = true
+        error = nil
+        do {
+            let created = try await client.addTool(source: source)
+            await refreshTools()
+            banner = "Added \(created.id). Restart the broker to register it, then grant a caller access."
+        } catch ApiError.http(422, _) {
+            error = "That folder has no toolyard.toml — it's code, not a tool yet. "
+                  + "Authoring a manifest in-app is the next step."
+        } catch ApiError.unauthorized {
+            authenticated = false
+            error = ApiError.unauthorized.message
+        } catch let apiError as ApiError {
+            error = apiError.message
+        } catch let other {
+            error = other.localizedDescription
+        }
+        busy = false
+    }
+
     @Published var secretBackend: SecretBackend?
 
     func refreshSecretBackend() async {

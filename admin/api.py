@@ -19,7 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from broker import operations
 from broker.registry import Registry
 
-from . import auth, broker_config, settings, supervisor, tool_authoring, toolyard_ops
+from . import auth, broker_config, settings, supervisor, tool_authoring, tool_sources, toolyard_ops
 from .store_access import open_store
 
 # broker lifecycle action -> the admin.* audit event it records (shared with the HTML handler)
@@ -215,6 +215,31 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
                 for s in (td.secrets if td else ())
             ]
         return {"tools": tools}
+
+    @app.post("/api/tools")
+    async def api_add_tool(request: Request, user: str = Depends(require_user)):
+        """Add a tool by COPYING a local folder into the broker's tools dir (where it's auto-
+        discovered). The folder must contain a toolyard.toml; a folder of code without one returns
+        422 so the client can offer to author a manifest (a separate flow). Restart the broker to
+        register the new tool."""
+        data = await _json_object(request)
+        source = (data.get("source") or "").strip()
+        if not source:
+            raise HTTPException(status_code=400, detail="source (a folder path) is required")
+        config = broker_config.load()
+        try:
+            existing = [t["id"] for t in toolyard_ops.list_tools(config.tools_root, config.tool_dirs)]
+        except Exception:
+            existing = []  # can't confirm uniqueness while some tool fails to load; add_from_path still guards the dir
+        try:
+            tool = tool_sources.add_from_path(source, config.tools_root, existing)
+        except tool_sources.NoManifest:
+            raise HTTPException(status_code=422, detail="folder has no toolyard.toml — author one to add it")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        with open_store(config) as store:
+            operations.record_admin_event(store, user, "tool_created", {"tool": tool["id"], "dir": tool["path"]})
+        return tool
 
     @app.post("/api/tools/{tool_id}")
     async def api_edit_tool(tool_id: str, request: Request, user: str = Depends(require_user)):
