@@ -51,24 +51,26 @@ class FakeSurface:
         self._state = SurfaceState(outcome, approver, note, decided_at)
 
 
-def make_registry(tools: dict | None = None, port: int = 4600) -> Registry:
-    """Build a Registry from the friendly shape {tool: {op: risk}}."""
+def make_registry(tools: dict | None = None, port: int = 4600, tool_type: str = "api") -> Registry:
+    """Build a Registry from the friendly shape {tool: {op: risk}}. ``tool_type`` sets the
+    transport for all tools (use "rest" to exercise the verb-as-op passthrough)."""
     catalog = {}
     for tool, ops in (tools or {}).items():
         catalog[tool] = {
             "port": port,
-            "type": "api",
+            "type": tool_type,
             "ops": {op: {"risk": risk, "description": "", "args": []}
                     for op, risk in ops.items()},
         }
     return Registry(catalog)
 
 
-def make_ctx(catalog=None, runtime=None, surface=_DEFAULT_SURFACE, approval_ttl=3600.0) -> BrokerContext:
+def make_ctx(catalog=None, runtime=None, surface=_DEFAULT_SURFACE, approval_ttl=3600.0,
+             tool_type="api") -> BrokerContext:
     store = Store(":memory:")
     return BrokerContext(
         store=store,
-        registry=make_registry(catalog),
+        registry=make_registry(catalog, tool_type=tool_type),
         runtime=runtime or FakeRuntime(),
         audit=AuditLog(store, sink=None),  # quiet during tests
         surface=FakeSurface() if surface is _DEFAULT_SURFACE else surface,
@@ -79,8 +81,10 @@ def make_ctx(catalog=None, runtime=None, surface=_DEFAULT_SURFACE, approval_ttl=
 class BrokerTestCase(unittest.TestCase):
     """Base case whose make_ctx closes the in-memory store after each test."""
 
-    def make_ctx(self, catalog=None, runtime=None, surface=_DEFAULT_SURFACE, approval_ttl=3600.0):
-        ctx = make_ctx(catalog=catalog, runtime=runtime, surface=surface, approval_ttl=approval_ttl)
+    def make_ctx(self, catalog=None, runtime=None, surface=_DEFAULT_SURFACE, approval_ttl=3600.0,
+                 tool_type="api"):
+        ctx = make_ctx(catalog=catalog, runtime=runtime, surface=surface,
+                       approval_ttl=approval_ttl, tool_type=tool_type)
         self.addCleanup(ctx.store.close)
         return ctx
 

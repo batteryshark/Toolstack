@@ -158,9 +158,18 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
     async def api_set_policy(name: str, request: Request, user: str = Depends(require_user)):
         data = await _json_object(request)
         allow, review = _str_list(data.get("allow"), "allow"), _str_list(data.get("review"), "review")
+        deny = _str_list(data.get("deny"), "deny")
         with open_store(broker_config.load()) as store:
             try:
-                operations.set_policy(store, name, allow, review, user)
+                # A coarse (verb-level) update must not silently drop a caller's path-scoped
+                # rules — refuse so the path rules aren't flattened (set those via brokerctl).
+                dropped = operations.coarse_update_drops_scope(store, name, allow, review, deny)
+                if dropped:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="caller has path-scoped rules this editor can't manage yet; "
+                               "edit them with brokerctl. Would drop: " + ", ".join(sorted(dropped)))
+                operations.set_policy(store, name, allow, review, user, deny=deny)
                 policy = store.policy_for(operations.require_caller(store, name)["id"])
             except LookupError as exc:
                 raise HTTPException(status_code=404, detail=str(exc))

@@ -516,6 +516,13 @@ def caller_tools_view(*, user, csrf, caller, all_tools, enabled, error=None) -> 
 def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, error=None) -> str:
     err = f"<div class='error'>{esc(error)}</div>" if error else ""
     tool_policies = current.get("tools", {})
+    # a rest path-scoped key has a space in its op part ("GET /items/**"); this verb-level
+    # editor can't manage those, so warn the operator (saving here would drop them — the POST
+    # handler refuses), and point them at brokerctl.
+    if any(" " in key for ops in tool_policies.values() for key in ops):
+        err += ("<div class='error'>This caller has path-scoped rules. Edit them with "
+                "<code>brokerctl set-policy --allow/--deny</code> — this editor manages "
+                "verb-level effects only and won't save over path rules.</div>")
     sections = [
         f"{err}<form method='post' action='/callers/{esc(caller)}/policy'>",
         _csrf_field(csrf),

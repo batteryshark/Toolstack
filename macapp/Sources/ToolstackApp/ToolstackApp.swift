@@ -426,6 +426,10 @@ struct PolicyEditor: View {
     @State private var effects: [String: Effect] = [:]   // "tool.op" -> effect
     @State private var enabled: Set<String> = []         // tools this caller is enabled for
     @State private var loaded = false
+    // This caller has rest path-scoped rules (an op key like "GET /items/**"). This
+    // verb-level editor can't express them and a save would flatten them, so it goes
+    // read-only and points the operator at brokerctl until the path-rule UI lands.
+    @State private var hasPathScoped = false
 
     private var enabledTools: [ToolInfo] { model.tools.filter { enabled.contains($0.id) } }
 
@@ -434,8 +438,13 @@ struct PolicyEditor: View {
             HStack {
                 Text("Policy — \(caller)").font(.title2.bold())
                 Spacer()
-                Button("Allow all") { setAll(.allow) }.disabled(!loaded || enabledTools.isEmpty)
-                Button("Deny all") { setAll(.deny) }.disabled(!loaded || enabledTools.isEmpty)
+                Button("Allow all") { setAll(.allow) }.disabled(!loaded || enabledTools.isEmpty || hasPathScoped)
+                Button("Deny all") { setAll(.deny) }.disabled(!loaded || enabledTools.isEmpty || hasPathScoped)
+            }
+            if hasPathScoped {
+                Label("This caller has path-scoped rules. Edit them with brokerctl — this editor "
+                      + "manages verb-level effects only and would drop them.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             if !loaded {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -474,7 +483,7 @@ struct PolicyEditor: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Save") { Task { await save() } }
-                    .keyboardShortcut(.defaultAction).disabled(!loaded || model.busy)
+                    .keyboardShortcut(.defaultAction).disabled(!loaded || model.busy || hasPathScoped)
             }
         }
         .padding()
@@ -494,6 +503,8 @@ struct PolicyEditor: View {
         await model.refreshTools()
         guard let resp = await model.loadPolicy(for: caller) else { loaded = true; return }
         enabled = Set(resp.enabled)
+        // a rest path-scoped key has a space in its op part ("GET /items/**")
+        hasPathScoped = resp.policy.tools.values.contains { ops in ops.keys.contains { $0.contains(" ") } }
         var current: [String: Effect] = [:]
         for tool in enabledTools {
             for op in tool.ops { current["\(tool.id).\(op.op)"] = resp.policy.effect(tool: tool.id, op: op.op) }
