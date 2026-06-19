@@ -14,6 +14,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# git: the admin shells out to it to import a tool from a GitHub repo (add-from-repo). Kept in a
+# standalone layer (before the code COPY) so it stays cached across code changes.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 # stdlib stack (editable) + the vault extra (cryptography) + the admin's runtime deps.
 # cryptography/fastapi/uvicorn ship manylinux/pure-python wheels, so no build toolchain.
 COPY pyproject.toml ./
