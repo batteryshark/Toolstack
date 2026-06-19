@@ -321,10 +321,20 @@ struct ToolsPane: View {
                             ForEach(tool.secrets) { secretRow($0) }
                         }
                     } label: {
-                        HStack {
+                        HStack(spacing: 8) {
                             Circle().fill(tool.running ? .green : .secondary).frame(width: 8, height: 8)
                             Text(tool.id).bold()
                             Text(tool.type).font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            toolControl("play.fill", "Start", disabled: tool.running) {
+                                await model.toolAction(id: tool.id, action: "start")
+                            }
+                            toolControl("stop.fill", "Stop", disabled: !tool.running) {
+                                await model.toolAction(id: tool.id, action: "stop")
+                            }
+                            toolControl("arrow.clockwise", "Restart", disabled: false) {
+                                await model.toolAction(id: tool.id, action: "restart")
+                            }
                         }
                     }
                 }
@@ -368,6 +378,15 @@ struct ToolsPane: View {
             return "from \(source.url ?? "a git repo")\(sub)\(ref)"
         }
         return "from \(source.source ?? "a folder")"
+    }
+
+    // A compact per-row lifecycle button. .borderless so a tap hits the button, not the disclosure.
+    private func toolControl(_ symbol: String, _ help: String, disabled: Bool,
+                             _ action: @escaping () async -> Void) -> some View {
+        Button { Task { await action() } } label: { Image(systemName: symbol) }
+            .buttonStyle(.borderless)
+            .help(help)
+            .disabled(disabled || model.busy)
     }
 
     private func opRow(_ op: OpInfo) -> some View {

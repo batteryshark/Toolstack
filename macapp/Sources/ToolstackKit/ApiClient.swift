@@ -91,6 +91,12 @@ public actor ApiClient {
         return try await send("POST", "/api/config", body: body)
     }
 
+    /// Start / stop / restart a tool (`action` ∈ start|stop|restart). Returns its refreshed run state.
+    @discardableResult
+    public func toolAction(id: String, action: String) async throws -> ToolInfo {
+        try await send("POST", "/api/tools/\(id)/\(action)", body: [:])
+    }
+
     /// Recent audit events + broker requests (newest first, capped server-side at 500).
     public func audit(limit: Int = 50) async throws -> AuditResponse {
         try await send("GET", "/api/audit", query: [URLQueryItem(name: "limit", value: String(limit))])

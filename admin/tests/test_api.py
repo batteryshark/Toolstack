@@ -411,6 +411,35 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(self.client.get("/api/tools/echo/secrets").status_code, 401)
         self.assertEqual(self.client.post("/api/tools/echo/secrets", json={"field": "X", "value": "y"}).status_code, 401)
 
+    # --- per-tool start / stop / restart -------------------------------------
+    def test_tool_start_stop_restart(self):
+        # mock the toolyard so nothing actually spawns; assert each action is dispatched
+        with mock.patch("admin.toolyard_ops.start") as start, \
+             mock.patch("admin.toolyard_ops.stop") as stop, \
+             mock.patch("admin.toolyard_ops.restart") as restart:
+            for action, fn in (("start", start), ("stop", stop), ("restart", restart)):
+                r = self.client.post(f"/api/tools/echo/{action}", headers=self._auth())
+                self.assertEqual(r.status_code, 200, r.text)
+                fn.assert_called_once()
+        events = [e["event_type"] for e in self.client.get("/api/audit", headers=self._auth()).json()["audit"]]
+        for ev in ("tool_started", "tool_stopped", "tool_restarted"):
+            self.assertIn(ev, events)
+
+    def test_tool_action_unknown_400(self):
+        self.assertEqual(self.client.post("/api/tools/echo/frobnicate", headers=self._auth()).status_code, 400)
+
+    def test_tool_action_unknown_tool_404(self):
+        with mock.patch("admin.toolyard_ops.start"):
+            self.assertEqual(self.client.post("/api/tools/ghost/start", headers=self._auth()).status_code, 404)
+
+    def test_tool_action_needs_auth(self):
+        self.assertEqual(self.client.post("/api/tools/echo/start").status_code, 401)
+
+    def test_action_route_does_not_shadow_update_or_secrets(self):
+        # /update and /secrets must still reach their own handlers, not the {action} route
+        self.assertEqual(self.client.post("/api/tools/echo/update", headers=self._auth()).status_code, 400)  # echo has no source
+        self.assertIn("settable", self.client.get("/api/tools/echo/secrets", headers=self._auth()).json())
+
     def test_config_round_trip_write_only_token_and_validation(self):
         # save settings, partial-merge style
         r = self.client.post("/api/config", headers=self._auth(),

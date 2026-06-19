@@ -170,6 +170,16 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(try bodyJSON()["enabled"] as? [String], ["echo"])
     }
 
+    func testToolActionPostsToActionPath() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, [:], Data(#"{"id":"echo","type":"rest","running":true,"ops":[],"secrets":[]}"#.utf8))
+        }
+        let tool = try await makeClient(token: "t").toolAction(id: "echo", action: "restart")
+        XCTAssertTrue(tool.running)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/echo/restart")
+    }
+
     func testListToolsDecodesOps() async throws {
         let json = #"{"tools":[{"id":"echo","type":"rest","port":4601,"running":false,"#
                  + #""ops":[{"op":"say","risk":"low","description":"echo it"}]}]}"#
