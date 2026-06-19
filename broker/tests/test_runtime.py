@@ -76,6 +76,167 @@ class Forward(unittest.TestCase):
         self.assertIsNone(_FakeTool.received["shared_secret"])
 
 
+class _FakeMcpTool(BaseHTTPRequestHandler):
+    """A minimal streamable-HTTP MCP server for exercising the broker's MCP client.
+    Class attributes configure the response shape; ``received`` records every request."""
+
+    received: list = []
+    mode = "json"            # "json" | "sse"
+    tool_result = None       # structuredContent for tools/call (None -> echo the arguments)
+    force_error = None       # if set, tools/call replies with this JSON-RPC error object
+    is_error = False         # value of result.isError on a tools/call reply
+    bad_init = False         # if set, initialize replies with a null (non-dict) result
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        msg = json.loads(self.rfile.read(length)) if length else {}
+        type(self).received.append({
+            "method": msg.get("method"),
+            "message": msg,
+            "session": self.headers.get("Mcp-Session-Id"),
+            "secret": self.headers.get("X-Toolstack-Secret"),
+            "protocol": self.headers.get("MCP-Protocol-Version"),
+        })
+        msg_id = msg.get("id")
+        if msg_id is None:  # a notification (notifications/initialized) -> 202, no body
+            self.send_response(202)
+            self.end_headers()
+            return
+        method = msg.get("method")
+        if method == "initialize":
+            result = None if type(self).bad_init else {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "fake", "version": "1"},
+            }
+            self._reply(msg_id, result=result, session="sess-xyz")
+        elif method == "tools/call":
+            if type(self).force_error is not None:
+                self._reply(msg_id, error=type(self).force_error)
+                return
+            structured = (type(self).tool_result if type(self).tool_result is not None
+                          else {"echoed": (msg.get("params") or {}).get("arguments")})
+            self._reply(msg_id, result={
+                "content": [{"type": "text", "text": json.dumps(structured)}],
+                "structuredContent": structured,
+                "isError": type(self).is_error,
+            })
+        else:
+            self._reply(msg_id, error={"code": -32601, "message": "method not found"})
+
+    def _reply(self, msg_id, result=None, error=None, session=None):
+        env = {"jsonrpc": "2.0", "id": msg_id}
+        if error is not None:
+            env["error"] = error
+        else:
+            env["result"] = result
+        if type(self).mode == "sse":
+            payload = ("event: message\ndata: " + json.dumps(env) + "\n\n").encode("utf-8")
+            ctype = "text/event-stream"
+        else:
+            payload = json.dumps(env).encode("utf-8")
+            ctype = "application/json"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(payload)))
+        if session:
+            self.send_header("Mcp-Session-Id", session)
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args):
+        pass
+
+
+class McpForward(unittest.TestCase):
+    """The broker as a streamable-HTTP MCP client: a type='mcp' ToolOp drives
+    initialize -> initialized -> tools/call, and the MCP result comes back."""
+
+    def setUp(self):
+        _FakeMcpTool.received = []
+        _FakeMcpTool.mode = "json"
+        _FakeMcpTool.tool_result = None
+        _FakeMcpTool.force_error = None
+        _FakeMcpTool.is_error = False
+        _FakeMcpTool.bad_init = False
+        self.server = HTTPServer(("127.0.0.1", 0), _FakeMcpTool)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.thread.join(timeout=5)
+        self.server.server_close()
+
+    def _op(self, op="say"):
+        return ToolOp("echo-mcp", op, "read", self.port, "mcp")
+
+    def test_runs_handshake_then_calls_tool_with_op_as_name(self):
+        result = HttpRuntime().execute(self._op("say"), {"m": "hi"}, 7, "hermes")
+        methods = [r["method"] for r in _FakeMcpTool.received]
+        self.assertEqual(methods, ["initialize", "notifications/initialized", "tools/call"])
+        call = _FakeMcpTool.received[-1]["message"]
+        self.assertEqual(call["params"]["name"], "say")       # op IS the MCP tool name
+        self.assertEqual(call["params"]["arguments"], {"m": "hi"})
+        self.assertEqual(result["structuredContent"], {"echoed": {"m": "hi"}})
+        self.assertFalse(result["isError"])
+
+    def test_passes_broker_context_in_meta(self):
+        HttpRuntime().execute(self._op("whoami"), {}, 99, "hermes")
+        meta = _FakeMcpTool.received[-1]["message"]["params"]["_meta"]
+        self.assertEqual(meta["broker_request_id"], 99)
+        self.assertEqual(meta["caller"], {"name": "hermes"})
+
+    def test_captures_and_resends_session_id(self):
+        HttpRuntime().execute(self._op(), {}, 1, "hermes")
+        sessions = [r["session"] for r in _FakeMcpTool.received]
+        # initialize carries none; the server pins "sess-xyz", resent on the rest
+        self.assertEqual(sessions, [None, "sess-xyz", "sess-xyz"])
+
+    def test_sends_negotiated_protocol_version_after_initialize(self):
+        HttpRuntime().execute(self._op(), {}, 1, "hermes")
+        protocols = [r["protocol"] for r in _FakeMcpTool.received]
+        # initialize carries no version header (not negotiated yet); the streamable-HTTP
+        # transport requires it on every later request, set to the server's negotiated value
+        self.assertEqual(protocols, [None, "2025-06-18", "2025-06-18"])
+
+    def test_non_dict_initialize_result_raises(self):
+        _FakeMcpTool.bad_init = True
+        with self.assertRaises(RuntimeError):
+            HttpRuntime().execute(self._op(), {}, 1, "hermes")
+
+    def test_sends_shared_secret_on_every_request(self):
+        rt = HttpRuntime(tool_secret=lambda t: "sekret" if t == "echo-mcp" else None)
+        rt.execute(self._op(), {}, 1, "hermes")
+        self.assertEqual([r["secret"] for r in _FakeMcpTool.received],
+                         ["sekret", "sekret", "sekret"])
+
+    def test_parses_sse_response(self):
+        _FakeMcpTool.mode = "sse"
+        result = HttpRuntime().execute(self._op("say"), {"m": "yo"}, 1, "hermes")
+        self.assertEqual(result["structuredContent"], {"echoed": {"m": "yo"}})
+
+    def test_jsonrpc_error_raises(self):
+        _FakeMcpTool.force_error = {"code": -32602, "message": "unknown tool"}
+        with self.assertRaises(RuntimeError):
+            HttpRuntime().execute(self._op("nope"), {}, 1, "hermes")
+
+    def test_tool_level_iserror_passes_through_without_raising(self):
+        # isError is the tool's handled-error channel (like an api tool's 200 + error
+        # body): it must reach the caller, not surface as a 502.
+        _FakeMcpTool.is_error = True
+        _FakeMcpTool.tool_result = {"message": "could not do it"}
+        result = HttpRuntime().execute(self._op("say"), {}, 1, "hermes")
+        self.assertTrue(result["isError"])
+        self.assertEqual(result["structuredContent"], {"message": "could not do it"})
+
+    def test_unreachable_tool_raises(self):
+        with self.assertRaises(RuntimeError):
+            HttpRuntime(timeout=2).execute(ToolOp("echo-mcp", "say", "read", 1, "mcp"),
+                                           {}, 1, "hermes")
+
+
 class EnvToolSecret(unittest.TestCase):
     """_env_tool_secret: the default resolver mapping a tool id to its env var."""
 

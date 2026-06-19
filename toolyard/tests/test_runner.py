@@ -30,6 +30,7 @@ from toolyard.runner import DockerRunner, ProcessRunner
 
 REPO = Path(__file__).resolve().parents[2]
 TOOL_TOML = REPO / "tools" / "echo_rest" / "toolyard.toml"
+TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
 SECRET = "dev-secret-123"
 
 
@@ -57,6 +58,21 @@ def _wait_for_tool(port: int, tries: int = 80) -> bool:
 def _call(port, op, arguments, request_id=1, caller="hermes"):
     return HttpRuntime().execute(ToolOp("echo", op, "low", port, "api"),
                                  arguments, request_id, caller)
+
+
+def _mcp_call(port, op, arguments, request_id=1, caller="hermes"):
+    return HttpRuntime().execute(ToolOp("echo-mcp", op, "read", port, "mcp"),
+                                 arguments, request_id, caller)
+
+
+def _wait_for_mcp_tool(port: int, tries: int = 80) -> bool:
+    for _ in range(tries):
+        try:
+            _mcp_call(port, "say", {})
+            return True
+        except Exception:
+            time.sleep(0.25)
+    return False
 
 
 class ProcessRunnerE2E(unittest.TestCase):
@@ -182,6 +198,32 @@ class McpOverHttpE2E(unittest.TestCase):
         inner = json.loads(result["content"][0]["text"])  # the broker's outcome body
         self.assertEqual(inner["status"], "ok")
         self.assertEqual(inner["result"], {"echoed": {"m": "hi"}})  # straight from the tool
+
+
+class McpProcessRunnerE2E(unittest.TestCase):
+    """The mcp transport end-to-end: the runner starts the real echo-mcp process (a
+    streamable-HTTP MCP server) and the broker's MCP client reaches it via the same
+    HttpRuntime.execute path the api tools use — proving type='mcp' works tool-to-broker
+    with no Docker."""
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_MCP_TOML), port=_free_port())
+        self.runner = ProcessRunner()
+        self.running = self.runner.start(self.tool, {})  # echo-mcp ships with no secrets
+        self.addCleanup(self.runner.stop, self.running)
+        if not _wait_for_mcp_tool(self.tool.port):
+            self.fail("echo-mcp tool did not start")
+
+    def test_broker_calls_tool_over_mcp(self):
+        result = _mcp_call(self.tool.port, "say", {"m": "hi"})
+        self.assertFalse(result["isError"])
+        self.assertEqual(result["structuredContent"], {"echoed": {"m": "hi"}})
+
+    def test_tool_sees_broker_context_via_meta(self):
+        result = _mcp_call(self.tool.port, "whoami", {}, request_id=99, caller="hermes")
+        who = result["structuredContent"]
+        self.assertEqual(who["caller"], "hermes")
+        self.assertEqual(who["broker_request_id"], 99)
 
 
 def _docker_ok() -> bool:
