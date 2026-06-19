@@ -1,8 +1,13 @@
 # The admin app is the one Toolstack component allowed runtime dependencies.
 # Install into a dedicated virtualenv (the broker/toolyard/client stay stdlib):
 #   python3 -m venv admin/.venv && admin/.venv/bin/pip install -r admin/requirements.txt
-fastapi
-uvicorn
+#
+# Pinned (==) so a fresh, wider deploy is reproducible — these are the versions the
+# test suite runs against. Bump deliberately (change here, re-run the admin tests).
+# Transitive deps (starlette, pydantic, anyio, …) float; for a fully frozen install
+# run `admin/.venv/bin/pip freeze > admin/requirements.lock` and install from that.
+fastapi==0.137.1
+uvicorn==0.49.0
 
 # Needed only to run the test suite (FastAPI's TestClient is built on httpx):
-httpx
+httpx==0.28.1

@@ -49,5 +49,38 @@ ExecStopPost=/opt/toolstack/TSR/admin/.venv/bin/python -c "from admin import sup
 Restart=on-failure
 RestartSec=3
 
+# --- State location -----------------------------------------------------------
+# Pin every file the service writes — broker SQLite, the admin password + session
+# key, the encrypted vault, supervisor + toolyard state, per-tool logs — under ONE
+# tree instead of an implicit $HOME. A system service's $HOME is frequently unset or
+# /nonexistent, which would otherwise send the DB and vault to an unwritable path and
+# break a clean fresh-box start. StateDirectory makes systemd create + own
+# /var/lib/toolstack (0700); XDG_*_HOME=/var/lib routes the app there (it appends
+# /toolstack/... itself). redeploy-toolstack parses these Environment= lines out of
+# this file, so the out-of-band CLI resolves the identical paths — keep them in sync.
+StateDirectory=toolstack
+Environment=XDG_STATE_HOME=/var/lib
+Environment=XDG_CONFIG_HOME=/var/lib
+
+# --- Sandboxing (systemd hardening) -------------------------------------------
+# A baseline that's safe for a Python web service (no syscall filter — it would trip
+# cryptography/uvicorn). Review against your install paths before enabling.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# ProtectSystem=strict makes the whole filesystem read-only except StateDirectory.
+# The admin git-clones imported tools into the tools dir under the checkout, and the
+# venv is read from there, so the install root must stay readable + writable.
+# EDIT: point this at your install root (the same root as the Exec lines above).
+ReadWritePaths=/opt/toolstack/TSR
+
 [Install]
 WantedBy=multi-user.target

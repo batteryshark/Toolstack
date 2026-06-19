@@ -78,14 +78,22 @@ def config_file() -> Path:
 
 
 def load() -> BrokerRunConfig:
-    """Load the saved run-config, or the defaults if none has been saved yet."""
+    """Load the saved run-config, or the defaults if none has been saved yet.
+
+    ``db_path`` is coerced to an absolute path: the admin and the broker start from
+    possibly-different working directories, so a relative ``db_path`` would resolve to
+    two different SQLite files (the admin's store and the broker's would silently
+    diverge). Absolutising once here keeps the single-source-of-truth invariant."""
     path = config_file()
     if not path.exists():
-        return BrokerRunConfig()
-    with path.open("rb") as fh:
-        data = tomllib.load(fh)
-    fields = BrokerRunConfig.__dataclass_fields__
-    return BrokerRunConfig(**{k: v for k, v in data.items() if k in fields})
+        cfg = BrokerRunConfig()
+    else:
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+        fields = BrokerRunConfig.__dataclass_fields__
+        cfg = BrokerRunConfig(**{k: v for k, v in data.items() if k in fields})
+    cfg.db_path = os.path.abspath(os.path.expanduser(cfg.db_path))
+    return cfg
 
 
 def save(config: BrokerRunConfig) -> None:

@@ -29,10 +29,13 @@ virtualenv. See [admin/README.md](../admin/README.md) for what the panel does.
 ## Install
 
 1. **Lay down the code** at your install root (the examples assume `/opt/toolstack/TSR`, owned by a `toolstack` user — change to taste) and build the admin venv (above).
-2. **Set the admin password** (the panel fails closed — it refuses to start without one):
+2. **Create the state dir and set the admin password** (the panel fails closed — it refuses to start without one). The service keeps everything it writes under `/var/lib/toolstack` (the unit's `StateDirectory` owns it); create it now so the password lands where the service will read it:
    ```bash
-   admin/.venv/bin/python -m admin set-password
+   sudo install -d -o toolstack -g toolstack -m700 /var/lib/toolstack
+   sudo -u toolstack env XDG_CONFIG_HOME=/var/lib XDG_STATE_HOME=/var/lib \
+       admin/.venv/bin/python -m admin set-password
    ```
+   The `XDG_*` values match the unit (see its "State location" block) — every manual `admin` / `brokerctl` command needs them so it resolves the same paths as the running service.
 3. **Site config** — copy and fill in the env file, then lock it down (it can hold an Infisical host / paths):
    ```bash
    sudo install -D -m600 deploy/toolstack-admin.env.example /etc/toolstack/admin.env
@@ -80,6 +83,12 @@ broker), and restarts every tool in the saved run-config. It loads the same site
 unit (`TOOLSTACK_ENV_FILE`, default `/etc/toolstack/admin.env`) so the tool restarts use the
 deployment's runner / secret backend.
 
+Two safety steps wrap the restart: it **snapshots the broker DB** first (an online SQLite
+backup under `…/broker/backups/`, newest 7 kept) and then **health-gates** the broker
+(`/v1/health`) and panel (`/login`) — if the stack doesn't come back up it stops there
+rather than restarting tools against a down broker. Run it as the `toolstack` user (it
+reads the broker's state and DB directly); `sudo` is used only for `systemctl`.
+
 ## Verify
 
 ```bash
@@ -90,12 +99,53 @@ curl -s 127.0.0.1:8780/login -o /dev/null -w '%{http_code}\n'   # the panel -> 2
 Then open the dashboard: the broker card shows healthy, and the audit view fills as
 requests flow.
 
-## Upgrading from an earlier install (migration note)
+## First run: provision an agent (headless)
 
-Older units set `XDG_STATE_HOME=…/tsr`; the template drops that and uses the app's default
-(`~/.local/state/toolstack/…`). If a previous run already saved `broker.toml`, its stored
-`db_path` still points at the **old** location — admin and broker stay consistent (both read
-`broker.toml`), so it isn't data loss, just a different SQLite file than a fresh install
-would pick. To move to the new default, update `db_path` on the dashboard Config page (or
-delete `broker.toml` to regenerate it) and migrate the SQLite file if you want the history.
-There is no DB-migration framework — assume a fresh DB on a major upgrade.
+The dashboard can do all of this, but a fresh box can be bootstrapped entirely from the
+CLI. `brokerctl` is the operator tool; run it as the service user with the same `XDG_*`
+paths as the unit so it opens the broker's DB (define a small helper to avoid repeating it):
+
+```bash
+ctl() { sudo -u toolstack env XDG_CONFIG_HOME=/var/lib XDG_STATE_HOME=/var/lib \
+    admin/.venv/bin/brokerctl "$@"; }
+
+ctl create-caller --name my-agent --allow echo_api.echo   # the agent identity + an initial grant
+ctl set-policy   --name my-agent --review some_tool.write # (optional) route an op through approval
+ctl issue-token  --name my-agent                          # prints the bearer token — copy it once
+```
+
+Give the token to the agent as its `Authorization: Bearer …`. Tighten or widen access later
+with `set-policy` (`--allow` / `--review` / `--deny`, path-scoped for `rest` tools), and
+rotate with `revoke-token` / `issue-token`. (`ctl` uses the broker's default DB path; if you
+changed `db_path` in `broker.toml`, pass `--db <path>`.)
+
+## Backups
+
+Everything persistent lives under the state dir (`/var/lib/toolstack`). Two things are worth
+backing up off-box:
+
+- **Broker SQLite** (`/var/lib/toolstack/broker/broker.sqlite3`) — callers, tokens, policies,
+  request history, audit log. Take a *consistent* copy while the broker runs with SQLite's
+  online backup (`redeploy-toolstack` does this automatically before each restart):
+  ```bash
+  sudo -u toolstack sqlite3 /var/lib/toolstack/broker/broker.sqlite3 \
+      ".backup '/var/lib/toolstack/broker/backups/manual-$(date +%F).sqlite3'"
+  ```
+- **Config + secrets** — `broker.toml` (run-config; holds the nod issuer token) and, with the
+  encrypted-vault backend, `vault.json` (both under `/var/lib/toolstack/admin/` and
+  `/var/lib/toolstack/`). The vault is useless without its passphrase — store that separately.
+
+Restore is a file copy back into place with the service stopped. There is no DB-migration
+framework — restore into the same (or a forward-compatible) version.
+
+## Upgrading from an earlier install (state location)
+
+This template pins all state under `/var/lib/toolstack` (`StateDirectory` + `XDG_*_HOME=/var/lib`).
+Earlier templates relied on the service user's `$HOME` (`~/.local/state/toolstack/…`, or an
+even older `…/tsr` path). Admin and broker both read `db_path` from `broker.toml`, so an
+upgrade isn't data loss — it just points at a different SQLite file than the old `$HOME` one.
+To keep your history, stop the service, move the old DB to
+`/var/lib/toolstack/broker/broker.sqlite3` (and the old `broker.toml` / `vault.json` under
+`/var/lib/toolstack/`), then start it. Or update `db_path` on the dashboard **Config** page to
+point at wherever the old DB lives. No DB-migration framework — assume a fresh DB across a
+major upgrade if you don't migrate.
