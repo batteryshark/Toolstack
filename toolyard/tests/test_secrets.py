@@ -296,6 +296,15 @@ class Vault(unittest.TestCase):
         resolved = VaultBackend(path, self.PW).resolve(_tool(SecretSpec("api_key", "API_KEY")))
         self.assertEqual(resolved, {"api_key": "v1"})
 
+    def test_has_secret_reports_membership_without_value(self):
+        path = self._path()
+        VaultBackend.init(path, self.PW)
+        VaultBackend(path, self.PW).set_secret("demo", "API_KEY", "v1")
+        vault = VaultBackend(path, self.PW)
+        self.assertTrue(vault.has_secret("demo", "API_KEY"))   # set
+        self.assertFalse(vault.has_secret("demo", "OTHER"))    # declared elsewhere, not set
+        self.assertFalse(vault.has_secret("nope", "API_KEY"))  # unknown tool
+
     def test_encrypted_at_rest(self):
         path = self._path()
         VaultBackend.init(path, self.PW)

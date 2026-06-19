@@ -3,6 +3,7 @@ broker status/control endpoints. No broker process is started (supervisor patche
 stopped). Requires the admin venv:  admin/.venv/bin/python -m unittest admin.tests.test_api
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -29,6 +30,10 @@ class JsonApi(unittest.TestCase):
         for key, sub in (("XDG_CONFIG_HOME", "config"), ("XDG_STATE_HOME", "state")):
             self._env[key] = os.environ.get(key)
             os.environ[key] = str(Path(self.tmp, sub))
+        # a clean secret-backend env so secret_backend() deterministically defaults to 'file'
+        for key in ("TOOLSTACK_SECRET_BACKEND", "TOOLSTACK_VAULT_FILE", "TOOLSTACK_VAULT_PASSPHRASE"):
+            self._env[key] = os.environ.get(key)
+            os.environ.pop(key, None)
         self.addCleanup(self._restore_env)
 
         settings.write_password_hash(auth.hash_password(PASSWORD))
@@ -321,6 +326,73 @@ class JsonApi(unittest.TestCase):
 
     def test_update_needs_auth(self):
         self.assertEqual(self.client.post("/api/tools/echo/update").status_code, 401)
+
+    # --- secret VALUE provisioning (local vault only) -------------------------
+    # The vault needs the 'cryptography' extra (absent from this venv), so VaultBackend is mocked
+    # here; the real encrypt/store path is covered by toolyard's vault tests + the demo container.
+    def test_set_secret_value_writes_to_vault_and_audits_without_value(self):
+        with mock.patch("admin.settings.secret_backend", return_value="vault"), \
+             mock.patch("admin.secret_values.VaultBackend") as MockVault:
+            r = self.client.post("/api/tools/echo/secrets", headers=self._auth(),
+                                 json={"field": "API_KEY", "value": "s3cr3t-value"})
+            self.assertEqual(r.status_code, 200, r.text)
+            self.assertNotIn("s3cr3t-value", r.text)   # the value is not echoed in the response
+            MockVault.from_env.return_value.set_secret.assert_called_once_with("echo", "API_KEY", "s3cr3t-value")
+        audit = self.client.get("/api/audit", headers=self._auth()).json()["audit"]
+        ev = [e for e in audit if e["event_type"] == "secret_set"][-1]
+        self.assertEqual(ev["details"]["tool"], "echo")
+        self.assertEqual(ev["details"]["field"], "API_KEY")
+        self.assertNotIn("value", ev["details"])             # the value itself is not in the event
+        self.assertNotIn("s3cr3t-value", json.dumps(audit))  # value never logged anywhere
+
+    def test_set_secret_value_rejected_for_non_vault_backend(self):
+        # default backend is 'file' -> provisioning here is refused
+        r = self.client.post("/api/tools/echo/secrets", headers=self._auth(),
+                             json={"field": "API_KEY", "value": "x"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("vault", r.json()["detail"].lower())
+
+    def test_set_secret_value_undeclared_field_400(self):
+        with mock.patch("admin.settings.secret_backend", return_value="vault"), \
+             mock.patch("admin.secret_values.VaultBackend"):
+            r = self.client.post("/api/tools/echo/secrets", headers=self._auth(),
+                                 json={"field": "NOT_DECLARED", "value": "x"})
+            self.assertEqual(r.status_code, 400)
+
+    def test_set_secret_value_empty_or_missing_400(self):
+        with mock.patch("admin.settings.secret_backend", return_value="vault"), \
+             mock.patch("admin.secret_values.VaultBackend"):
+            self.assertEqual(self.client.post("/api/tools/echo/secrets", headers=self._auth(),
+                                              json={"field": "API_KEY", "value": ""}).status_code, 400)
+            self.assertEqual(self.client.post("/api/tools/echo/secrets", headers=self._auth(),
+                                              json={"field": "API_KEY", "value": "   "}).status_code, 400)  # whitespace-only
+            self.assertEqual(self.client.post("/api/tools/echo/secrets", headers=self._auth(),
+                                              json={"value": "x"}).status_code, 400)
+
+    def test_set_secret_value_unknown_tool_404(self):
+        with mock.patch("admin.settings.secret_backend", return_value="vault"), \
+             mock.patch("admin.secret_values.VaultBackend"):
+            r = self.client.post("/api/tools/ghost/secrets", headers=self._auth(),
+                                 json={"field": "X", "value": "y"})
+            self.assertEqual(r.status_code, 404)
+
+    def test_secret_status_vault_reports_provisioned(self):
+        with mock.patch("admin.settings.secret_backend", return_value="vault"), \
+             mock.patch("admin.secret_values.VaultBackend") as MockVault:
+            MockVault.from_env.return_value.has_secret.side_effect = lambda t, f: f == "API_KEY"
+            body = self.client.get("/api/tools/echo/secrets", headers=self._auth()).json()
+        self.assertTrue(body["settable"])
+        self.assertEqual(body["fields"], ["API_KEY"])
+        self.assertEqual(body["provisioned"], ["API_KEY"])
+
+    def test_secret_status_non_vault_not_settable(self):
+        body = self.client.get("/api/tools/echo/secrets", headers=self._auth()).json()
+        self.assertFalse(body["settable"])
+        self.assertEqual(body["provisioned"], [])
+
+    def test_secret_endpoints_need_auth(self):
+        self.assertEqual(self.client.get("/api/tools/echo/secrets").status_code, 401)
+        self.assertEqual(self.client.post("/api/tools/echo/secrets", json={"field": "X", "value": "y"}).status_code, 401)
 
     def test_config_round_trip_write_only_token_and_validation(self):
         # save settings, partial-merge style

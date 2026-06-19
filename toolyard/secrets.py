@@ -240,6 +240,11 @@ class VaultBackend:
         self._data.setdefault(tool_id, {})[field] = value
         self._persist()
 
+    def has_secret(self, tool_id: str, field: str) -> bool:
+        """Whether a value is provisioned for ``tool_id.field`` — for the admin to show set/unset
+        status WITHOUT exposing the value."""
+        return field in self._data.get(tool_id, {})
+
     @classmethod
     def init(cls, path, passphrase: str) -> "VaultBackend":
         """Create a new empty encrypted vault; refuse to clobber an existing file."""

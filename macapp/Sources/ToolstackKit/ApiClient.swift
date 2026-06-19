@@ -145,6 +145,19 @@ public actor ApiClient {
         try await send("POST", "/api/tools/\(id)/update", body: [:])
     }
 
+    /// Set/unset status of a tool's declared secret fields (vault only; never the values).
+    public func secretStatus(toolId: String) async throws -> SecretStatus {
+        try await send("GET", "/api/tools/\(toolId)/secrets")
+    }
+
+    /// Provision a secret VALUE into the local vault (write-only). Returns whether it was set.
+    @discardableResult
+    public func setSecretValue(toolId: String, field: String, value: String) async throws -> Bool {
+        let result: SetSecretResult = try await send("POST", "/api/tools/\(toolId)/secrets",
+                                                     body: ["field": field, "value": value])
+        return result.set
+    }
+
     public func policy(for caller: String) async throws -> PolicyResponse {
         try await send("GET", "/api/callers/\(caller)/policy")
     }

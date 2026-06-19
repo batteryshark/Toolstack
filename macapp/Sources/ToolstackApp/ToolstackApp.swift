@@ -207,6 +207,7 @@ struct CallersPane: View {
 struct ToolsPane: View {
     @EnvironmentObject var model: AppModel
     @State private var editing: ToolInfo?
+    @State private var managingSecrets: ToolInfo?
     @State private var addingTool = false
 
     var body: some View {
@@ -251,7 +252,13 @@ struct ToolsPane: View {
                             ForEach(tool.ops) { op in opRow(op) }
                         }
                         Divider().padding(.vertical, 2)
-                        Text("Secrets").font(.caption.bold()).foregroundStyle(.secondary)
+                        HStack {
+                            Text("Secrets").font(.caption.bold()).foregroundStyle(.secondary)
+                            Spacer()
+                            if model.secretBackend?.name == "vault" && !tool.secrets.isEmpty {
+                                Button("Set values…") { managingSecrets = tool }.font(.caption)
+                            }
+                        }
                         if tool.secrets.isEmpty {
                             Text("No secrets declared.").font(.caption).foregroundStyle(.secondary)
                         } else {
@@ -270,6 +277,9 @@ struct ToolsPane: View {
         .navigationTitle("Tools")
         .sheet(item: $editing) { tool in
             ToolEditor(tool: tool).environmentObject(model)
+        }
+        .sheet(item: $managingSecrets) { tool in
+            SecretValuesSheet(tool: tool).environmentObject(model)
         }
         .task { await model.refreshTools(); await model.refreshSecretBackend() }
     }
@@ -604,6 +614,80 @@ struct EditableSecret: Identifiable {
     }
 
     init() { name = ""; field = ""; writable = false; vault = ""; item = "" }
+}
+
+/// Provision a tool's secret VALUES into the local vault. Values are write-only — typed into a
+/// SecureField, sent, and never shown back; the sheet only knows set/unset status per field.
+struct SecretValuesSheet: View {
+    let tool: ToolInfo
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var status: SecretStatus?
+    @State private var entries: [String: String] = [:]   // field -> the value being typed
+    @State private var saving: String?                    // field currently being saved
+    @State private var note: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Secret values — \(tool.id)").font(.title2.bold())
+            Text("Stored in the local encrypted vault. Values are write-only — they're saved, never "
+                 + "shown back. Restart the tool to pick up a change.")
+                .font(.caption).foregroundStyle(.secondary)
+            if status == nil {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(tool.secrets) { secretRow($0) }
+            }
+            HStack {
+                if let note { Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding().frame(minWidth: 540, minHeight: 360)
+        .task { status = await model.secretStatus(toolId: tool.id) }
+    }
+
+    private func secretRow(_ secret: SecretDecl) -> some View {
+        let isSet = status?.provisioned.contains(secret.field) ?? false
+        return HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(secret.name).bold()
+                    Image(systemName: "arrow.right").font(.caption2).foregroundStyle(.secondary)
+                    Text(secret.field).font(.caption).foregroundStyle(.secondary)
+                    Text(isSet ? "set" : "not set").font(.caption2)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background((isSet ? Color.green : .orange).opacity(0.2), in: .capsule)
+                }
+                SecureField("new value", text: binding(secret.field))
+                    .textFieldStyle(.roundedBorder).frame(maxWidth: 300)
+                    .onSubmit { Task { await save(secret.field) } }
+            }
+            Spacer()
+            Button(saving == secret.field ? "Saving…" : "Save") { Task { await save(secret.field) } }
+                .disabled((entries[secret.field] ?? "").isEmpty || saving != nil)
+        }.padding(.vertical, 3)
+    }
+
+    private func binding(_ field: String) -> Binding<String> {
+        Binding(get: { entries[field] ?? "" }, set: { entries[field] = $0 })
+    }
+
+    private func save(_ field: String) async {
+        let value = entries[field] ?? ""
+        guard !value.isEmpty else { return }
+        saving = field
+        let ok = await model.setSecretValue(toolId: tool.id, field: field, value: value)
+        saving = nil
+        if ok {
+            entries[field] = ""                                    // clear the typed value
+            note = "Saved \(field)."
+            status = await model.secretStatus(toolId: tool.id)     // refresh set/unset
+        } else {
+            note = model.error
+        }
+    }
 }
 
 /// Add a tool by pointing at a folder that contains a toolyard.toml. The path is on the ADMIN's
