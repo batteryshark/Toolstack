@@ -35,12 +35,15 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if model.authenticated {
+            if model.restoring {
+                ProgressView("Connecting…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.authenticated {
                 OperatorView()
             } else {
                 LoginView()
             }
         }
+        .task { await model.restoreSession() }   // resume a saved session on launch
         .overlay(alignment: .top) {
             if let error = model.error {
                 Text(error)

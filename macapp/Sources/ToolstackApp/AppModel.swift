@@ -8,6 +8,7 @@ import ToolstackKit
 @MainActor
 final class AppModel: ObservableObject {
     @Published var authenticated = false
+    @Published var restoring = true   // true until a stored token is checked on launch (avoids a login flash)
     @Published var broker: BrokerStatus?
     @Published var callers: [Caller] = []
     @Published var tokens: [TokenInfo] = []
@@ -46,14 +47,38 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(trimmed, forKey: AppModel.urlDefaultsKey)
         client = ApiClient(baseURL: url)   // point at whatever admin the user entered
         await run {
-            _ = try await self.client.login(password: password)
+            let token = try await self.client.login(password: password)
+            TokenStore.save(token, account: trimmed)   // remember it for next launch
             self.authenticated = true
             await self.refreshAll()
         }
     }
 
+    /// On launch, try a token saved for the current admin URL. Validate it with a lightweight authed
+    /// call; enter only on success. A 401 means it expired → forget it; any other error (admin
+    /// unreachable) keeps it for next time and just stays on the login screen.
+    func restoreSession() async {
+        defer { restoring = false }
+        let saved = serverURL.trimmingCharacters(in: .whitespaces)
+        guard let url = URL(string: saved), url.host != nil,
+              let token = TokenStore.load(account: saved) else { return }
+        let restored = ApiClient(baseURL: url)
+        await restored.setToken(token)
+        do {
+            _ = try await restored.brokerStatus()   // authed probe
+            client = restored
+            authenticated = true
+            await refreshAll()
+        } catch ApiError.unauthorized {
+            TokenStore.delete(account: saved)
+        } catch {
+            // admin unreachable / transient — keep the token, let the user sign in manually
+        }
+    }
+
     func logout() async {
         await client.setToken(nil)
+        TokenStore.delete(account: serverURL)
         authenticated = false
         broker = nil; callers = []; tokens = []; banner = nil
     }
