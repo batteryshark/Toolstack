@@ -199,6 +199,49 @@ class AdminApp(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn("echo", r.text)
 
+    def test_add_from_source_page_renders(self):
+        self._login()
+        page = self.client.get("/tools/add")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Add from folder", page.text)
+        self.assertIn("Clone and add", page.text)
+
+    def _src_manifest(self, desc, ops):
+        op_toml = "".join(f'\n[[operations]]\nname = "{n}"\nrisk = "read"\n' for n in ops)
+        return (f'id = "weather"\ntype = "api"\ndescription = "{desc}"\n'
+                f'[entrypoint]\ncommand = "x"\nport = 4700\n{op_toml}')
+
+    def test_add_tool_from_folder_then_update(self):
+        self._login()
+        csrf = _csrf(self.client.get("/").text)
+        src = Path(self.tmp, "src-weather")
+        src.mkdir()
+        (src / "toolyard.toml").write_text(self._src_manifest("v1", ["today"]), encoding="utf-8")
+
+        r = self.client.post("/tools/add-source",
+                             data={"kind": "path", "source": str(src), "_csrf": csrf})
+        self.assertEqual(r.status_code, 200)
+        copied = Path(self.tmp, "tools", "weather", "toolyard.toml")
+        self.assertTrue(copied.exists())                       # copied into the tools root
+        listing = self.client.get("/tools").text
+        self.assertIn("weather", listing)
+        self.assertIn("/tools/weather/update-source", listing)  # has a source -> Update button
+
+        # change the source; Update re-pulls its operations/entrypoint
+        (src / "toolyard.toml").write_text(self._src_manifest("v2", ["today", "tomorrow"]), encoding="utf-8")
+        r = self.client.post("/tools/weather/update-source", data={"_csrf": csrf})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(tomllib.loads(copied.read_text())["operations"]), 2)
+
+    def test_add_from_folder_without_manifest_guides_to_author(self):
+        self._login()
+        csrf = _csrf(self.client.get("/").text)
+        empty = Path(self.tmp, "src-empty")
+        empty.mkdir()
+        r = self.client.post("/tools/add-source",
+                             data={"kind": "path", "source": str(empty), "_csrf": csrf})
+        self.assertIn("Author a tool", r.text)   # NoManifest -> actionable guidance, not a 500
+
     def test_bad_tool_degrades_to_banner_not_500(self):
         # A hand-edited tool with no port makes toolyard.config.load raise (T-023); every
         # tool route must degrade to an error banner, never a 500. TestClient re-raises
