@@ -1,10 +1,10 @@
 # Toolstack — Project Plan
 
-The concrete, component-by-component build plan for the rebuild. Read
-[PROJECT.md](PROJECT.md) for the nerve-center summary; this file is the buildable
-plan you work from, one piece at a time, until each is sound enough to redeploy.
+The component-by-component architecture reference for the system — the module
+seams, the security invariants, and the per-component design. Read
+[PROJECT.md](PROJECT.md) for the nerve-center summary.
 
-**Architecture direction (2026-06-13):** collapse the logical decomposition to
+**Architecture direction:** collapse the logical decomposition to
 *deployment reality*. The fine-grained ownership rules from the earlier 9-service
 decomposition survive — but as **module seams inside one broker process**, not as
 separate network services. Security comes from physical boundaries you can point
@@ -18,9 +18,8 @@ at, not from rules written between co-equal boxes.
 > The agent can *ask*. The broker *decides*. Tools *execute*. Secrets live with
 > the tools. The agent can reach the broker and nothing else.
 
-Full reasoning: the *Trust agents with action, not access* essay (from the
-previous build, kept locally — not part of this repo). Everything below is in
-service of that one sentence.
+Full reasoning lives in the *Trust agents with action, not access* essay.
+Everything below is in service of that one sentence.
 
 ---
 
@@ -148,21 +147,6 @@ plumbing.
 
 ---
 
-## Build order (vertical slice first)
-
-Each phase ends in something you can **run and demo**. Don't move on until the
-phase's "sound" box is checked.
-
-| Phase | Goal | Sound when… |
-|---|---|---|
-| **0 — Boundary** ✅ | Tailnet ingress + broker process that binds localhost and 401s everything. | **Done** — [broker/](broker/), Python stdlib only, 16 tests. Binds `127.0.0.1`; only `GET /v1/health` open; all else `401`; every request audited. |
-| **1 — Broker core** ✅ | Identity + policy + request lifecycle + audit, against a **stub** tool. No toolyard, no approval. | **Done** — [broker/](broker/), 40 tests. Hashed tokens + immediate revocation; allow/review/deny + default-deny; lifecycle persists requests; audit in SQLite; arguments never logged. |
-| **2 — Real tools** ✅ | Toolyard + registry-read + forwarding + secrets-at-workload. | **Done** — [toolyard/](toolyard/) + a sample tool. Broker reads `toolyard.toml` (secret-unaware) and forwards to the tool on `127.0.0.1:port`; the tool reads its own secret; the broker never sees it. Process + docker backends, both verified. |
-| **3 — Approval via nod** ✅ | Approval orchestration + nod adapter (poll-based; callback deferred). | **Done** — review opens a nod decision; the agent polls `GET /v1/requests/<id>`; an approval gates execution, a rejection denies, and the broker's own timeout fails closed (even if nod later approves). Verified live + unit-tested. |
-| **4 — Admin + hardening** ✅ | `brokerctl`, policy management, redaction, revocation, rate limits. | **Done** — `brokerctl` manages callers/policies/tokens (admin actions audited); per-caller rate limit (`429`); revocation denies immediately; caller `reason` redacted in audit; the audit answers the four questions. Deferred: deliver callback, tmpfs injection, grants. |
-
----
-
 ## Component plans
 
 ### A. Broker
@@ -201,7 +185,7 @@ GET  /v1/tools, /v1/tools/<tool>.<op>   # discovery (policy-filtered to the call
 POST /v1/actions/<tool>.<op>            # 200 ran · 202 review · 403 denied · 404 unknown · 429 rate-limited · 502 tool failed · 503 no surface
 GET  /v1/requests/<id>                  # poll a request (owner only): status + result + approver/note
 # operator actions (callers/policies/tokens/audit) = brokerctl on the host, not HTTP
-# deferred: POST /mcp/<tool> (broker-native MCP)
+# POST /mcp — broker-native MCP (JSON-RPC), same auth/policy/audit
 # no approval callback route: resolution is poll-only (nod callbacks are unauthenticated, so a receiver would be forgeable)
 ```
 
@@ -384,17 +368,6 @@ Deferred, not forgotten. Don't build these until a component actually needs them
 
 ---
 
-## Path to redeploy
-
-1. Stand up the tailnet, nod (issuer token + channel), and the secret backend.
-2. Deploy the broker (Phase 0–1) — prove the boundary and fail-closed core.
-3. Deploy toolyard + one real tool (Phase 2) — prove a workload secret never
-   reaches the broker.
-4. Wire the nod adapter (Phase 3) — prove HITL and timeout.
-5. Migrate callers/policies, smoke-test each phase, then cut agents over.
-
----
-
 ## Related docs
 
 - [PROJECT.md](PROJECT.md) — nerve center and restart point.
@@ -405,5 +378,3 @@ Deferred, not forgotten. Don't build these until a component actually needs them
 - [docs/approval-surface-adapter.md](docs/approval-surface-adapter.md) — the
   contract for plugging in a different approval surface.
 - [docs/coding-standards.md](docs/coding-standards.md) — clean-code expectations.
-- The previous build (kept locally as `toolstack-old/`, not part of this repo) —
-  proven detail to port: secret resolution, SQLite shapes, HTTP surface.
