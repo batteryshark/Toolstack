@@ -9,6 +9,7 @@ from toolyard.config import discover, load
 
 REPO = Path(__file__).resolve().parents[2]
 TOOL_TOML = REPO / "tools" / "echo_rest" / "toolyard.toml"
+TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
 
 
 class Load(unittest.TestCase):
@@ -20,9 +21,16 @@ class Load(unittest.TestCase):
         self.assertEqual(tool.command, "python3 app.py")
         self.assertEqual(tool.secrets, ())   # the demo tool ships with no secrets
 
-    def test_discover_finds_echo(self):
+    def test_parses_echo_mcp_tool(self):
+        tool = load(TOOL_MCP_TOML)
+        self.assertEqual(tool.id, "echo-mcp")
+        self.assertEqual(tool.type, "mcp")    # the streamable-HTTP MCP transport
+        self.assertEqual(tool.port, 4611)
+
+    def test_discover_finds_both_echo_tools(self):
         ids = {d.id for d in discover(REPO / "tools")}
         self.assertIn("echo", ids)
+        self.assertIn("echo-mcp", ids)
 
 
 class Secrets(unittest.TestCase):
@@ -64,8 +72,8 @@ class Description(unittest.TestCase):
 
 
 class PortValidation(unittest.TestCase):
-    """A rest tool with no/invalid port must fail at load() — not reach the runner as
-    TOOLSTACK_PORT='None' / `-p 127.0.0.1:None:None`. Parallel to the broker's registry
+    """An api or mcp tool with no/invalid port must fail at load() — not reach the runner
+    as TOOLSTACK_PORT='None' / `-p 127.0.0.1:None:None`. Parallel to the broker's registry
     check (broker/tests/test_registry.py::PortValidation)."""
 
     def setUp(self):
@@ -100,6 +108,18 @@ class PortValidation(unittest.TestCase):
         tool = load(self._write(
             'id = "weather"\ntype = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n'))
         self.assertEqual(tool.port, 4700)
+
+    def test_mcp_tool_also_needs_a_port(self):
+        # an mcp tool is served on a loopback port too, so the same check applies
+        with self.assertRaises(ValueError) as cm:
+            load(self._write('id = "wx-mcp"\ntype = "mcp"\n[entrypoint]\ncommand = "x"\n'))
+        self.assertIn("'mcp'", str(cm.exception))   # message names the actual type
+
+    def test_unknown_type_rejected_even_with_a_valid_port(self):
+        # a typo'd type must fail at load, not register silently and mis-dispatch at call time
+        with self.assertRaises(ValueError) as cm:
+            load(self._write('id = "x"\ntype = "mpc"\n[entrypoint]\nport = 4700\ncommand = "c"\n'))
+        self.assertIn("unknown type", str(cm.exception))
 
 
 if __name__ == "__main__":

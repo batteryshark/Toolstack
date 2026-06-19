@@ -894,6 +894,7 @@ struct ToolAuthoringForm: View {
 
     @EnvironmentObject var model: AppModel
     @State private var id = ""
+    @State private var type = "api"
     @State private var description = ""
     @State private var command = ""
     @State private var image = ""
@@ -903,6 +904,7 @@ struct ToolAuthoringForm: View {
     @State private var saveError: String?
 
     private let risks = ["read", "write", "destructive"]   // matches admin RISK_CHOICES
+    private let toolTypes = ["api", "mcp"]                  // matches admin TOOL_TYPES
     private let argTypes = ["string", "number", "integer", "boolean", "object", "array"]
 
     var body: some View {
@@ -918,6 +920,9 @@ struct ToolAuthoringForm: View {
             Form {
                 Section("Tool") {
                     TextField("id (letters, digits, _ or -)", text: $id)
+                    Picker("transport", selection: $type) {
+                        ForEach(toolTypes, id: \.self) { Text($0).tag($0) }
+                    }
                     TextField("description (optional)", text: $description, axis: .vertical).lineLimit(1...3)
                 }
                 Section {
@@ -925,7 +930,9 @@ struct ToolAuthoringForm: View {
                     TextField("image (docker, optional)", text: $image)
                     TextField("port", text: $port)
                 } header: { Text("Entrypoint") } footer: {
-                    Text("Give a command (process) or an image (docker), plus the port the tool serves on.")
+                    Text(type == "mcp"
+                         ? "An mcp tool is a streamable-HTTP MCP server: it serves /mcp on this port; the broker calls it via tools/call (op = MCP tool name)."
+                         : "Give a command (process) or an image (docker), plus the port the tool serves on.")
                         .font(.caption)
                 }
                 Section("Operations") {
@@ -1027,7 +1034,7 @@ struct ToolAuthoringForm: View {
     private func manifest() -> [String: Any] {
         func s(_ v: String) -> String { v.trimmingCharacters(in: .whitespaces) }
         return [
-            "id": s(id), "type": "api", "description": s(description),
+            "id": s(id), "type": s(type), "description": s(description),
             "command": s(command), "image": s(image), "port": Int(s(port)) ?? 0,
             "operations": operations.compactMap { op -> [String: Any]? in
                 guard !s(op.name).isEmpty else { return nil }

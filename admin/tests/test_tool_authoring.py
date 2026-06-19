@@ -117,6 +117,13 @@ class Validate(unittest.TestCase):
         dup = [{"name": "a", "risk": "read", "args": []}, {"name": "a", "risk": "read", "args": []}]
         self.assertTrue(any("duplicate" in e for e in self._errs(operations=dup)))
 
+    def test_mcp_type_is_valid(self):
+        # mcp is an authorable transport (same entrypoint form, broker calls it over MCP)
+        self.assertEqual(self._errs(type="mcp"), [])
+
+    def test_unknown_type_rejected(self):
+        self.assertTrue(any("type must be one of" in e for e in self._errs(type="banana")))
+
 
 class ReadWrite(unittest.TestCase):
     def setUp(self):

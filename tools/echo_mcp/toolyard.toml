@@ -1,0 +1,35 @@
+# Single source of truth for the echo-mcp tool — a streamable-HTTP MCP server.
+# The broker reads only the non-secret fields (id, type, operations, port) and calls
+# this tool over MCP (initialize + tools/call) instead of POST /v1/actions/<op>.
+# The toolyard additionally reads [entrypoint] and [[secrets]].
+
+id = "echo-mcp"
+type = "mcp"
+description = "Echo tool exposed as a streamable-HTTP MCP server (the type=\"mcp\" template)."
+
+[entrypoint]
+command = "python3 app.py"   # process runner (dev/CI)
+port = 4611
+# production (docker runner): build the Dockerfile here, or set an image:
+# image = "toolstack-echo-mcp"
+
+# Operations are declared exactly like an api tool — they ARE the policy/approval unit.
+# For an mcp tool each op name is also the MCP tool name the broker invokes via tools/call.
+# 'risk' is descriptive discovery metadata; the per-caller POLICY decides approval.
+
+[[operations]]
+name = "say"
+risk = "read"
+description = "Echo the given arguments back."
+args = [ { name = "m", type = "string", required = false, description = "any value to echo back" } ]
+
+[[operations]]
+name = "whoami"
+risk = "read"
+description = "Return the calling caller name and broker request id (from the MCP call's _meta)."
+args = []
+
+# Like the api echo, this demo ships with NO secrets so it starts cleanly on any backend.
+# The optional broker_secret defense-in-depth check works the same way (see app.py
+# verify_broker): provision it in the backend AND set TOOLSTACK_TOOL_SECRET_ECHO_MCP on
+# the broker, and the X-Toolstack-Secret header rides every MCP request.

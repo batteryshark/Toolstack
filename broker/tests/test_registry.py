@@ -97,8 +97,29 @@ class FromSources(unittest.TestCase):
         self.assertEqual(reg.list_ops(), [])
 
 
+class McpType(unittest.TestCase):
+    """A type='mcp' tool registers like any other — ops are the policy unit — and its
+    ToolOp carries type='mcp' so the runtime routes it over the MCP transport."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        d = Path(self.tmp, "echo-mcp")
+        d.mkdir(parents=True)
+        (d / "toolyard.toml").write_text(
+            'id = "echo-mcp"\ntype = "mcp"\n[entrypoint]\nport = 4611\ncommand = "x"\n'
+            '[[operations]]\nname = "say"\nrisk = "read"\n')
+        self.registry = Registry.from_tools_root(self.tmp)
+
+    def test_lookup_carries_mcp_type_and_port(self):
+        op = self.registry.lookup("echo-mcp", "say")
+        self.assertIsNotNone(op)
+        self.assertEqual(op.type, "mcp")
+        self.assertEqual(op.port, 4611)
+
+
 class PortValidation(unittest.TestCase):
-    """A rest tool with no/invalid port must fail at load, naming the file + tool —
+    """An api or mcp tool with no/invalid port must fail at load, naming the file + tool —
     not register silently and 502 at call time."""
 
     def setUp(self):
@@ -139,6 +160,19 @@ class PortValidation(unittest.TestCase):
         reg = self._load('id = "weather"\ntype = "api"\n[entrypoint]\nport = 4700\n'
                          '[[operations]]\nname = "today"\nrisk = "read"\n')
         self.assertEqual(reg.lookup("weather", "today").port, 4700)
+
+    def test_mcp_tool_also_needs_a_port(self):
+        with self.assertRaises(ValueError) as cm:
+            self._load('id = "weather"\ntype = "mcp"\n[entrypoint]\ncommand = "x"\n'
+                       '[[operations]]\nname = "today"\nrisk = "read"\n')
+        self.assertIn("'mcp'", str(cm.exception))   # message names the actual type
+
+    def test_unknown_type_rejected_even_with_a_valid_port(self):
+        # a typo'd type must fail at load, not register and mis-dispatch (as api) at call time
+        with self.assertRaises(ValueError) as cm:
+            self._load('id = "weather"\ntype = "mpc"\n[entrypoint]\nport = 4700\n'
+                       '[[operations]]\nname = "today"\nrisk = "read"\n')
+        self.assertIn("unknown type", str(cm.exception))
 
 
 if __name__ == "__main__":

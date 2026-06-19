@@ -21,6 +21,11 @@ from pathlib import Path
 RISK_CHOICES = ("read", "write", "destructive")
 RISKS = RISK_CHOICES
 ARG_TYPES = ("string", "number", "integer", "boolean", "object", "array")
+# Tool transports the panel can author. "api" POSTs /v1/actions/<op>; "mcp" is a
+# streamable-HTTP MCP server the broker calls via tools/call. ("rest" passthrough lands
+# in a later slice.) Both authorable types are served on a port, so the entrypoint form
+# is identical — only the `type` differs.
+TOOL_TYPES = ("api", "mcp")
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
 _NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")             # operation / argument names
@@ -104,8 +109,8 @@ def validate(data: dict) -> list[str]:
     elif len(data["id"]) > 64:
         # the id is used as a directory name (tools_root/<id>); keep it well under filesystem limits
         errors.append("id must be at most 64 characters")
-    if data["type"] != "api":
-        errors.append('type must be "api"')
+    if data["type"] not in TOOL_TYPES:
+        errors.append(f'type must be one of {", ".join(TOOL_TYPES)}')
     # An entrypoint may be a process command, a docker image, or neither — a docker tool
     # that builds the Dockerfile in its own directory. Since that last case depends on the
     # directory (which validate can't see), write() enforces the "must have *some*

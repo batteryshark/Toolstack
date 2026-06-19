@@ -11,6 +11,12 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+# Tool transports this toolyard knows how to run. "api" answers /v1/actions/<op>; "mcp"
+# is a streamable-HTTP MCP server. (The passthrough "rest" type lands in a later slice.)
+# An unknown type is rejected at load — never accepted silently. Mirrors broker/registry.py
+# and admin/tool_authoring.py (independent packages, so the set is duplicated, not shared).
+TOOL_TYPES = ("api", "mcp")
+
 
 @dataclass(frozen=True)
 class SecretSpec:
@@ -39,19 +45,25 @@ def load(toml_path: str | Path) -> ToolDef:
         data = tomllib.load(f)
     entry = data.get("entrypoint", {})
     tool_type = data.get("type", "api")
+    # Reject an unknown/typo'd type at load — never accept it silently (it would otherwise
+    # register and only mis-dispatch at call time).
+    if tool_type not in TOOL_TYPES:
+        raise ValueError(
+            f"{path}: tool {data.get('id')!r} has unknown type {tool_type!r} "
+            f"(known: {', '.join(TOOL_TYPES)})"
+        )
     port = entry.get("port")
-    # An api tool is served at 127.0.0.1:<port>; a missing/invalid port would otherwise
-    # reach the runner as TOOLSTACK_PORT="None" (process) or `-p 127.0.0.1:None:None`
-    # (docker) and fail opaquely — reject it at load instead. This mirrors the broker's
-    # registry check (broker/registry.py); the two packages stay independent, so the
-    # small predicate is duplicated rather than shared. bool is an int subclass, so a
-    # `port = true` must not slip through.
-    if tool_type == "api" and not (
-        isinstance(port, int) and not isinstance(port, bool) and 1 <= port <= 65535
-    ):
+    # Every tool type is served on 127.0.0.1:<port> (an api tool answers /v1/actions/<op>;
+    # an mcp tool serves streamable-HTTP MCP at /mcp). A missing/invalid port would otherwise
+    # reach the runner as TOOLSTACK_PORT="None" (process) or `-p 127.0.0.1:None:None` (docker)
+    # and fail opaquely — reject it at load instead. This mirrors the broker's registry check
+    # (broker/registry.py); the two packages stay independent, so the small predicate is
+    # duplicated rather than shared. bool is an int subclass, so a `port = true` must not slip
+    # through.
+    if not (isinstance(port, int) and not isinstance(port, bool) and 1 <= port <= 65535):
         raise ValueError(
             f"{path}: tool {data.get('id')!r} needs an [entrypoint] port "
-            f"(integer 1-65535) for an 'api' tool; got {port!r}"
+            f"(integer 1-65535) for a {tool_type!r} tool; got {port!r}"
         )
     secrets = tuple(
         SecretSpec(
