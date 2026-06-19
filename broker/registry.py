@@ -11,6 +11,7 @@ tool discovery.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,12 @@ TOOL_TYPES = ("api", "mcp", "rest")
 # toolyard.toml. Mirrors admin/tool_authoring.REST_VERB_RISK (independent package, duplicated).
 REST_VERB_RISK = {"GET": "read", "POST": "write", "PUT": "write",
                   "PATCH": "write", "DELETE": "destructive"}
+
+# A tool id is the routing key and a directory name; it must match this charset — and crucially
+# must NOT contain a dot. A policy spec is split on the FIRST dot into (tool, op) (see
+# broker/operations.build_policy), so a dotted id like "my.tool" mis-parses and silently
+# misroutes its policy. Mirrors admin/tool_authoring._ID_RE (independent packages, duplicated).
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,16 @@ class Registry:
     def _add_toml(catalog: dict, toml_path: Path) -> None:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
+        tool_id = data.get("id")
+        # Fail closed at load — naming the file + id — on a missing/invalid id, like the port
+        # check below. The admin panel enforces this charset; a hand-written toolyard.toml is
+        # the unchecked path, where a dotted id would become a catalog key and break tool.op
+        # policy routing only later.
+        if not (isinstance(tool_id, str) and _ID_RE.match(tool_id)):
+            raise ValueError(
+                f"{toml_path}: invalid tool id {tool_id!r} (letters, digits, _ or - only; "
+                f"no dots — a dot breaks tool.op policy routing)"
+            )
         entry = data.get("entrypoint", {})
         tool_type = data.get("type", "api")
         # Reject an unknown/typo'd type at load — never register it silently (it would
@@ -80,7 +97,7 @@ class Registry:
                 "args": o.get("args", []),
             }
         # NOTE: data["secrets"] is deliberately never read here.
-        catalog[data["id"]] = {"port": port, "type": tool_type, "ops": ops}
+        catalog[tool_id] = {"port": port, "type": tool_type, "ops": ops}
 
     @classmethod
     def from_tools_root(cls, root: str | Path) -> "Registry":
@@ -123,6 +140,6 @@ class Registry:
         ops = []
         for tool, entry in self._catalog.items():
             for op, meta in entry["ops"].items():
-                ops.append({"tool": tool, "op": op, "risk": meta["risk"],
+                ops.append({"tool": tool, "op": op, "type": entry["type"], "risk": meta["risk"],
                             "description": meta["description"]})
         return ops

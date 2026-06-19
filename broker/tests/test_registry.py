@@ -62,6 +62,11 @@ class FromToolsRoot(unittest.TestCase):
         for forbidden in ("CLIENT_ID", "SUPER_SECRET_VALUE", "client_id", "secrets"):
             self.assertNotIn(forbidden, blob)
 
+    def test_list_ops_carries_tool_type(self):
+        # the policy editor branches on type (rest tools get a path-rule UI), so discovery exposes it
+        self.assertTrue(self.registry.list_ops())
+        self.assertTrue(all(op["type"] == "api" for op in self.registry.list_ops()))
+
 
 class FromSources(unittest.TestCase):
     """from_sources combines a tools root with explicit per-tool directories
@@ -206,6 +211,51 @@ class PortValidation(unittest.TestCase):
             self._load('id = "weather"\ntype = "mpc"\n[entrypoint]\nport = 4700\n'
                        '[[operations]]\nname = "today"\nrisk = "read"\n')
         self.assertIn("unknown type", str(cm.exception))
+
+
+class IdValidation(unittest.TestCase):
+    """A tool id must match the routing charset — and especially carry no dot: a policy spec is
+    split on the FIRST dot into (tool, op) (broker/operations.build_policy), so a dotted id like
+    'my.tool' would silently misroute its policy. Reject it at load, naming the file + id."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _load(self, toml: str):
+        d = Path(self.tmp, "tool")
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "toolyard.toml").write_text(toml)
+        return Registry.from_tools_root(self.tmp)
+
+    def test_dotted_id_raises_naming_the_id(self):
+        with self.assertRaises(ValueError) as cm:
+            self._load('id = "my.tool"\ntype = "api"\n[entrypoint]\nport = 4700\n'
+                       '[[operations]]\nname = "say"\nrisk = "read"\n')
+        msg = str(cm.exception)
+        self.assertIn("my.tool", msg)
+        self.assertIn("id", msg)
+
+    def test_slash_in_id_raises(self):
+        with self.assertRaises(ValueError):
+            self._load('id = "my/tool"\ntype = "api"\n[entrypoint]\nport = 4700\n'
+                       '[[operations]]\nname = "say"\nrisk = "read"\n')
+
+    def test_missing_id_raises(self):
+        with self.assertRaises(ValueError):
+            self._load('type = "api"\n[entrypoint]\nport = 4700\n'
+                       '[[operations]]\nname = "say"\nrisk = "read"\n')
+
+    def test_id_with_leading_dash_raises(self):
+        # the charset requires a leading alphanumeric (so an id is never confusable with a flag)
+        with self.assertRaises(ValueError):
+            self._load('id = "-tool"\ntype = "api"\n[entrypoint]\nport = 4700\n'
+                       '[[operations]]\nname = "say"\nrisk = "read"\n')
+
+    def test_valid_id_with_dash_and_underscore_loads(self):
+        reg = self._load('id = "my-cool_tool2"\ntype = "api"\n[entrypoint]\nport = 4700\n'
+                         '[[operations]]\nname = "say"\nrisk = "read"\n')
+        self.assertIsNotNone(reg.lookup("my-cool_tool2", "say"))
 
 
 if __name__ == "__main__":

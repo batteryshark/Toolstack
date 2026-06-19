@@ -7,6 +7,7 @@ This is the same file the broker's registry reads; the toolyard additionally rea
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,12 @@ from pathlib import Path
 # broker/registry.py and admin/tool_authoring.py (independent packages, so the set is
 # duplicated, not shared).
 TOOL_TYPES = ("api", "mcp", "rest")
+
+# A tool id is the routing key and a directory name; it must match this charset — and must NOT
+# contain a dot, since the broker splits a policy spec on the FIRST dot into (tool, op), so a
+# dotted id like "my.tool" silently misroutes policy. Mirrors broker/registry._ID_RE and
+# admin/tool_authoring._ID_RE (independent packages, so the pattern is duplicated, not shared).
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
 
 
 @dataclass(frozen=True)
@@ -44,6 +51,15 @@ def load(toml_path: str | Path) -> ToolDef:
     path = Path(toml_path)
     with open(path, "rb") as f:
         data = tomllib.load(f)
+    tool_id = data.get("id")
+    # Reject a missing/invalid id at load, naming the file + id — mirrors the broker registry's
+    # check (broker/registry.py). A dotted id would slip through here and only misroute policy
+    # in the broker later.
+    if not (isinstance(tool_id, str) and _ID_RE.match(tool_id)):
+        raise ValueError(
+            f"{path}: invalid tool id {tool_id!r} (letters, digits, _ or - only; "
+            f"no dots — a dot breaks tool.op policy routing)"
+        )
     entry = data.get("entrypoint", {})
     tool_type = data.get("type", "api")
     # Reject an unknown/typo'd type at load — never accept it silently (it would otherwise
@@ -77,7 +93,7 @@ def load(toml_path: str | Path) -> ToolDef:
         for s in data.get("secrets", [])
     )
     return ToolDef(
-        id=data["id"],
+        id=tool_id,
         type=tool_type,
         port=port,
         command=entry.get("command"),

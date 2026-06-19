@@ -128,6 +128,48 @@ class AdminApp(unittest.TestCase):
         self.assertTrue(any(e["event_type"] == "policy_changed" for e in store.audit_events()))
         self.assertTrue(any(e["event_type"] == "tools_changed" for e in store.audit_events()))
 
+    def test_rest_tool_path_rule_editor_round_trip(self):
+        # a rest tool in the tools root gets the (verb, path, effect) rule editor, not op selects
+        kv = Path(self.tmp, "tools", "kv")
+        kv.mkdir(parents=True)
+        (kv / "toolyard.toml").write_text(
+            'id = "kv"\ntype = "rest"\n[entrypoint]\nport = 4621\ncommand = "x"\n'
+            '[[operations]]\nname = "GET"\nrisk = "read"\n'
+            '[[operations]]\nname = "DELETE"\nrisk = "destructive"\n', encoding="utf-8")
+        self._login()
+        csrf = _csrf(self.client.get("/").text)
+        self.client.post("/callers", data={"name": "hermes", "_csrf": csrf})
+        tools = self.client.get("/callers/hermes/tools")
+        self.client.post("/callers/hermes/tools",
+                         data={"tool__kv": "on", "_csrf": _csrf(tools.text)}, follow_redirects=False)
+
+        pol = self.client.get("/callers/hermes/policy")
+        self.assertIn("rules__kv", pol.text)        # the rule-row container
+        self.assertIn("POLICY_VERBS", pol.text)      # the JS seed
+        self.assertIn("path rules", pol.text)
+        self.assertNotIn("op__kv__GET", pol.text)    # NOT the verb-level selects
+
+        rules = json.dumps([
+            {"verb": "GET", "pattern": "/items/**", "effect": "allow"},
+            {"verb": "GET", "pattern": "/items/secret", "effect": "deny"},   # carve-out
+            {"verb": "DELETE", "pattern": "", "effect": "review"},           # bare verb = any path
+        ])
+        r = self.client.post("/callers/hermes/policy",
+                             data={"rest_rules__kv": rules, "_csrf": _csrf(pol.text)},
+                             follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+        store = self._store()
+        kvpol = store.policy_for(store.caller_by_name("hermes")["id"])["tools"]["kv"]
+        self.assertEqual(kvpol, {"GET /items/**": "allow", "GET /items/secret": "deny",
+                                 "DELETE": "review"})
+
+        # malformed rest_rules JSON (not JSON / non-list / non-dict elements) must degrade, not 500
+        for bad in ["not json", '{"x":1}', '["x", 5, null]']:
+            r = self.client.post("/callers/hermes/policy",
+                                 data={"rest_rules__kv": bad, "_csrf": _csrf(pol.text)},
+                                 follow_redirects=False)
+            self.assertEqual(r.status_code, 303)
+
     def test_revoke_token_via_panel(self):
         self._login()
         csrf = _csrf(self.client.get("/").text)

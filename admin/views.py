@@ -52,6 +52,8 @@ pre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:aut
 .card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}
 .argrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
 .argrow input{min-width:120px;}
+.rule-row{display:flex;gap:8px;align-items:center;margin:6px 0;}
+.rule-row .r-pattern{flex:1;min-width:160px;}
 .sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}
 .sechead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 2px;}
 .secrow input{min-width:0;width:100%;}
@@ -189,6 +191,53 @@ _TOOL_EDITOR_JS = """
       })
     };
     document.getElementById('tool_json').value = JSON.stringify(tool);
+  });
+})();
+"""
+
+# Policy editor: for a rest tool, builds (verb, path-glob, effect) rule rows from
+# window.POLICY_RULES, lets the operator add/remove them, and serializes each tool's rows to a
+# hidden `rest_rules__<tool>` field on submit. window.POLICY_VERBS gives each tool's verbs.
+_POLICY_RULES_JS = """
+(function(){
+  var RULES = window.POLICY_RULES || {};
+  var VERBS = window.POLICY_VERBS || {};
+  var EFFECTS = ["deny","review","allow"];
+  function he(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function opt(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+he(v)+'</option>';}).join('');}
+  function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
+  function ruleRow(tool, r){
+    r = r || {};
+    var verbs = VERBS[tool] || [];
+    var row = mk('<div class="rule-row">'
+      + '<select class="r-verb">'+opt(verbs, r.verb||verbs[0])+'</select>'
+      + '<input class="r-pattern" placeholder="/path/** (blank = any path)">'
+      + '<select class="r-effect">'+opt(EFFECTS, r.effect||'allow')+'</select>'
+      + '<button type="button" class="rm">remove</button></div>');
+    row.querySelector('.r-pattern').value = r.pattern || '';
+    row.querySelector('.rm').onclick = function(){row.remove();};
+    return row;
+  }
+  Object.keys(VERBS).forEach(function(tool){
+    var box = document.getElementById('rules__'+tool);
+    if(!box) return;
+    (RULES[tool]||[]).forEach(function(r){box.appendChild(ruleRow(tool, r));});
+    var add = document.getElementById('addrule__'+tool);
+    if(add) add.onclick = function(){box.appendChild(ruleRow(tool));};
+  });
+  var form = document.getElementById('policy-form');
+  if(form) form.addEventListener('submit', function(){
+    Object.keys(VERBS).forEach(function(tool){
+      var box = document.getElementById('rules__'+tool);
+      if(!box) return;
+      var rules = [].map.call(box.querySelectorAll('.rule-row'), function(row){
+        return {verb: row.querySelector('.r-verb').value,
+                pattern: row.querySelector('.r-pattern').value,
+                effect: row.querySelector('.r-effect').value};
+      });
+      var hidden = document.getElementById('rest_rules__'+tool);
+      if(hidden) hidden.value = JSON.stringify(rules);
+    });
   });
 })();
 """
@@ -516,15 +565,8 @@ def caller_tools_view(*, user, csrf, caller, all_tools, enabled, error=None) -> 
 def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, error=None) -> str:
     err = f"<div class='error'>{esc(error)}</div>" if error else ""
     tool_policies = current.get("tools", {})
-    # a rest path-scoped key has a space in its op part ("GET /items/**"); this verb-level
-    # editor can't manage those, so warn the operator (saving here would drop them — the POST
-    # handler refuses), and point them at the macapp / brokerctl.
-    if any(" " in key for ops in tool_policies.values() for key in ops):
-        err += ("<div class='error'>This caller has path-scoped rules. Edit them in the macapp "
-                "app or with <code>brokerctl set-policy --allow/--deny</code> — this web editor "
-                "manages verb-level effects only and won't save over path rules.</div>")
     sections = [
-        f"{err}<form method='post' action='/callers/{esc(caller)}/policy'>",
+        f"{err}<form id='policy-form' method='post' action='/callers/{esc(caller)}/policy'>",
         _csrf_field(csrf),
         "<section class='row'>"
         f"<a class='button' href='/'>Back</a>"
@@ -544,8 +586,29 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, err
             msg = ("No tools found in the configured tools root. Start the broker with a "
                    "valid tools root to manage policy.")
         sections.append(f"<section><p class='muted'>{msg}</p></section>")
+    rest_rules: dict = {}   # tool -> [{verb, pattern, effect}] (seeds the JS rule rows)
+    rest_verbs: dict = {}   # tool -> [verb, ...] (the verbs the tool exposes)
     for tool, ops in sorted(ops_by_tool.items()):
         current_ops = tool_policies.get(tool, {})
+        if ops and ops[0].get("type") == "rest":
+            # rest tool: edit (verb, path-glob, effect) rules instead of per-verb effects
+            rest_verbs[tool] = [op["op"] for op in ops]
+            rules = []
+            for key, effect in current_ops.items():
+                verb, _, pattern = key.partition(" ")
+                rules.append({"verb": verb, "pattern": pattern, "effect": effect})
+            rest_rules[tool] = rules
+            sections.append(
+                "<section>"
+                f"<h2>{esc(tool)} <span class='muted'>(rest — path rules)</span></h2>"
+                "<p class='muted'>Most specific wins; a path matching no rule is denied. "
+                "Blank pattern = any path; an explicit deny carves a hole inside a broader allow.</p>"
+                f"<div id='rules__{esc(tool)}' class='rules'></div>"
+                f"<button type='button' id='addrule__{esc(tool)}'>Add rule</button>"
+                f"<input type='hidden' id='rest_rules__{esc(tool)}' name='rest_rules__{esc(tool)}'>"
+                "</section>"
+            )
+            continue
         op_rows = []
         for op in ops:
             name = op["op"]
@@ -574,6 +637,11 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, err
             f"<tbody>{''.join(op_rows)}</tbody></table></section>"
         )
     sections.append("</form>")
+    if rest_verbs:  # seed + wire the rule-row editor for the rest tools on this page
+        rules_js = json.dumps(rest_rules).replace("</", "<\\/")
+        verbs_js = json.dumps(rest_verbs).replace("</", "<\\/")
+        sections.append(f"<script>window.POLICY_RULES={rules_js};window.POLICY_VERBS={verbs_js};</script>"
+                        f"<script>{_POLICY_RULES_JS}</script>")
     return page(f"Policy · {caller}", "".join(sections), user=user, csrf=csrf)
 
 
