@@ -205,6 +205,7 @@ struct CallersPane: View {
 
 struct ToolsPane: View {
     @EnvironmentObject var model: AppModel
+    @State private var editing: ToolInfo?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -219,10 +220,26 @@ struct ToolsPane: View {
             } else {
                 List(model.tools) { tool in
                     DisclosureGroup {
-                        ForEach(tool.ops) { op in opRow(op) }
-                        if !tool.secrets.isEmpty {
+                        HStack(alignment: .top) {
+                            if tool.description.isEmpty {
+                                Text("No description.").font(.callout).foregroundStyle(.secondary)
+                            } else {
+                                Text(tool.description).font(.callout)
+                            }
+                            Spacer()
+                            Button("Edit…") { editing = tool }.font(.caption)
+                        }
+                        .padding(.vertical, 2)
+                        if !tool.ops.isEmpty {
                             Divider().padding(.vertical, 2)
-                            Text("Secrets").font(.caption.bold()).foregroundStyle(.secondary)
+                            Text("Operations").font(.caption.bold()).foregroundStyle(.secondary)
+                            ForEach(tool.ops) { op in opRow(op) }
+                        }
+                        Divider().padding(.vertical, 2)
+                        Text("Secrets").font(.caption.bold()).foregroundStyle(.secondary)
+                        if tool.secrets.isEmpty {
+                            Text("No secrets declared.").font(.caption).foregroundStyle(.secondary)
+                        } else {
                             ForEach(tool.secrets) { secretRow($0) }
                         }
                     } label: {
@@ -236,6 +253,9 @@ struct ToolsPane: View {
             }
         }
         .navigationTitle("Tools")
+        .sheet(item: $editing) { tool in
+            ToolEditor(tool: tool).environmentObject(model)
+        }
         .task { await model.refreshTools(); await model.refreshSecretBackend() }
     }
 
@@ -432,6 +452,129 @@ struct EnabledToolsEditor: View {
         await model.setEnabledTools(caller: caller, enabled: Array(selected))
         dismiss()
     }
+}
+
+/// Edit a tool's description and its secret DECLARATIONS (not values, and not its ops/entrypoint —
+/// those are authored on the filesystem and preserved server-side). Maps to `POST /api/tools/{id}`.
+struct ToolEditor: View {
+    let tool: ToolInfo
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var description: String
+    @State private var secrets: [EditableSecret]
+    @State private var saveError: String?
+
+    init(tool: ToolInfo) {
+        self.tool = tool
+        _description = State(initialValue: tool.description)
+        _secrets = State(initialValue: tool.secrets.map(EditableSecret.init(from:)))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Edit tool — \(tool.id)").font(.title2.bold())
+            Form {
+                Section("Description") {
+                    TextField("What this tool does", text: $description, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+                Section {
+                    if secrets.isEmpty {
+                        Text("No secrets declared.").foregroundStyle(.secondary)
+                    }
+                    ForEach(secrets) { sec in
+                        secretRow(binding(for: sec)) { secrets.removeAll { $0.id == sec.id } }
+                    }
+                    Button { secrets.append(EditableSecret()) } label: {
+                        Label("Add secret", systemImage: "plus")
+                    }
+                } header: {
+                    Text("Secret declarations")
+                } footer: {
+                    Text("Declarations only — the file the tool reads (name) and the backend key (field). "
+                         + "Values stay in the \(model.secretBackend?.name ?? "secret") backend. "
+                         + "Saving rewrites toolyard.toml (operations are kept; comments are not).")
+                        .font(.caption)
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                if let saveError {
+                    Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.red).lineLimit(2)
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") { Task { await save() } }
+                    .keyboardShortcut(.defaultAction).disabled(model.busy)
+            }
+        }
+        .padding()
+        .frame(minWidth: 540, minHeight: 480)
+    }
+
+    private func secretRow(_ sec: Binding<EditableSecret>, onDelete: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                TextField("name (file)", text: sec.name)
+                TextField("field (backend key)", text: sec.field)
+                Toggle("writable", isOn: sec.writable).toggleStyle(.checkbox).fixedSize()
+                Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+            }
+            HStack {
+                TextField("vault (Infisical, optional)", text: sec.vault)
+                TextField("item (Infisical, optional)", text: sec.item)
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// An id-keyed binding so editing/deleting stays correct even as rows are added/removed
+    /// (no reliance on array indices, which can go stale mid-render).
+    private func binding(for sec: EditableSecret) -> Binding<EditableSecret> {
+        Binding(
+            get: { secrets.first { $0.id == sec.id } ?? sec },
+            set: { newValue in
+                if let i = secrets.firstIndex(where: { $0.id == sec.id }) { secrets[i] = newValue }
+            })
+    }
+
+    private func save() async {
+        let decls: [SecretDecl] = secrets.compactMap { row in
+            let name = row.name.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { return nil }   // a blank row is dropped, mirroring the server
+            let vault = row.vault.trimmingCharacters(in: .whitespaces)
+            let item = row.item.trimmingCharacters(in: .whitespaces)
+            return SecretDecl(name: name,
+                              field: row.field.trimmingCharacters(in: .whitespaces),
+                              writable: row.writable,
+                              vault: vault.isEmpty ? nil : vault,
+                              item: item.isEmpty ? nil : item)
+        }
+        await model.updateTool(id: tool.id, description: description, secrets: decls)
+        // Keep the sheet (and edits) open if the server rejected it, surfacing why inline — the
+        // dashboard banner would be hidden behind this sheet.
+        if model.error == nil { dismiss() } else { saveError = model.error }
+    }
+}
+
+/// A mutable secret-declaration row for the tool editor (converted to `SecretDecl` on save).
+struct EditableSecret: Identifiable {
+    let id = UUID()
+    var name: String
+    var field: String
+    var writable: Bool
+    var vault: String
+    var item: String
+
+    init(from decl: SecretDecl) {
+        name = decl.name; field = decl.field; writable = decl.writable
+        vault = decl.vault ?? ""; item = decl.item ?? ""
+    }
+
+    init() { name = ""; field = ""; writable = false; vault = ""; item = "" }
 }
 
 /// Editable broker settings (broker.toml). The nod token is write-only — blank keeps the stored

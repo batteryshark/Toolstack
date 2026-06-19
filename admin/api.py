@@ -19,7 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from broker import operations
 from broker.registry import Registry
 
-from . import auth, broker_config, settings, supervisor, toolyard_ops
+from . import auth, broker_config, settings, supervisor, tool_authoring, toolyard_ops
 from .store_access import open_store
 
 # broker lifecycle action -> the admin.* audit event it records (shared with the HTML handler)
@@ -209,11 +209,55 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
         for tool in tools:
             tool["ops"] = ops_by_tool.get(tool["id"], [])
             td = defs.get(tool["id"])
+            tool["description"] = td.description if td else ""
             tool["secrets"] = [
                 {"name": s.name, "field": s.field, "writable": s.writable, "vault": s.vault, "item": s.item}
                 for s in (td.secrets if td else ())
             ]
         return {"tools": tools}
+
+    @app.post("/api/tools/{tool_id}")
+    async def api_edit_tool(tool_id: str, request: Request, user: str = Depends(require_user)):
+        """Edit a tool's description and/or secret DECLARATIONS, preserving its operations and
+        entrypoint. Mirrors the HTML panel's tool editor (admin.tool_authoring), but scoped to the
+        two fields the native app edits. Secret *values* are never touched (they stay in the backend).
+        """
+        data = await _json_object(request)
+        config = broker_config.load()
+        try:
+            tools = toolyard_ops.list_tools(config.tools_root, config.tool_dirs)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"could not read tools: {exc}")
+        by_id = {t["id"]: t for t in tools}
+        if tool_id not in by_id:
+            raise HTTPException(status_code=404, detail=f"no such tool: {tool_id}")
+        dir_path = by_id[tool_id]["path"]
+        try:
+            tool = tool_authoring.read(dir_path)  # full current def (ops/entrypoint/secrets/description)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"could not read tool: {exc}")
+        # Only these two fields are editable here; id/command/image/port/operations come from
+        # `read()` (disk) and are intentionally NOT overridable from the body — a tool can't be
+        # repointed at other code via this endpoint.
+        if "description" in data:
+            if not isinstance(data["description"], str):
+                raise HTTPException(status_code=400, detail="description must be a string")
+            tool["description"] = data["description"]
+        if "secrets" in data:
+            if not isinstance(data["secrets"], list):
+                raise HTTPException(status_code=400, detail="secrets must be a list")
+            tool["secrets"] = data["secrets"]  # replace: sending `secrets` overwrites all declarations; omit to keep
+        tool = tool_authoring.normalize(tool)
+        errors = tool_authoring.validate(tool)
+        if errors:
+            raise HTTPException(status_code=400, detail="; ".join(errors))
+        try:
+            tool_authoring.write(dir_path, tool)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        with open_store(config) as store:
+            operations.record_admin_event(store, user, "tool_edited", {"tool": tool_id, "dir": dir_path})
+        return {"id": tool["id"], "description": tool["description"], "secrets": tool["secrets"]}
 
     @app.get("/api/config")
     async def api_config(user: str = Depends(require_user)):

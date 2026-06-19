@@ -30,6 +30,7 @@ class ToolDef:
     image: str | None  # docker runner image (built from path if absent)
     secrets: tuple[SecretSpec, ...]
     path: Path  # directory containing toolyard.toml (and the tool's files)
+    description: str = ""  # optional tool-level summary (the broker registry ignores it)
 
 
 def load(toml_path: str | Path) -> ToolDef:
@@ -70,6 +71,7 @@ def load(toml_path: str | Path) -> ToolDef:
         image=entry.get("image"),
         secrets=secrets,
         path=path.parent,
+        description=data.get("description", ""),
     )
 
 

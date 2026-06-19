@@ -31,6 +31,22 @@ class Load(unittest.TestCase):
         self.assertIsNone(spec.vault)
         self.assertIsNone(spec.item)
 
+    def test_description_defaults_empty(self):
+        # The echo tool declares no top-level description.
+        self.assertEqual(load(TOOL_TOML).description, "")
+
+
+class Description(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_parses_top_level_description(self):
+        p = Path(self.tmp, "toolyard.toml")
+        p.write_text('id = "weather"\ntype = "rest"\ndescription = "Weather lookups"\n'
+                     '[entrypoint]\nport = 4700\ncommand = "x"\n')
+        self.assertEqual(load(p).description, "Weather lookups")
+
 
 class PortValidation(unittest.TestCase):
     """A rest tool with no/invalid port must fail at load() — not reach the runner as

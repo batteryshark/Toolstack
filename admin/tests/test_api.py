@@ -12,7 +12,7 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from admin import auth, broker_config, settings
+from admin import auth, broker_config, settings, tool_authoring
 from admin.broker_config import BrokerRunConfig
 from admin.server import create_app
 from broker.store import Store
@@ -34,7 +34,8 @@ class JsonApi(unittest.TestCase):
         tool_dir = Path(self.tmp, "tools", "echo")
         tool_dir.mkdir(parents=True)
         (tool_dir / "toolyard.toml").write_text(
-            'id = "echo"\ntype = "rest"\n\n[entrypoint]\nport = 4601\n\n'
+            'id = "echo"\ntype = "rest"\ndescription = "echo tool"\n\n'
+            '[entrypoint]\ncommand = "python3 app.py"\nport = 4601\n\n'
             '[[operations]]\nname = "say"\nrisk = "low"\ndescription = "echo a message"\n\n'
             '[[secrets]]\nname = "api_key"\nfield = "API_KEY"\nwritable = true\n',
             encoding="utf-8")
@@ -183,6 +184,7 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(tools.status_code, 200)
         echo = next(t for t in tools.json()["tools"] if t["id"] == "echo")
         self.assertEqual([op["op"] for op in echo["ops"]], ["say"])  # ops attached for the policy editor
+        self.assertEqual(echo["description"], "echo tool")
         self.assertEqual(echo["secrets"], [{"name": "api_key", "field": "API_KEY",
                                             "writable": True, "vault": None, "item": None}])
         cfg = self.client.get("/api/config", headers=self._auth())
@@ -190,6 +192,54 @@ class JsonApi(unittest.TestCase):
         self.assertIn("port", cfg.json())
         sb = self.client.get("/api/secret-backend", headers=self._auth()).json()
         self.assertIn("name", sb)
+
+    def test_edit_tool_updates_description_and_secrets(self):
+        r = self.client.post("/api/tools/echo", headers=self._auth(), json={
+            "description": "now with feeling",
+            "secrets": [{"name": "api_key", "field": "NEW_KEY", "writable": False},
+                        {"name": "token", "field": "TOKEN", "writable": True, "vault": "Proj"}]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["description"], "now with feeling")
+        # the change is persisted: GET reflects the new description + secrets, ops untouched
+        echo = next(t for t in self.client.get("/api/tools", headers=self._auth()).json()["tools"]
+                    if t["id"] == "echo")
+        self.assertEqual(echo["description"], "now with feeling")
+        self.assertEqual({s["field"] for s in echo["secrets"]}, {"NEW_KEY", "TOKEN"})
+        self.assertEqual([op["op"] for op in echo["ops"]], ["say"])  # operations preserved
+
+    def test_edit_tool_description_only_keeps_secrets(self):
+        # Omitting "secrets" leaves the existing declarations in place.
+        self.client.post("/api/tools/echo", headers=self._auth(), json={"description": "just a note"})
+        echo = next(t for t in self.client.get("/api/tools", headers=self._auth()).json()["tools"]
+                    if t["id"] == "echo")
+        self.assertEqual(echo["description"], "just a note")
+        self.assertEqual([s["name"] for s in echo["secrets"]], ["api_key"])
+
+    def test_edit_tool_ignores_entrypoint_and_ops_in_body(self):
+        # Security-critical: the endpoint edits ONLY description + secrets. command/image/port/
+        # operations come from disk and must NOT be overridable via the request body — otherwise a
+        # caller could repoint a tool at arbitrary code.
+        r = self.client.post("/api/tools/echo", headers=self._auth(), json={
+            "description": "x", "command": "rm -rf /", "image": "evil:latest",
+            "port": 9999, "operations": [{"name": "pwn", "risk": "low"}]})
+        self.assertEqual(r.status_code, 200, r.text)
+        on_disk = tool_authoring.read(Path(self.tmp, "tools", "echo"))
+        self.assertEqual(on_disk["command"], "python3 app.py")  # unchanged
+        self.assertEqual(on_disk["image"], "")                  # not injected
+        self.assertEqual(on_disk["port"], 4601)                 # unchanged
+        self.assertEqual([o["name"] for o in on_disk["operations"]], ["say"])  # unchanged
+
+    def test_edit_tool_unknown_404(self):
+        r = self.client.post("/api/tools/ghost", headers=self._auth(), json={"description": "x"})
+        self.assertEqual(r.status_code, 404)
+
+    def test_edit_tool_invalid_secret_400(self):
+        r = self.client.post("/api/tools/echo", headers=self._auth(),
+                             json={"secrets": [{"name": "bad name", "field": "X"}]})
+        self.assertEqual(r.status_code, 400)
+
+    def test_edit_tool_needs_auth(self):
+        self.assertEqual(self.client.post("/api/tools/echo", json={"description": "x"}).status_code, 401)
 
     def test_config_round_trip_write_only_token_and_validation(self):
         # save settings, partial-merge style

@@ -148,6 +148,7 @@ _TOOL_EDITOR_JS = """
   document.getElementById('f_id').value = initial.id||'';
   document.getElementById('f_command').value = initial.command||'';
   document.getElementById('f_image').value = initial.image||'';
+  document.getElementById('f_description').value = initial.description||'';
   document.getElementById('f_port').value = initial.port||'';
   var ops = document.getElementById('ops');
   (initial.operations && initial.operations.length ? initial.operations : [{}]).forEach(function(o){ops.appendChild(opCard(o));});
@@ -160,6 +161,7 @@ _TOOL_EDITOR_JS = """
     var tool = {
       id: document.getElementById('f_id').value,
       type: 'rest',
+      description: document.getElementById('f_description').value,
       command: document.getElementById('f_command').value,
       image: document.getElementById('f_image').value,
       port: document.getElementById('f_port').value,
@@ -613,6 +615,8 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         f"<form id='tool-form' method='post' action='{action}'>"
         f"{_csrf_field(csrf)}{dir_field}"
         f"<label class='field'>id <input id='f_id' placeholder='weather'{id_attr} required></label>"
+        "<label class='field'>description <span class='muted'>(optional)</span>"
+        "<textarea id='f_description' rows='2' placeholder='what this tool does'></textarea></label>"
         "<label class='field'>entrypoint command (process backend)"
         "<input id='f_command' placeholder='python3 app.py'></label>"
         "<label class='field'>image (docker backend, optional)"

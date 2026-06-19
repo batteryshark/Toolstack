@@ -13,7 +13,7 @@ from toolyard.config import load as load_tool
 
 FULL = {
     "id": "weather", "type": "rest", "command": "python3 app.py", "image": "",
-    "port": 4700,
+    "description": "Weather lookups", "port": 4700,
     "operations": [
         {"name": "today", "risk": "low", "description": "Today's weather",
          "args": [{"name": "city", "type": "string", "required": True, "description": "city name"}]},
@@ -59,6 +59,22 @@ class Serialize(unittest.TestCase):
         parsed = tomllib.loads(tool_authoring.to_toml(data))
         self.assertEqual(parsed["operations"][0]["description"], 'echoes "quoted" text')
 
+    def test_tool_description_round_trips(self):
+        parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(FULL)))
+        self.assertEqual(parsed["description"], "Weather lookups")
+
+    def test_blank_tool_description_omitted(self):
+        parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize({**FULL, "description": ""})))
+        self.assertNotIn("description", parsed)
+
+    def test_multiline_description_escaped_not_broken(self):
+        # A pasted multi-line description must escape to \n, not emit a literal newline that
+        # would make the TOML basic string invalid.
+        data = tool_authoring.normalize({**FULL, "description": "line one\nline two"})
+        toml_text = tool_authoring.to_toml(data)
+        self.assertIn("\\n", toml_text)
+        self.assertEqual(tomllib.loads(toml_text)["description"], "line one\nline two")
+
     def test_docker_image_entrypoint(self):
         data = tool_authoring.normalize({**FULL, "command": "", "image": "ghcr.io/x/y:1"})
         parsed = tomllib.loads(tool_authoring.to_toml(data))
@@ -103,6 +119,7 @@ class ReadWrite(unittest.TestCase):
         tool_authoring.write(self.tmp, tool_authoring.normalize(FULL))
         again = tool_authoring.read(self.tmp)
         self.assertEqual(again["id"], "weather")
+        self.assertEqual(again["description"], "Weather lookups")
         self.assertEqual(len(again["operations"]), 2)
         self.assertEqual(again["operations"][0]["args"][0]["name"], "city")
         self.assertEqual(again["secrets"][0]["field"], "API_KEY")
@@ -113,6 +130,7 @@ class ReadWrite(unittest.TestCase):
         self.assertEqual(reg.lookup("weather", "today").port, 4700)
         td = load_tool(Path(self.tmp, "toolyard.toml"))
         self.assertEqual(td.id, "weather")
+        self.assertEqual(td.description, "Weather lookups")
         self.assertEqual(td.secrets[0].field, "API_KEY")
 
     def test_write_invalid_raises(self):

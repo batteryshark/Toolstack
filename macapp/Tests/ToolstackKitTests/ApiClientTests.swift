@@ -206,6 +206,33 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(backend.path, "/data/vault.json")
     }
 
+    func testListToolsDecodesDescription() async throws {
+        let json = #"{"tools":[{"id":"echo","type":"rest","description":"echoes input","port":4601,"#
+                 + #""running":false,"ops":[],"secrets":[]}]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let tools = try await makeClient(token: "t").listTools()
+        XCTAssertEqual(tools.first?.description, "echoes input")
+    }
+
+    func testUpdateToolPostsDescriptionAndSecrets() async throws {
+        let json = #"{"id":"echo","description":"new","secrets":[{"name":"api_key","field":"K","writable":true,"#
+                 + #""vault":null,"item":null}]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let result = try await makeClient(token: "t").updateTool(
+            id: "echo", description: "new",
+            secrets: [SecretDecl(name: "api_key", field: "K", writable: true)])
+        XCTAssertEqual(result.description, "new")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/echo")
+        let body = try bodyJSON()
+        XCTAssertEqual(body["description"] as? String, "new")
+        let secrets = try XCTUnwrap(body["secrets"] as? [[String: Any]])
+        XCTAssertEqual(secrets.first?["field"] as? String, "K")
+        XCTAssertEqual(secrets.first?["writable"] as? Bool, true)
+        // a declaration with no vault/item omits those keys (file backend stays clean)
+        XCTAssertNil(secrets.first?["vault"])
+    }
+
     func testGetPolicyDecodes() async throws {
         let json = #"{"name":"hermes","policy":{"tools":{"echo":{"say":"allow"}}},"enabled":["echo"]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }

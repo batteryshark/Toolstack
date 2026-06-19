@@ -100,6 +100,21 @@ public actor ApiClient {
         try await send("GET", "/api/secret-backend")
     }
 
+    /// Edit a tool's description and secret DECLARATIONS (its ops/entrypoint are preserved
+    /// server-side). Secret *values* are never sent — these are declarations (name/field/…).
+    @discardableResult
+    public func updateTool(id: String, description: String,
+                           secrets: [SecretDecl]) async throws -> ToolEdit {
+        let secretsBody: [[String: Any]] = secrets.map { s in
+            var row: [String: Any] = ["name": s.name, "field": s.field, "writable": s.writable]
+            if let vault = s.vault, !vault.isEmpty { row["vault"] = vault }
+            if let item = s.item, !item.isEmpty { row["item"] = item }
+            return row
+        }
+        return try await send("POST", "/api/tools/\(id)",
+                              body: ["description": description, "secrets": secretsBody])
+    }
+
     public func policy(for caller: String) async throws -> PolicyResponse {
         try await send("GET", "/api/callers/\(caller)/policy")
     }
