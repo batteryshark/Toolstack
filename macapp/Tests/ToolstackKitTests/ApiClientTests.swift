@@ -129,9 +129,9 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testRevokeCallerPosts() async throws {
-        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"name":"hermes","cancelled_approvals":2}"#.utf8)) }
+        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"name":"hermes"}"#.utf8)) }
         let result = try await makeClient(token: "t").revokeCaller("hermes")
-        XCTAssertEqual(result.cancelledApprovals, 2)  // snake_case -> camelCase
+        XCTAssertEqual(result.name, "hermes")
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/callers/hermes/revoke")
     }
 
@@ -404,6 +404,6 @@ final class ApiClientTests: XCTestCase {
         let resp = try await client.listCallers()
         XCTAssertEqual(resp.callers.first?.name, "hermes")
         XCTAssertTrue(try XCTUnwrap(resp.callers.first).isActive)
-        XCTAssertEqual(resp.tokens.first?.tokenHash, "abcd")  // token_hash -> tokenHash
+        // the response's "tokens" key is ignored (unknown keys don't break the decode)
     }
 }
