@@ -380,6 +380,37 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
             operations.record_admin_event(store, user, "secret_set", {"tool": tool_id, "field": field})
         return {"field": field, "set": True}
 
+    # Per-tool lifecycle. Declared AFTER the literal /update and /secrets routes so those match
+    # first; this catches start | stop | restart. Mirrors the HTML panel's /toolyard/tools/{id}/{action}.
+    _TOOL_EVENTS = {"start": "tool_started", "stop": "tool_stopped", "restart": "tool_restarted"}
+
+    @app.post("/api/tools/{tool_id}/{action}")
+    async def api_tool_action(tool_id: str, action: str, user: str = Depends(require_user)):
+        """Start / stop / restart a tool via the toolyard. Returns the tool's refreshed run state."""
+        if action not in _TOOL_EVENTS:
+            raise HTTPException(status_code=400, detail=f"unknown tool action: {action}")
+        config = broker_config.load()
+        try:
+            tools = toolyard_ops.list_tools(config.tools_root, config.tool_dirs)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"could not read tools: {exc}")
+        if tool_id not in {t["id"] for t in tools}:
+            raise HTTPException(status_code=404, detail=f"no such tool: {tool_id}")
+        try:
+            if action == "stop":
+                toolyard_ops.stop(tool_id)
+            else:
+                getattr(toolyard_ops, action)(
+                    tool_id, config.tools_root, config.tool_dirs,
+                    settings.tool_secrets_file(), settings.tool_runner_backend())
+        except Exception as exc:  # a failed spawn/build is a 502, not a 500
+            raise HTTPException(status_code=502, detail=f"tool {action} failed: {exc}")
+        with open_store(config) as store:
+            operations.record_admin_event(store, user, _TOOL_EVENTS[action], {"tool": tool_id})
+        updated = next((t for t in toolyard_ops.list_tools(config.tools_root, config.tool_dirs)
+                        if t["id"] == tool_id), {"id": tool_id})
+        return updated
+
     @app.get("/api/config")
     async def api_config(user: str = Depends(require_user)):
         return broker_config.load().masked()  # masked: never returns the nod token

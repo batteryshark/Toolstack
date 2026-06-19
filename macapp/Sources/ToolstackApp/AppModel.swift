@@ -93,6 +93,14 @@ final class AppModel: ObservableObject {
         await run { self.tools = try await self.client.listTools() }
     }
 
+    /// Start / stop / restart a tool, then refresh so its row reflects the new run state.
+    func toolAction(id: String, action: String) async {
+        await run {
+            _ = try await self.client.toolAction(id: id, action: action)
+            await self.refreshTools()
+        }
+    }
+
     func updateTool(id: String, description: String, secrets: [SecretDecl]) async {
         await run {
             _ = try await self.client.updateTool(id: id, description: description, secrets: secrets)
