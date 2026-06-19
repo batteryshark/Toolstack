@@ -17,7 +17,9 @@ import re
 import tomllib
 from pathlib import Path
 
-RISKS = ("low", "medium", "high")
+# The risk taxonomy: read / write / destructive. (One vocabulary — no low/medium/high.)
+RISK_CHOICES = ("read", "write", "destructive")
+RISKS = RISK_CHOICES
 ARG_TYPES = ("string", "number", "integer", "boolean", "object", "array")
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
@@ -56,7 +58,7 @@ def normalize(data: dict) -> dict:
             })
         operations.append({
             "name": name,
-            "risk": s(o.get("risk")) or "low",
+            "risk": s(o.get("risk")) or "read",
             "description": s(o.get("description")),
             "args": args,
         })
@@ -104,8 +106,10 @@ def validate(data: dict) -> list[str]:
         errors.append("id must be at most 64 characters")
     if data["type"] != "rest":
         errors.append('type must be "rest"')
-    if not data["command"] and not data["image"]:
-        errors.append("provide an entrypoint command (process backend) or image (docker backend)")
+    # An entrypoint may be a process command, a docker image, or neither — a docker tool
+    # that builds the Dockerfile in its own directory. Since that last case depends on the
+    # directory (which validate can't see), write() enforces the "must have *some*
+    # entrypoint" rule where it has the path.
     if not isinstance(data["port"], int) or not (1 <= data["port"] <= 65535):
         errors.append("port must be an integer between 1 and 65535")
     if not data["operations"]:
@@ -149,6 +153,16 @@ def _arg_inline(arg: dict) -> str:
     if arg.get("description"):
         parts.append(f"description = {_s(arg['description'])}")
     return "{ " + ", ".join(parts) + " }"
+
+
+def entrypoint_error(data: dict, dir_path: str | Path) -> str | None:
+    """The one validity rule that depends on the tool's directory: a tool with neither a
+    process ``command`` nor a docker ``image`` must ship a ``Dockerfile`` to build. Returns
+    an error string or None. Kept out of :func:`validate` (which is pure) so ``write`` and
+    the add-from-source flows apply it wherever they have the directory."""
+    if not data["command"] and not data["image"] and not (Path(dir_path) / "Dockerfile").exists():
+        return "provide an entrypoint command, an image, or a Dockerfile in the tool directory"
+    return None
 
 
 def to_toml(data: dict) -> str:
@@ -205,6 +219,9 @@ def write(dir_path: str | Path, data: dict) -> Path:
     path = Path(dir_path)
     if not path.is_dir():
         raise ValueError(f"not an existing directory: {dir_path}")
+    ep_err = entrypoint_error(data, path)
+    if ep_err:
+        raise ValueError(ep_err)
     target = path / "toolyard.toml"
     target.write_text(to_toml(data), encoding="utf-8")
     return target

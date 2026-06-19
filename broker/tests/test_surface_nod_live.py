@@ -54,7 +54,7 @@ class NodSurfaceLive(unittest.TestCase):
         # Unique per run so a rerun doesn't dedupe onto a prior run's request.
         self.card = build_card(
             request_id=int(time.time()),
-            caller="tsr-selftest", tool="echo", op="ping", risk="low",
+            caller="tsr-selftest", tool="echo", op="ping", risk="read",
             reason="surface_nod live contract test",
             justification="automated open->poll->cancel cycle; safe to reject",
         )

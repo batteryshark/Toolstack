@@ -18,7 +18,7 @@ from broker.surface_nod import NodSurface
 
 CARD = OperationCard(
     request_id=7, title="Approve echo.shout for caller hermes",
-    caller="hermes", tool="echo", op="shout", risk="high", reason="policy review",
+    caller="hermes", tool="echo", op="shout", risk="destructive", reason="policy review",
 )
 
 # nod v1.0.1 CreateDecisionRequest accepts exactly these top-level fields

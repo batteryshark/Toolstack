@@ -17,19 +17,19 @@ port = 4601
 
 [[operations]]
 name = "say"
-risk = "low"
+risk = "read"
 description = "Echo the given arguments back."
 args = [ { name = "m", type = "string", required = false, description = "any value to echo back" } ]
 
 [[operations]]
 name = "whoami"
-risk = "low"
+risk = "read"
 description = "Return the calling caller name and broker request id."
 args = []
 
 [[operations]]
 name = "secret_status"
-risk = "low"
+risk = "read"
 description = "Report whether the tool can read its api_key secret (length only, never the value)."
 args = []
 

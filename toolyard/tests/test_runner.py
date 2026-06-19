@@ -149,7 +149,7 @@ class McpOverHttpE2E(unittest.TestCase):
 
         # a real broker whose registry forwards echo.say to the running tool's port
         registry = Registry({"echo": {"port": self.tool.port, "type": "rest",
-                                      "ops": {"say": {"risk": "low", "description": "", "args": []}}}})
+                                      "ops": {"say": {"risk": "read", "description": "", "args": []}}}})
         self.server = build_server(port=0, db_path=":memory:", audit_sink=None, registry=registry)
         store = self.server.ctx.store
         caller_id = store.add_caller("hermes")

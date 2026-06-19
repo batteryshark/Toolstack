@@ -46,9 +46,9 @@ pre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:aut
 .pill.bad{background:#ffe8e8;color:#8c1f1f;}
 .pill.muted{background:#eef1f5;color:#697483;}
 .risk{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;background:#eef1f5;color:#333;}
-.risk.low,.risk.read{background:#e8f5ff;color:#185d8f;}
-.risk.medium,.risk.write{background:#fff6df;color:#7a5100;}
-.risk.high,.risk.destructive{background:#ffe8e8;color:#8c1f1f;}
+.risk.read{background:#e8f5ff;color:#185d8f;}
+.risk.write{background:#fff6df;color:#7a5100;}
+.risk.destructive{background:#ffe8e8;color:#8c1f1f;}
 .card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}
 .argrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
 .argrow input{min-width:120px;}
@@ -95,8 +95,10 @@ document.addEventListener('DOMContentLoaded', function(){
 _TOOL_EDITOR_JS = """
 (function(){
   var ARG_TYPES = ["string","number","integer","boolean","object","array"];
+  var RISK_CHOICES = ["read","write","destructive"];
   function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
   function opts(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+v+'</option>';}).join('');}
+  function riskOpts(sel){return RISK_CHOICES.indexOf(sel)<0 ? [sel].concat(RISK_CHOICES) : RISK_CHOICES;}
 
   function argRow(a){
     a = a||{};
@@ -115,7 +117,7 @@ _TOOL_EDITOR_JS = """
     o = o||{};
     var card = mk('<div class="card opcard"><div class="row">'
       + '<input class="op-name" placeholder="operation name">'
-      + '<select class="op-risk">'+opts(["low","medium","high"], o.risk||'low')+'</select>'
+      + '<select class="op-risk">'+opts(riskOpts(o.risk||'read'), o.risk||'read')+'</select>'
       + '<input class="op-desc" placeholder="description">'
       + '<button type="button" class="rm">remove op</button></div>'
       + '<div class="args"></div><button type="button" class="add-arg">add argument</button></div>');
@@ -617,10 +619,12 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         f"<label class='field'>id <input id='f_id' placeholder='weather'{id_attr} required></label>"
         "<label class='field'>description <span class='muted'>(optional)</span>"
         "<textarea id='f_description' rows='2' placeholder='what this tool does'></textarea></label>"
-        "<label class='field'>entrypoint command (process backend)"
+        "<label class='field'>entrypoint command <span class='muted'>(process backend)</span>"
         "<input id='f_command' placeholder='python3 app.py'></label>"
-        "<label class='field'>image (docker backend, optional)"
+        "<label class='field'>image <span class='muted'>(docker backend)</span>"
         "<input id='f_image' placeholder='ghcr.io/owner/tool:tag'></label>"
+        "<p class='muted'>Leave both blank for a docker tool that builds the "
+        "<code>Dockerfile</code> in its own directory.</p>"
         "<label class='field'>port <input id='f_port' type='number' placeholder='4700' required></label>"
         "<h3>Operations</h3><div id='ops'></div>"
         "<button type='button' id='add-op'>Add operation</button>"
