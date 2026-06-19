@@ -10,7 +10,8 @@ let package = Package(
     platforms: [.macOS(.v13)],
     targets: [
         .target(name: "ToolstackKit"),
-        .executableTarget(name: "ToolstackApp", dependencies: ["ToolstackKit"]),
+        .executableTarget(name: "ToolstackApp", dependencies: ["ToolstackKit"],
+                          resources: [.copy("Resources/MenuBarIcon.png")]),
         .testTarget(name: "ToolstackKitTests", dependencies: ["ToolstackKit"]),
     ]
 )

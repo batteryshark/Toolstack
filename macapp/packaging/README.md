@@ -60,7 +60,11 @@ Bump `CFBundleShortVersionString` (marketing, e.g. `0.2.0`) and `CFBundleVersion
 `packaging/Info.plist` per release. The bundle id `com.toolstack.operator` matches the Keychain
 service the app uses to remember your login — keep them in sync.
 
-## Icon
+## Icons
 
-Drop an `AppIcon.icns` into `packaging/`, uncomment the two marked lines in `build-app.sh` and
-`Info.plist`, and rebuild.
+- **App icon** — generated at build time (`sips` + `iconutil`) from `packaging/AppIcon-source.png`
+  (a 1024×1024 PNG). Replace that file and rebuild to rebrand; no `.icns` is committed.
+- **Menu-bar (systray) glyph** — `Sources/ToolstackApp/Resources/MenuBarIcon.png`, a 36×36
+  *template* image (alpha = the glyph, RGB ignored) so macOS tints it for the light/dark menu bar.
+  It's a SwiftPM resource loaded via `Bundle.module`; `build-app.sh` copies the resource bundle into
+  the `.app` so it resolves there too.
