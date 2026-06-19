@@ -138,6 +138,13 @@ public actor ApiClient {
         return try await send("POST", "/api/tools", body: body)
     }
 
+    /// Add a tool by copying a folder of CODE (no toolyard.toml needed) and writing the authored
+    /// `manifest` (id/entrypoint/operations/secrets) into the copy — the "author it in-app" flow.
+    @discardableResult
+    public func addToolWithManifest(source: String, manifest: [String: Any]) async throws -> CreatedTool {
+        try await send("POST", "/api/tools", body: ["source": source, "manifest": manifest])
+    }
+
     /// Re-pull a tool from its recorded source (the folder or repo it was added from), keeping the
     /// operator's description + secret edits. Only valid for tools added through TSR (have a sidecar).
     @discardableResult

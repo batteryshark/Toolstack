@@ -110,37 +110,68 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Add a tool by copying a local folder into the broker's tools dir.
-    func addTool(source: String) async {
-        await performAdd { try await self.client.addTool(source: source) }
+    /// Outcome of adding from a local folder: it landed, or the folder has no toolyard.toml (so the
+    /// UI offers to author one), or it failed (with `error` set).
+    enum AddOutcome { case added, needsManifest, failed }
+
+    /// Add a tool by copying a local folder into the broker's tools dir. A folder without a
+    /// toolyard.toml returns `.needsManifest` so the caller can open the authoring sheet.
+    func addTool(source: String) async -> AddOutcome {
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            let created = try await client.addTool(source: source)
+            await refreshTools()
+            banner = "Added \(created.id). Restart the broker to register it, then grant a caller access."
+            return .added
+        } catch ApiError.http(422, _) {
+            return .needsManifest
+        } catch ApiError.unauthorized {
+            authenticated = false; error = ApiError.unauthorized.message; return .failed
+        } catch let apiError as ApiError {
+            error = apiError.message; return .failed
+        } catch let other {
+            error = other.localizedDescription; return .failed
+        }
+    }
+
+    /// Author a tool from a folder of code: copy it in and write the manifest you built in the app.
+    func authorTool(source: String, manifest: [String: Any]) async -> Bool {
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            let created = try await client.addToolWithManifest(source: source, manifest: manifest)
+            await refreshTools()
+            banner = "Added \(created.id) (authored). Restart the broker to register it, then grant a caller access."
+            return true
+        } catch let apiError as ApiError {
+            if case .unauthorized = apiError { authenticated = false }
+            error = apiError.message; return false
+        } catch let other {
+            error = other.localizedDescription; return false
+        }
     }
 
     /// Add a tool by cloning a git repo (optionally a subdir, at a branch/tag) into the tools dir.
     func addToolFromGitHub(repo: String, subdir: String, ref: String) async {
-        await performAdd { try await self.client.addToolFromGitHub(repo: repo, subdir: subdir, ref: ref) }
-    }
-
-    /// Shared add bookkeeping. A source without a toolyard.toml comes back 422 — surfaced as a
-    /// friendly note (in-app authoring is the next step) rather than a raw server error.
-    private func performAdd(_ op: @escaping () async throws -> CreatedTool) async {
         busy = true
         error = nil
+        defer { busy = false }
         do {
-            let created = try await op()
+            let created = try await client.addToolFromGitHub(repo: repo, subdir: subdir, ref: ref)
             await refreshTools()
             banner = "Added \(created.id). Restart the broker to register it, then grant a caller access."
         } catch ApiError.http(422, _) {
-            error = "No toolyard.toml at that location — it's code, not a tool yet. "
-                  + "Authoring a manifest in-app is the next step."
+            error = "That repo/subdir has no toolyard.toml — point at one that does, or add it from a local folder to author it."
         } catch ApiError.unauthorized {
-            authenticated = false
-            error = ApiError.unauthorized.message
+            authenticated = false; error = ApiError.unauthorized.message
         } catch let apiError as ApiError {
             error = apiError.message
         } catch let other {
             error = other.localizedDescription
         }
-        busy = false
     }
 
     @Published var secretBackend: SecretBackend?

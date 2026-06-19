@@ -216,23 +216,54 @@ def _ingest(tool_dir: Path, root: Path, existing_ids, meta: dict) -> dict:
     tool_id = tool["id"]
     if tool_id in set(existing_ids):
         raise ValueError(f"a tool named '{tool_id}' already exists")
+    dest = _copy_tool_dir(tool_dir, root, tool_id)
+    write_source(dest, meta)
+    td = load_tool(dest / "toolyard.toml")
+    return {"id": td.id, "type": td.type, "description": td.description, "path": str(dest)}
+
+
+def add_with_manifest(source: str, tools_root: str, existing_ids, manifest: dict) -> dict:
+    """The 'point at code, author the tool in-app' flow: copy a folder that need NOT contain a
+    toolyard.toml into ``tools_root/<id>`` and write the authored manifest into the copy. Returns
+    ``{id, type, description, path}``. Raises ``ValueError`` on a bad source / invalid manifest / id
+    clash. NO source sidecar is written — there's no upstream manifest to re-pull, so the tool isn't
+    'updatable' (its id/ops are what you authored; description+secrets stay editable)."""
+    src = _resolved_dir(source)
+    if not tools_root:
+        raise ValueError("no tools_root is configured")
+    root = Path(tools_root)
+    if src.resolve() == root.resolve() or root.resolve() in src.resolve().parents:
+        raise ValueError("source folder is inside the tools dir; choose a folder outside it")
+    tool = tool_authoring.normalize(manifest)
+    errors = tool_authoring.validate(tool)   # also bounds the id to a safe single path component
+    if errors:
+        raise ValueError("; ".join(errors))
+    tool_id = tool["id"]
+    if tool_id in set(existing_ids):
+        raise ValueError(f"a tool named '{tool_id}' already exists")
+    dest = _copy_tool_dir(src, root, tool_id)
+    tool_authoring.write(dest, tool)   # write the authored toolyard.toml into the copied code
+    td = load_tool(dest / "toolyard.toml")
+    return {"id": td.id, "type": td.type, "description": td.description, "path": str(dest)}
+
+
+def _copy_tool_dir(src: Path, root: Path, tool_id: str) -> Path:
+    """Copy ``src`` into ``root/<tool_id>`` (rejecting a clash), rolling back a half-copy on failure.
+    ``symlinks=True`` copies links verbatim rather than dereferencing them, so a link in the source
+    can't materialize outside-file CONTENT into the managed (possibly synced) tools dir."""
     dest = root / tool_id
     if dest.exists():
         raise ValueError(f"a folder named '{tool_id}' already exists in the tools dir")
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
-        # symlinks=True copies links verbatim rather than dereferencing them, so a link in the
-        # source can't materialize outside-file CONTENT into the managed (possibly synced) tools dir.
-        shutil.copytree(tool_dir, dest, ignore=_IGNORE, symlinks=True)
+        shutil.copytree(src, dest, ignore=_IGNORE, symlinks=True)
     except shutil.Error as exc:
         shutil.rmtree(dest, ignore_errors=True)   # don't leave a half-copied dir that wedges retries
         raise ValueError("could not copy all of the tool's files") from exc
     except OSError as exc:
         shutil.rmtree(dest, ignore_errors=True)
         raise ValueError(f"could not copy the tool's files: {exc.strerror or 'I/O error'}") from exc
-    write_source(dest, meta)
-    td = load_tool(dest / "toolyard.toml")
-    return {"id": td.id, "type": td.type, "description": td.description, "path": str(dest)}
+    return dest
 
 
 def write_source(tool_dir: str | Path, meta: dict) -> None:

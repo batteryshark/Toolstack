@@ -228,8 +228,11 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
         data = await _json_object(request)
         repo = (data.get("repo") or "").strip()
         source = (data.get("source") or "").strip()
+        manifest = data.get("manifest")
         if not repo and not source:
             raise HTTPException(status_code=400, detail="provide a source (folder path) or repo (git URL)")
+        if manifest is not None and not isinstance(manifest, dict):
+            raise HTTPException(status_code=400, detail="manifest must be an object")
         config = broker_config.load()
         try:
             existing = [t["id"] for t in toolyard_ops.list_tools(config.tools_root, config.tool_dirs)]
@@ -240,6 +243,9 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
                 tool = tool_sources.add_from_github(
                     repo, config.tools_root, existing,
                     subdir=data.get("subdir", ""), ref=data.get("ref", ""))
+            elif manifest is not None:
+                # author-from-code-only: copy the folder + write the supplied manifest (no toolyard.toml needed)
+                tool = tool_sources.add_with_manifest(source, config.tools_root, existing, manifest)
             else:
                 tool = tool_sources.add_from_path(source, config.tools_root, existing)
         except tool_sources.NoManifest:

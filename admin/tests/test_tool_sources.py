@@ -222,6 +222,49 @@ class AddFromGithub(unittest.TestCase):
         self.assertIn("private", str(cm.exception).lower())   # not git's raw "could not read Username"
 
 
+class AddWithManifest(unittest.TestCase):
+    MANIFEST = {
+        "id": "authored", "type": "rest", "command": "python3 app.py", "port": 4800,
+        "operations": [{"name": "go", "risk": "low", "description": "do it", "args": []}],
+        "secrets": [],
+    }
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="tool-authored-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.code = self.tmp / "code"        # a folder of CODE with no toolyard.toml
+        self.code.mkdir()
+        (self.code / "app.py").write_text("# code, no manifest\n", encoding="utf-8")
+        self.root = self.tmp / "tools_root"
+
+    def test_copies_code_and_writes_manifest_no_sidecar(self):
+        from toolyard.config import load as load_tool
+        tool = tool_sources.add_with_manifest(str(self.code), str(self.root), [], self.MANIFEST)
+        self.assertEqual(tool["id"], "authored")
+        dest = self.root / "authored"
+        self.assertTrue((dest / "app.py").exists())          # the code came along
+        self.assertTrue((dest / "toolyard.toml").exists())   # authored manifest written
+        self.assertEqual(load_tool(dest / "toolyard.toml").id, "authored")
+        self.assertIsNone(tool_sources.read_source(dest))    # NO sidecar -> not "updatable"
+
+    def test_invalid_manifest_rejected(self):
+        with self.assertRaises(ValueError):                  # no operations
+            tool_sources.add_with_manifest(str(self.code), str(self.root), [], {**self.MANIFEST, "operations": []})
+
+    def test_id_clash_rejected(self):
+        with self.assertRaises(ValueError):
+            tool_sources.add_with_manifest(str(self.code), str(self.root), ["authored"], self.MANIFEST)
+
+    def test_bad_source_rejected(self):
+        with self.assertRaises(ValueError):
+            tool_sources.add_with_manifest(str(self.tmp / "nope"), str(self.root), [], self.MANIFEST)
+
+    def test_traversal_id_rejected_nothing_written(self):
+        with self.assertRaises(ValueError):
+            tool_sources.add_with_manifest(str(self.code), str(self.root), [], {**self.MANIFEST, "id": "../evil"})
+        self.assertFalse((self.tmp / "evil").exists())       # id guard ran before any copy
+
+
 class Update(unittest.TestCase):
     def setUp(self):
         from admin import tool_authoring

@@ -306,6 +306,23 @@ class JsonApi(unittest.TestCase):
         r = self.client.post("/api/tools", headers=self._auth(), json={"repo": "file:///etc/passwd"})
         self.assertEqual(r.status_code, 400)
 
+    def test_add_tool_with_manifest_authors_code_only_folder(self):
+        code = Path(self.tmp, "code_only")
+        code.mkdir()
+        (code / "app.py").write_text("# code, no manifest\n", encoding="utf-8")
+        r = self.client.post("/api/tools", headers=self._auth(), json={
+            "source": str(code),
+            "manifest": {"id": "authored", "type": "rest", "command": "python3 app.py", "port": 4800,
+                         "operations": [{"name": "go", "risk": "low"}]}})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["id"], "authored")
+        ids = [t["id"] for t in self.client.get("/api/tools", headers=self._auth()).json()["tools"]]
+        self.assertIn("authored", ids)
+
+    def test_add_tool_manifest_must_be_object_400(self):
+        r = self.client.post("/api/tools", headers=self._auth(), json={"source": "/x", "manifest": "nope"})
+        self.assertEqual(r.status_code, 400)
+
     def test_tool_source_in_listing_and_update(self):
         src = self._tool_folder("src_wtool", "wtool")
         self.client.post("/api/tools", headers=self._auth(), json={"source": str(src)})
