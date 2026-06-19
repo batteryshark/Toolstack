@@ -85,6 +85,7 @@ fi
 if [[ "$SKIP_TOOLS" -eq 0 ]]; then
   echo "==> Restarting registered tools"
   "$VENV_PY" - <<'PY'
+import sys
 from admin import broker_config, settings, toolyard_ops
 
 cfg = broker_config.load()
@@ -93,17 +94,28 @@ if not tools:
     print("no tools registered")
     raise SystemExit(0)
 
+failed = []
 for tool in tools:
     tool_id = tool["id"]
-    print(f"{tool_id}: restarting")
-    toolyard_ops.restart(
-        tool_id,
-        cfg.tools_root,
-        cfg.tool_dirs,
-        settings.tool_secrets_file(),
-        settings.tool_runner_backend(),
-    )
-print(f"restarted {len(tools)} tool(s)")
+    try:
+        toolyard_ops.restart(
+            tool_id,
+            cfg.tools_root,
+            cfg.tool_dirs,
+            settings.tool_secrets_file(),
+            settings.tool_runner_backend(),
+        )
+        print(f"  ✓ {tool_id}")
+    except Exception as exc:
+        # One tool's problem (e.g. an unprovisioned secret) must not block the others or
+        # abort the redeploy. Report it and keep going.
+        failed.append(tool_id)
+        print(f"  ✗ {tool_id}: {type(exc).__name__}: {exc}", file=sys.stderr)
+
+print(f"restarted {len(tools) - len(failed)}/{len(tools)} tool(s)")
+if failed:
+    print(f"WARNING: {len(failed)} tool(s) failed to restart: {', '.join(failed)} "
+          "(fix them, then `toolyard restart <id>` or re-run this)", file=sys.stderr)
 PY
 fi
 

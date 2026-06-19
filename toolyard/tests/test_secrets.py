@@ -12,11 +12,12 @@ from pathlib import Path
 from unittest import mock
 
 import toolyard.secrets as secrets_mod
-from toolyard.config import SecretSpec, ToolDef, load
+from toolyard.config import SecretSpec, ToolDef
 from toolyard.secrets import FileBackend, InfisicalBackend, VaultBackend, get_backend
 
-REPO = Path(__file__).resolve().parents[2]
-TOOL_TOML = REPO / "tools" / "echo_rest" / "toolyard.toml"
+# A self-contained fixture tool that declares a secret (the shipped echo demo no longer does).
+_FIXTURE = ToolDef(id="echo", type="rest", port=4601, command="python3 app.py", image=None,
+                   secrets=(SecretSpec("api_key", "API_KEY"),), path=Path("."))
 
 
 def _toml_file(text: str) -> str:
@@ -30,14 +31,14 @@ class Resolve(unittest.TestCase):
     def test_resolves_declared_secret_by_field(self):
         path = _toml_file('[echo]\nAPI_KEY = "dev-secret-123"\n')
         self.addCleanup(os.unlink, path)
-        resolved = FileBackend(path).resolve(load(TOOL_TOML))
+        resolved = FileBackend(path).resolve(_FIXTURE)
         self.assertEqual(resolved, {"api_key": "dev-secret-123"})
 
     def test_missing_secret_raises(self):
         path = _toml_file('[other]\nX = "y"\n')
         self.addCleanup(os.unlink, path)
         with self.assertRaises(KeyError):
-            FileBackend(path).resolve(load(TOOL_TOML))
+            FileBackend(path).resolve(_FIXTURE)
 
     def test_update_writes_writable_secret_back(self):
         path = _toml_file('[demo]\nTOKEN = "old"\n')

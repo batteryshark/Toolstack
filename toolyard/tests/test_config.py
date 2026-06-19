@@ -18,16 +18,31 @@ class Load(unittest.TestCase):
         self.assertEqual(tool.type, "rest")
         self.assertEqual(tool.port, 4601)
         self.assertEqual(tool.command, "python3 app.py")
-        self.assertEqual({s.name for s in tool.secrets}, {"api_key"})
-        self.assertEqual(tool.secrets[0].field, "API_KEY")
+        self.assertEqual(tool.secrets, ())   # the demo tool ships with no secrets
 
     def test_discover_finds_echo(self):
         ids = {d.id for d in discover(REPO / "tools")}
         self.assertIn("echo", ids)
 
-    def test_secret_vault_item_default_to_none(self):
-        # The echo tool declares no vault/item, so they parse as None.
-        spec = load(TOOL_TOML).secrets[0]
+
+class Secrets(unittest.TestCase):
+    """[[secrets]] parsing, against a self-contained fixture (not the shipped demo tool)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _load(self, secrets_toml: str):
+        p = Path(self.tmp, "toolyard.toml")
+        p.write_text('id = "fix"\ntype = "rest"\n[entrypoint]\nport = 4700\ncommand = "x"\n\n' + secrets_toml)
+        return load(p)
+
+    def test_parses_name_and_field(self):
+        spec = self._load('[[secrets]]\nname = "api_key"\nfield = "API_KEY"\n').secrets[0]
+        self.assertEqual((spec.name, spec.field), ("api_key", "API_KEY"))
+
+    def test_vault_item_default_to_none(self):
+        spec = self._load('[[secrets]]\nname = "api_key"\nfield = "API_KEY"\n').secrets[0]
         self.assertIsNone(spec.vault)
         self.assertIsNone(spec.item)
 
