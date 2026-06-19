@@ -195,13 +195,29 @@ def _arg_inline(arg: dict) -> str:
     return "{ " + ", ".join(parts) + " }"
 
 
-def entrypoint_error(data: dict, dir_path: str | Path) -> str | None:
-    """The one validity rule that depends on the tool's directory: a tool with neither a
-    process ``command`` nor a docker ``image`` must ship a ``Dockerfile`` to build. Returns
-    an error string or None. Kept out of :func:`validate` (which is pure) so ``write`` and
-    the add-from-source flows apply it wherever they have the directory."""
-    if not data["command"] and not data["image"] and not (Path(dir_path) / "Dockerfile").exists():
-        return "provide an entrypoint command, an image, or a Dockerfile in the tool directory"
+def entrypoint_error(data: dict, dir_path: str | Path, runner: str | None = None) -> str | None:
+    """Whether the tool has a usable entrypoint for the active toolyard runner — the one
+    validity rule that depends on the directory (and on which runner will start the tool).
+    Returns an error string or None.
+
+    - **docker** runner: it ignores ``command`` and runs an ``image`` or builds the
+      directory's ``Dockerfile``. A command-only tool builds nothing and 502s on first
+      start, so require an ``image`` or a ``Dockerfile``.
+    - **process** runner: it needs a ``command``.
+
+    ``runner`` defaults to the deployment's active runner (``settings.tool_runner_backend``),
+    so a save in a docker deployment is checked against docker. Kept out of :func:`validate`
+    (which is pure) so ``write`` and the add-from-source flows apply it where they have the
+    directory."""
+    if runner is None:
+        from . import settings
+        runner = settings.tool_runner_backend()
+    if runner == "docker":
+        if not data["image"] and not (Path(dir_path) / "Dockerfile").exists():
+            return ("the docker runner needs an image or a Dockerfile in the tool directory "
+                    "(a process command alone won't run under docker)")
+    elif not data["command"]:
+        return "the process runner needs an entrypoint command"
     return None
 
 
@@ -250,16 +266,17 @@ def read(dir_path: str | Path) -> dict:
     })
 
 
-def write(dir_path: str | Path, data: dict) -> Path:
+def write(dir_path: str | Path, data: dict, runner: str | None = None) -> Path:
     """Validate and write ``<dir_path>/toolyard.toml``. Raises ValueError on invalid
-    input or a missing directory; only ever writes a file named toolyard.toml."""
+    input, a missing directory, or an entrypoint the ``runner`` can't start; only ever
+    writes a file named toolyard.toml. ``runner`` defaults to the deployment's runner."""
     errors = validate(data)
     if errors:
         raise ValueError("; ".join(errors))
     path = Path(dir_path)
     if not path.is_dir():
         raise ValueError(f"not an existing directory: {dir_path}")
-    ep_err = entrypoint_error(data, path)
+    ep_err = entrypoint_error(data, path, runner)
     if ep_err:
         raise ValueError(ep_err)
     target = path / "toolyard.toml"

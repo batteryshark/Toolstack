@@ -199,11 +199,26 @@ class ReadWrite(unittest.TestCase):
         # No command, no image, no Dockerfile -> write() refuses (nothing to run).
         no_entry = tool_authoring.normalize({**FULL, "command": "", "image": ""})
         with self.assertRaises(ValueError):
-            tool_authoring.write(self.tmp, no_entry)
+            tool_authoring.write(self.tmp, no_entry, runner="docker")
         # Add a Dockerfile and it writes — this is the real docker tools' shape (e.g. sandals).
         Path(self.tmp, "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
-        tool_authoring.write(self.tmp, no_entry)
+        tool_authoring.write(self.tmp, no_entry, runner="docker")
         self.assertEqual(tool_authoring.read(self.tmp)["id"], "weather")
+
+    def test_docker_runner_rejects_command_only_tool(self):
+        # The echo-mcp bug: a tool with a process command but no image and no Dockerfile
+        # validates fine but 502s on first start under the docker runner. write() must catch
+        # it at save time (command alone is not a docker entrypoint).
+        cmd_only = tool_authoring.normalize(FULL)   # has command, image="", no Dockerfile
+        with self.assertRaises(ValueError):
+            tool_authoring.write(self.tmp, cmd_only, runner="docker")
+        # The same tool is fine under the process runner.
+        self.assertEqual(tool_authoring.write(self.tmp, cmd_only, runner="process").name,
+                         "toolyard.toml")
+        # And a docker tool with an explicit image needs no Dockerfile.
+        with_image = tool_authoring.normalize({**FULL, "command": "", "image": "ghcr.io/x/y:1"})
+        self.assertEqual(tool_authoring.write(self.tmp, with_image, runner="docker").name,
+                         "toolyard.toml")
 
     def test_read_write_destructive_risks_are_valid(self):
         # The taxonomy the real tools use must survive validate (the bug: only low/medium/high
