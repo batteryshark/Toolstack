@@ -130,6 +130,37 @@ final class AppModel: ObservableObject {
         await run { self.audit = try await self.client.audit(limit: 100) }
     }
 
+    /// Load a tool's secret set/unset status (returns it rather than storing — used by the sheet).
+    func secretStatus(toolId: String) async -> SecretStatus? {
+        do {
+            return try await client.secretStatus(toolId: toolId)
+        } catch let apiError as ApiError {
+            if case .unauthorized = apiError { authenticated = false }
+            error = apiError.message
+            return nil
+        } catch let other {
+            error = other.localizedDescription
+            return nil
+        }
+    }
+
+    /// Provision a secret value into the vault. Returns whether it succeeded (the value is never stored here).
+    func setSecretValue(toolId: String, field: String, value: String) async -> Bool {
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            return try await client.setSecretValue(toolId: toolId, field: field, value: value)
+        } catch let apiError as ApiError {
+            if case .unauthorized = apiError { authenticated = false }
+            error = apiError.message
+            return false
+        } catch let other {
+            error = other.localizedDescription
+            return false
+        }
+    }
+
     @Published var config: BrokerConfigInfo?
 
     func refreshConfig() async {

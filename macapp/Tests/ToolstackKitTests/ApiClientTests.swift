@@ -253,6 +253,27 @@ final class ApiClientTests: XCTestCase {
         }
     }
 
+    func testSecretStatusDecodes() async throws {
+        let json = #"{"backend":"vault","settable":true,"fields":["API_KEY"],"provisioned":["API_KEY"]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let s = try await makeClient(token: "t").secretStatus(toolId: "echo")
+        XCTAssertTrue(s.settable)
+        XCTAssertEqual(s.provisioned, ["API_KEY"])
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "GET")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/echo/secrets")
+    }
+
+    func testSetSecretValuePostsFieldAndValue() async throws {
+        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"field":"API_KEY","set":true}"#.utf8)) }
+        let ok = try await makeClient(token: "t").setSecretValue(toolId: "echo", field: "API_KEY", value: "s3cr3t")
+        XCTAssertTrue(ok)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/echo/secrets")
+        let body = try bodyJSON()
+        XCTAssertEqual(body["field"] as? String, "API_KEY")
+        XCTAssertEqual(body["value"] as? String, "s3cr3t")
+    }
+
     func testAuditDecodesEventsRequestsAndDetails() async throws {
         let json = #"{"audit":[{"id":1,"at":1.5,"component":"admin","event_type":"tool_created","#
                  + #""outcome":"ok","correlation_id":"c1","request_id":null,"details":{"tool":"echo","n":2}}],"#

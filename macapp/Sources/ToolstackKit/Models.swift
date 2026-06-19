@@ -254,6 +254,20 @@ public struct AuditResponse: Codable, Sendable {
     public let requests: [RequestRow]
 }
 
+/// Set/unset status for a tool's declared secret fields. `settable` is true only for the local
+/// vault backend; `provisioned` lists the fields that currently have a value (never the values).
+public struct SecretStatus: Codable, Sendable, Equatable {
+    public let backend: String
+    public let settable: Bool
+    public let fields: [String]
+    public let provisioned: [String]
+}
+
+public struct SetSecretResult: Codable, Sendable {
+    public let field: String
+    public let set: Bool
+}
+
 /// What went wrong talking to the admin API. `unauthorized` is special-cased so the UI can
 /// drop back to the login screen; everything else carries a status + server message.
 public enum ApiError: Error, Equatable, Sendable {
