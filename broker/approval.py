@@ -27,7 +27,6 @@ class OperationCard:
     risk: str
     reason: str  # why policy routed this to review
     justification: str | None = None  # the agent's (redacted) reason, shown to the human
-    target: str | None = None  # the request path for a rest call — what is being acted on
 
 
 @dataclass(frozen=True)
@@ -54,5 +53,4 @@ def build_card(request_id: int, caller: str, tool: str, op: str, risk: str,
         risk=risk,
         reason=reason,
         justification=justification,
-        target=target,
     )

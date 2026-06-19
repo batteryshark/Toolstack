@@ -24,7 +24,6 @@ class RateLimiter:
         if now - start >= self._window:
             start, count = now, 0
         if count >= self._limit:
-            self._state[caller_id] = (start, count)
             return False
         self._state[caller_id] = (start, count + 1)
         return True
