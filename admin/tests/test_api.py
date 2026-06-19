@@ -241,6 +241,43 @@ class JsonApi(unittest.TestCase):
     def test_edit_tool_needs_auth(self):
         self.assertEqual(self.client.post("/api/tools/echo", json={"description": "x"}).status_code, 401)
 
+    def _tool_folder(self, name: str, tool_id: str, port: int = 4700) -> Path:
+        src = Path(self.tmp, name)
+        src.mkdir()
+        (src / "toolyard.toml").write_text(
+            f'id = "{tool_id}"\ntype = "rest"\ndescription = "wx"\n\n'
+            f'[entrypoint]\ncommand = "python3 app.py"\nport = {port}\n\n'
+            '[[operations]]\nname = "today"\nrisk = "low"\n', encoding="utf-8")
+        (src / "app.py").write_text("# code\n", encoding="utf-8")
+        return src
+
+    def test_add_tool_from_folder(self):
+        src = self._tool_folder("src_weather", "weather")
+        r = self.client.post("/api/tools", headers=self._auth(), json={"source": str(src)})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["id"], "weather")
+        # copied into tools_root, so it now appears in the listing (no broker restart needed to list)
+        ids = [t["id"] for t in self.client.get("/api/tools", headers=self._auth()).json()["tools"]]
+        self.assertIn("weather", ids)
+
+    def test_add_tool_no_manifest_422(self):
+        src = Path(self.tmp, "codeonly")
+        src.mkdir()
+        (src / "app.py").write_text("x", encoding="utf-8")
+        r = self.client.post("/api/tools", headers=self._auth(), json={"source": str(src)})
+        self.assertEqual(r.status_code, 422)
+
+    def test_add_tool_duplicate_id_400(self):
+        src = self._tool_folder("src_echo", "echo", port=4602)  # "echo" already exists from setUp
+        r = self.client.post("/api/tools", headers=self._auth(), json={"source": str(src)})
+        self.assertEqual(r.status_code, 400)
+
+    def test_add_tool_requires_source(self):
+        self.assertEqual(self.client.post("/api/tools", headers=self._auth(), json={}).status_code, 400)
+
+    def test_add_tool_needs_auth(self):
+        self.assertEqual(self.client.post("/api/tools", json={"source": "/x"}).status_code, 401)
+
     def test_config_round_trip_write_only_token_and_validation(self):
         # save settings, partial-merge style
         r = self.client.post("/api/config", headers=self._auth(),

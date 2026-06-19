@@ -106,6 +106,14 @@ public struct ToolEdit: Codable, Sendable {
     public let secrets: [SecretDecl]
 }
 
+/// What `POST /api/tools` returns after copying a tool's folder into the managed tools dir.
+public struct CreatedTool: Codable, Sendable {
+    public let id: String
+    public let type: String
+    public let description: String
+    public let path: String   // where it now lives under the broker's tools dir
+}
+
 /// The active secret backend (deployment-wide). `path` (file/vault) or `host`/`environment`/
 /// `defaultVault` (Infisical) are present depending on `name`.
 public struct SecretBackend: Codable, Sendable {

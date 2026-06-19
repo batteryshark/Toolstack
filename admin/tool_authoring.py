@@ -99,6 +99,9 @@ def validate(data: dict) -> list[str]:
     errors: list[str] = []
     if not _ID_RE.match(data["id"]):
         errors.append("id must start alphanumeric and contain only letters, digits, _ or - (no dots)")
+    elif len(data["id"]) > 64:
+        # the id is used as a directory name (tools_root/<id>); keep it well under filesystem limits
+        errors.append("id must be at most 64 characters")
     if data["type"] != "rest":
         errors.append('type must be "rest"')
     if not data["command"] and not data["image"]:

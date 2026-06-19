@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import ToolstackKit
+import UniformTypeIdentifiers
 
 /// Run as a bare SwiftPM executable (`swift run`), the process starts as a non-activating
 /// (accessory) app, so its window can't take focus or come to the front. Force it to be a
@@ -206,10 +207,12 @@ struct CallersPane: View {
 struct ToolsPane: View {
     @EnvironmentObject var model: AppModel
     @State private var editing: ToolInfo?
+    @State private var importing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            backendHeader
+            headerBar
+            Divider()
             if model.tools.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "wrench.and.screwdriver").font(.largeTitle).foregroundStyle(.secondary)
@@ -256,23 +259,28 @@ struct ToolsPane: View {
         .sheet(item: $editing) { tool in
             ToolEditor(tool: tool).environmentObject(model)
         }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.folder]) { result in
+            if case .success(let url) = result {
+                Task { await model.addTool(source: url.path) }
+            }
+        }
         .task { await model.refreshTools(); await model.refreshSecretBackend() }
     }
 
-    @ViewBuilder private var backendHeader: some View {
-        if let backend = model.secretBackend {
-            HStack(spacing: 6) {
+    private var headerBar: some View {
+        HStack(spacing: 6) {
+            if let backend = model.secretBackend {
                 Image(systemName: "key.fill").font(.caption).foregroundStyle(.secondary)
                 Text("Secret backend:").foregroundStyle(.secondary)
                 Text(backend.name).bold()
                 if let detail = backend.path ?? backend.host, !detail.isEmpty {
-                    Text("· \(detail)").font(.caption).foregroundStyle(.secondary)
+                    Text("· \(detail)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-                Spacer()
             }
-            .padding(.horizontal).padding(.vertical, 8)
-            Divider()
+            Spacer()
+            Button { importing = true } label: { Label("Add tool", systemImage: "plus") }
         }
+        .padding(.horizontal).padding(.vertical, 8)
     }
 
     private func opRow(_ op: OpInfo) -> some View {

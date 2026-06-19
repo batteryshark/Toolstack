@@ -206,6 +206,29 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(backend.path, "/data/vault.json")
     }
 
+    func testAddToolPostsSource() async throws {
+        let json = #"{"id":"weather","type":"rest","description":"wx","path":"/data/tools/weather"}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let created = try await makeClient(token: "t").addTool(source: "/src/weather")
+        XCTAssertEqual(created.id, "weather")
+        XCTAssertEqual(created.path, "/data/tools/weather")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools")
+        XCTAssertEqual(try bodyJSON()["source"] as? String, "/src/weather")
+    }
+
+    func testAddToolNoManifestMapsTo422() async throws {
+        StubURLProtocol.handler = { _ in
+            (422, [:], Data(#"{"detail":"folder has no toolyard.toml — author one to add it"}"#.utf8))
+        }
+        do {
+            _ = try await makeClient(token: "t").addTool(source: "/src/codeonly")
+            XCTFail("expected an error")
+        } catch ApiError.http(let status, _) {
+            XCTAssertEqual(status, 422)   // the app special-cases this to offer authoring
+        }
+    }
+
     func testListToolsDecodesDescription() async throws {
         let json = #"{"tools":[{"id":"echo","type":"rest","description":"echoes input","port":4601,"#
                  + #""running":false,"ops":[],"secrets":[]}]}"#
