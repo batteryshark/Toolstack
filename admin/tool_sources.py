@@ -32,7 +32,10 @@ class NoManifest(Exception):
 def _resolved_dir(source: str) -> Path:
     src = Path(source).expanduser()
     if not src.is_dir():
-        raise ValueError(f"not a directory: {source}")
+        # The path is resolved on the ADMIN's machine. A Docker/remote admin only sees its own
+        # filesystem (e.g. /data), so a host folder picked on a laptop won't exist for it.
+        raise ValueError(f"directory not found on the admin: {source} — a Docker or remote admin "
+                         "sees only its own filesystem (e.g. /data), not this computer's folders")
     return src
 
 
