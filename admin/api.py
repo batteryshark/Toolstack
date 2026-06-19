@@ -218,23 +218,30 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
 
     @app.post("/api/tools")
     async def api_add_tool(request: Request, user: str = Depends(require_user)):
-        """Add a tool by COPYING a local folder into the broker's tools dir (where it's auto-
-        discovered). The folder must contain a toolyard.toml; a folder of code without one returns
-        422 so the client can offer to author a manifest (a separate flow). Restart the broker to
-        register the new tool."""
+        """Add a tool by COPYING it into the broker's tools dir (where it's auto-discovered). The
+        source is either a local folder (``source``) or a git repo (``repo`` + optional ``subdir`` /
+        ``ref``). It must contain a toolyard.toml; otherwise 422 so the client can offer to author a
+        manifest (a separate flow). A cloned repo is third-party code — copied in, never started here.
+        Restart the broker to register the new tool."""
         data = await _json_object(request)
+        repo = (data.get("repo") or "").strip()
         source = (data.get("source") or "").strip()
-        if not source:
-            raise HTTPException(status_code=400, detail="source (a folder path) is required")
+        if not repo and not source:
+            raise HTTPException(status_code=400, detail="provide a source (folder path) or repo (git URL)")
         config = broker_config.load()
         try:
             existing = [t["id"] for t in toolyard_ops.list_tools(config.tools_root, config.tool_dirs)]
         except Exception:
-            existing = []  # can't confirm uniqueness while some tool fails to load; add_from_path still guards the dir
+            existing = []  # can't confirm uniqueness while some tool fails to load; _ingest still guards the dir
         try:
-            tool = tool_sources.add_from_path(source, config.tools_root, existing)
+            if repo:
+                tool = tool_sources.add_from_github(
+                    repo, config.tools_root, existing,
+                    subdir=data.get("subdir", ""), ref=data.get("ref", ""))
+            else:
+                tool = tool_sources.add_from_path(source, config.tools_root, existing)
         except tool_sources.NoManifest:
-            raise HTTPException(status_code=422, detail="folder has no toolyard.toml — author one to add it")
+            raise HTTPException(status_code=422, detail="no toolyard.toml at that location — author one to add it")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         with open_store(config) as store:

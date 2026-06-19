@@ -217,6 +217,30 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(try bodyJSON()["source"] as? String, "/src/weather")
     }
 
+    func testAddToolFromGitHubPostsRepoSubdirRef() async throws {
+        let json = #"{"id":"gh","type":"rest","description":"","path":"/data/tools/gh"}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let created = try await makeClient(token: "t").addToolFromGitHub(
+            repo: "https://github.com/x/y", subdir: "tools/a", ref: "main")
+        XCTAssertEqual(created.id, "gh")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools")
+        let body = try bodyJSON()
+        XCTAssertEqual(body["repo"] as? String, "https://github.com/x/y")
+        XCTAssertEqual(body["subdir"] as? String, "tools/a")
+        XCTAssertEqual(body["ref"] as? String, "main")
+    }
+
+    func testAddToolFromGitHubOmitsEmptyOptionals() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, [:], Data(#"{"id":"gh","type":"rest","description":"","path":"/p"}"#.utf8))
+        }
+        _ = try await makeClient(token: "t").addToolFromGitHub(repo: "https://github.com/x/y")
+        let body = try bodyJSON()
+        XCTAssertEqual(body["repo"] as? String, "https://github.com/x/y")
+        XCTAssertNil(body["subdir"])   // empty optionals omitted, so the server uses its defaults
+        XCTAssertNil(body["ref"])
+    }
+
     func testAddToolNoManifestMapsTo422() async throws {
         StubURLProtocol.handler = { _ in
             (422, [:], Data(#"{"detail":"folder has no toolyard.toml — author one to add it"}"#.utf8))

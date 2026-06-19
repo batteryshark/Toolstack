@@ -584,22 +584,30 @@ struct EditableSecret: Identifiable {
 /// machine: for a local admin that's this Mac (use "Choose…"); for a remote/Docker admin, type a
 /// path it can see. The folder is copied into the broker's managed tools dir.
 struct AddToolSheet: View {
+    enum Mode: String, CaseIterable, Identifiable {
+        case folder = "Local folder", github = "GitHub"
+        var id: String { rawValue }
+    }
+
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @State private var mode: Mode = .folder
     @State private var path = ""
+    @State private var repo = ""
+    @State private var subdir = ""
+    @State private var ref = ""
     @State private var picking = false
     @State private var addError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Add a tool").font(.title2.bold())
-            Text("Point at a folder containing a toolyard.toml. The path is on the admin's machine — "
-                 + "for a local admin that's this Mac; for a remote or Docker admin, a path it can see.")
-                .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                TextField("/path/to/tool-folder", text: $path).textFieldStyle(.roundedBorder)
-                Button("Choose…") { picking = true }
-            }
+            Picker("", selection: $mode) {
+                ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
+            }.pickerStyle(.segmented).labelsHidden()
+
+            if mode == .folder { folderFields } else { githubFields }
+
             HStack {
                 if let addError {
                     Label(addError, systemImage: "exclamationmark.triangle.fill")
@@ -608,19 +616,52 @@ struct AddToolSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Add") { Task { await add() } }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(path.trimmingCharacters(in: .whitespaces).isEmpty || model.busy)
+                    .keyboardShortcut(.defaultAction).disabled(!canAdd || model.busy)
             }
         }
         .padding()
-        .frame(minWidth: 500, minHeight: 190)
+        .frame(minWidth: 520, minHeight: 230)
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result { path = url.path }   // a local pick fills the field
         }
     }
 
+    @ViewBuilder private var folderFields: some View {
+        Text("Point at a folder containing a toolyard.toml. The path is on the admin's machine — "
+             + "for a local admin that's this Mac; for a remote or Docker admin, a path it can see.")
+            .font(.caption).foregroundStyle(.secondary)
+        HStack {
+            TextField("/path/to/tool-folder", text: $path).textFieldStyle(.roundedBorder)
+            Button("Choose…") { picking = true }
+        }
+    }
+
+    @ViewBuilder private var githubFields: some View {
+        Label("Cloning runs third-party code when you later start the tool. Review it and grant "
+              + "callers access deliberately — nothing runs just from adding it.",
+              systemImage: "exclamationmark.shield")
+            .font(.caption).foregroundStyle(.secondary)
+        TextField("https://github.com/owner/repo", text: $repo).textFieldStyle(.roundedBorder)
+        HStack {
+            TextField("subdir (optional)", text: $subdir).textFieldStyle(.roundedBorder)
+            TextField("branch/tag (optional)", text: $ref).textFieldStyle(.roundedBorder)
+        }
+    }
+
+    private var canAdd: Bool {
+        let field = mode == .folder ? path : repo
+        return !field.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     private func add() async {
-        await model.addTool(source: path.trimmingCharacters(in: .whitespaces))
+        switch mode {
+        case .folder:
+            await model.addTool(source: path.trimmingCharacters(in: .whitespaces))
+        case .github:
+            await model.addToolFromGitHub(repo: repo.trimmingCharacters(in: .whitespaces),
+                                          subdir: subdir.trimmingCharacters(in: .whitespaces),
+                                          ref: ref.trimmingCharacters(in: .whitespaces))
+        }
         if model.error == nil { dismiss() } else { addError = model.error }
     }
 }
