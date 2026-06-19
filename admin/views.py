@@ -496,6 +496,16 @@ def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str
         else:
             state, cls = "stopped", "muted"
         running = t["running"]
+        update = ""
+        src = t.get("source")
+        if src:
+            origin = esc(src.get("url") or src.get("source") or src.get("type", "source"))
+            update = (
+                f"<form method='post' action='/tools/{esc(t['id'])}/update-source' class='inline-form' "
+                f"onsubmit=\"return confirm('Re-pull {esc(t['id'])} from its source? Your description and "
+                "secret declarations are kept.')\">"
+                f"{_csrf_field(csrf)}<button type='submit' title='source: {origin}'>Update</button></form>"
+            )
         remove = ""
         if t.get("removable"):
             remove = (
@@ -514,6 +524,7 @@ def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str
             f"{action(t['id'], 'start', 'Start', running)}"
             f"{action(t['id'], 'stop', 'Stop', not running)}"
             f"{action(t['id'], 'restart', 'Restart', not running)}"
+            f"{update}"
             f"{remove}"
             "</td></tr>"
         )
@@ -522,7 +533,8 @@ def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str
         _alerts(banner, error)
         + "<section><div class='row'><a class='button' href='/'>Back</a>"
         f"<h2>Tools</h2><span class='muted'>root: <code>{esc(tools_root)}</code></span>"
-        "<a class='button' href='/tools/new'>Add tool</a></div>"
+        "<a class='button' href='/tools/new'>Author a tool</a>"
+        "<a class='button' href='/tools/add'>Add from source</a></div>"
         "<table><thead><tr><th>Tool</th><th>Port</th><th>State</th><th>Directory</th><th>Actions</th></tr></thead>"
         f"<tbody>{rows}</tbody></table>"
         "<p class='muted'>Starting a tool resolves its secrets and runs it. A newly added or "
@@ -668,6 +680,43 @@ def _secret_backend_note(backend: dict | None) -> str:
             f"(<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "
             "fields are ignored by this backend — only <em>field</em> (the key under "
             "<code>[tool_id]</code>) is used.</p>")
+
+
+def tool_add_view(*, user, csrf, source_value="", repo_value="", error=None) -> str:
+    """Add an existing tool (one that already has a ``toolyard.toml``) by copying it from a local
+    folder or cloning it from git into the tools root, recording its source for later Update."""
+    err = f"<div class='error'>{esc(error)}</div>" if error else ""
+    body = (
+        f"{err}"
+        "<section><div class='row'><a class='button' href='/tools'>Back</a>"
+        "<h2>Add a tool from a source</h2></div>"
+        "<p class='muted'>Copy a tool that already has a <code>toolyard.toml</code> into the tools "
+        "root, so the broker auto-discovers it. Its source is recorded so you can <strong>Update</strong> "
+        "(re-pull) it later. To hand-author a manifest instead, use "
+        "<a href='/tools/new'>Author a tool</a>.</p>"
+
+        "<h3>From a local folder</h3>"
+        f"<form method='post' action='/tools/add-source'>{_csrf_field(csrf)}"
+        "<input type='hidden' name='kind' value='path'>"
+        "<label class='field'>Folder path <span class='muted'>(absolute, on the server)</span>"
+        f"<input name='source' value='{esc(source_value)}' placeholder='/srv/tools/weather' required></label>"
+        "<div class='actions'><button type='submit'>Add from folder</button></div></form>"
+
+        "<h3>From a Git repository</h3>"
+        f"<form method='post' action='/tools/add-source'>{_csrf_field(csrf)}"
+        "<input type='hidden' name='kind' value='github'>"
+        "<label class='field'>Repository URL"
+        f"<input name='repo' value='{esc(repo_value)}' placeholder='https://github.com/owner/repo' required></label>"
+        "<label class='field'>Subdirectory <span class='muted'>(optional — if the tool lives in a subfolder)</span>"
+        "<input name='subdir' placeholder='tools/weather'></label>"
+        "<label class='field'>Ref <span class='muted'>(optional — branch, tag, or commit)</span>"
+        "<input name='ref' placeholder='main'></label>"
+        "<div class='actions'><button type='submit'>Clone and add</button></div></form>"
+        "<p class='muted'>Cloned code is copied in, never executed by the panel. Restart the broker to "
+        "register the new tool.</p>"
+        "</section>"
+    )
+    return page("Add tool", body, user=user, csrf=csrf, nav="tools")
 
 
 def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, error=None) -> str:

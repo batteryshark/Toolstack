@@ -21,7 +21,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from broker import operations
 from broker.registry import Registry
 
-from . import api, auth, broker_config, settings, supervisor, tool_authoring, toolyard_ops, views
+from . import (api, auth, broker_config, settings, supervisor, tool_authoring,
+               tool_sources, toolyard_ops, views)
 from .store_access import open_store
 
 SESSION_COOKIE = "toolstack_admin_session"
@@ -366,6 +367,8 @@ def create_app() -> FastAPI:
             return redirect("/login")
         config = broker_config.load()
         tools, error = safe_list_tools(config)
+        for t in tools:  # attach the source sidecar so updatable tools get an Update button
+            t["source"] = tool_sources.read_source(t["path"])
         return HTMLResponse(views.tools_view(
             user=user, csrf=csrf_for(request), tools=tools,
             tools_root=config.tools_root, error=error))
@@ -530,6 +533,75 @@ def create_app() -> FastAPI:
         return render_dashboard(request, user, banner=(
             f"Unregistered tool {views.esc(tool_id)} (its files were left on disk). "
             "Restart the broker to apply."))
+
+    # --- add / update a tool from its source (folder or git) ------------------
+    @app.get("/tools/add")
+    async def add_tool_source_page(request: Request):
+        user = current_user(request)
+        if not user:
+            return redirect("/login")
+        return HTMLResponse(views.tool_add_view(user=user, csrf=csrf_for(request)))
+
+    @app.post("/tools/add-source")
+    async def add_tool_source(request: Request):
+        user = current_user(request)
+        if not user:
+            return redirect("/login")
+        data = await read_form(request)
+        src_val, repo_val = (data.get("source") or "").strip(), (data.get("repo") or "").strip()
+
+        def again(error: str) -> HTMLResponse:
+            return HTMLResponse(views.tool_add_view(
+                user=user, csrf=csrf_for(request), source_value=src_val, repo_value=repo_val, error=error))
+
+        if not csrf_ok(request, data):
+            return again("Invalid CSRF token.")
+        config = broker_config.load()
+        existing, list_err = safe_list_tools(config)
+        existing_ids = [] if list_err else [t["id"] for t in existing]
+        try:
+            if data.get("kind") == "github":
+                tool = tool_sources.add_from_github(
+                    repo_val, config.tools_root, existing_ids,
+                    subdir=(data.get("subdir") or "").strip(), ref=(data.get("ref") or "").strip())
+            else:
+                tool = tool_sources.add_from_path(src_val, config.tools_root, existing_ids)
+        except tool_sources.NoManifest:
+            return again("No toolyard.toml at that location — use “Author a tool” to create one.")
+        except ValueError as exc:
+            return again(str(exc))
+        with open_store(config) as store:
+            operations.record_admin_event(store, user, "tool_created", {"tool": tool["id"], "dir": tool["path"]})
+        return render_dashboard(request, user, banner=(
+            f"Added tool {views.esc(tool['id'])} from its source. Restart the broker to register it, "
+            "then grant a caller access in its policy."))
+
+    @app.post("/tools/{tool_id}/update-source")
+    async def update_tool_source(request: Request, tool_id: str):
+        user = current_user(request)
+        if not user:
+            return redirect("/login")
+        data = await read_form(request)
+        if not csrf_ok(request, data):
+            return render_dashboard(request, user, error="Invalid CSRF token.")
+        config = broker_config.load()
+        tools_list, list_err = safe_list_tools(config)
+        if list_err:
+            return render_dashboard(request, user, error=list_err)
+        tools = {t["id"]: t for t in tools_list}
+        if tool_id not in tools:
+            return render_dashboard(request, user, error=f"no such tool: {tool_id}")
+        try:
+            tool = tool_sources.update(tools[tool_id]["path"])
+        except tool_sources.NoManifest:
+            return render_dashboard(request, user, error="the tool's source no longer has a toolyard.toml")
+        except ValueError as exc:
+            return render_dashboard(request, user, error=str(exc))
+        with open_store(config) as store:
+            operations.record_admin_event(store, user, "tool_updated", {"tool": tool_id, "dir": tool["path"]})
+        return render_dashboard(request, user, banner=(
+            f"Updated tool {views.esc(tool_id)} from its source. Restart the broker if its entrypoint "
+            "or operations changed."))
 
     # JSON operator API (bearer-token auth) for native / automation clients — same ops,
     # JSON face. See admin/api.py (T-029).
