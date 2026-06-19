@@ -57,9 +57,10 @@ def coarse_update_drops_scope(store: Store, name: str, allow, review, deny=None)
 
 
 def enabled_tools(policy: dict) -> list[str]:
-    """The tools a caller may manage policy for: the explicit ``enabled`` list plus
-    any tool that already carries granted ops (back-compat for policies written
-    before tool-enablement existed). Sorted, de-duplicated."""
+    """The tools a caller may manage policy for: the explicit ``enabled`` list (set via the
+    web "Enabled tools" toggle) plus any tool that already carries granted ops — so a policy
+    authored by ``brokerctl set-policy`` (which grants ops but never sets ``enabled``) still
+    surfaces its tools in the editor. Sorted, de-duplicated."""
     granted = policy.get("tools", {})
     return sorted(set(policy.get("enabled", [])) | set(granted.keys()))
 

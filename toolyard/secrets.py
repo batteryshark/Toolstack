@@ -327,20 +327,13 @@ class InfisicalBackend:
 
     @classmethod
     def from_env(cls) -> "InfisicalBackend":
-        """Build from `TOOLSTACK_INFISICAL_*` (falling back to legacy
-        `TOOLYARD_INFISICAL_*`) so an existing Infisical setup works unchanged."""
+        """Build from the `TOOLSTACK_INFISICAL_*` environment variables."""
         def env(name: str, default: str | None = None) -> str | None:
-            return (
-                os.environ.get(f"TOOLSTACK_INFISICAL_{name}")
-                or os.environ.get(f"TOOLYARD_INFISICAL_{name}")
-                or default
-            )
+            return os.environ.get(f"TOOLSTACK_INFISICAL_{name}") or default
 
         host = env("HOST")
         if not host:
-            raise ValueError(
-                "infisical backend needs TOOLSTACK_INFISICAL_HOST (or TOOLYARD_INFISICAL_HOST)"
-            )
+            raise ValueError("infisical backend needs TOOLSTACK_INFISICAL_HOST")
         creds_dir = env("CREDENTIALS_DIR") or str(
             Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
             / "toolstack" / "infisical"
