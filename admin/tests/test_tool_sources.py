@@ -210,6 +210,17 @@ class AddFromGithub(unittest.TestCase):
             with self.assertRaises(ValueError):
                 tool_sources.add_from_github("https://github.com/x/y", str(self.root))
 
+    def test_private_repo_gets_friendly_message(self):
+        def needs_auth(cmd, *a, **k):
+            raise subprocess.CalledProcessError(
+                128, cmd, b"", b"fatal: could not read Username for 'https://github.com': "
+                              b"terminal prompts disabled")
+        with mock.patch.object(tool_sources.shutil, "which", return_value="/usr/bin/git"), \
+             mock.patch.object(tool_sources.subprocess, "run", side_effect=needs_auth):
+            with self.assertRaises(ValueError) as cm:
+                tool_sources.add_from_github("https://github.com/x/private", str(self.root))
+        self.assertIn("private", str(cm.exception).lower())   # not git's raw "could not read Username"
+
 
 if __name__ == "__main__":
     unittest.main()

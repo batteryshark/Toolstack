@@ -105,9 +105,16 @@ def add_from_github(repo: str, tools_root: str, existing_ids=(), *,
 
 
 def _clone_error(exc: subprocess.CalledProcessError) -> str:
-    """A short reason from git's stderr (last line), bounded so we don't dump a wall of text."""
+    """A short reason from git's stderr (last line), bounded so we don't dump a wall of text.
+    The common case — a private/missing repo the admin has no credentials for — gets a plain-English
+    message instead of git's cryptic 'could not read Username … terminal prompts disabled'."""
     raw = exc.stderr or b""
     text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+    low = text.lower()
+    if ("could not read username" in low or "authentication failed" in low
+            or "terminal prompts disabled" in low or "permission denied" in low):
+        return ("repository not found or private — the admin has no git credentials for it "
+                "(use a public repo, or configure credentials on the admin host)")
     lines = [ln for ln in text.splitlines() if ln.strip()]
     return (lines[-1].strip()[:200] if lines else f"exit {exc.returncode}")
 
