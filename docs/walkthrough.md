@@ -143,7 +143,8 @@ Modules: [admin/README.md](../admin/README.md).
 ### You deploy these (external)
 
 - **nod** — the self-hosted approval surface ([batteryshark/nod](https://github.com/batteryshark/nod)).
-- **Secret backend** — Infisical or SOPS (Phase 4 ships a dev TOML `FileBackend`).
+- **Secret backend** — a dev TOML `FileBackend`, a local encrypted `VaultBackend`, or
+  `InfisicalBackend` (HTTP); all shipped.
 - **Tailnet** — Tailscale Serve (or any VPN); the ingress boundary.
 
 ---
@@ -302,8 +303,8 @@ These are judgment calls made along the way — worth a deliberate yes/no:
    and not planned: nod posts callbacks unauthenticated, so a broker receiver would
    let anyone forge an approval. Confirm poll-only is the resolution model you want.
 6. **Process + Docker runners; dev file secret backend.** Process backend is the
-   zero-infra default; Docker is the production path; SOPS/Infisical are the
-   production secret backends (not yet wired).
+   zero-infra default; Docker is the production path; Infisical (HTTP) and a local
+   encrypted vault are the production secret backends.
 7. **Rate limit default 120/caller/min.** Tune to taste (`TOOLSTACK_RATE_LIMIT`).
 8. **Admin app carries deps (FastAPI) and supervises the broker.** It's the one
    component allowed runtime deps (its own venv), runs the broker as a child process,

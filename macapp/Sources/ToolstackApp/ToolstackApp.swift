@@ -1272,7 +1272,7 @@ struct ConfigPane: View {
             }
             Section {
                 Button("Save") { Task { await save() } }.disabled(!loaded || model.busy)
-                Text("Restart the broker (sidebar ↻) to apply.").font(.caption).foregroundStyle(.secondary)
+                Text("Restart the broker (top bar ↻) to apply.").font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

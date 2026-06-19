@@ -1,7 +1,6 @@
 # Broker
 
-The authority boundary — the only address an agent can reach. This is the broker
-through **Phase 4** (the full planned build order). See [../plan.md](../plan.md) and
+The authority boundary — the only address an agent can reach. See [../plan.md](../plan.md) and
 [../toolyard/README.md](../toolyard/README.md) for running tools, and
 [../client/SKILL.md](../client/SKILL.md) for how an agent calls in.
 
@@ -20,10 +19,14 @@ through **Phase 4** (the full planned build order). See [../plan.md](../plan.md)
 - **`GET /v1/tools`** / **`GET /v1/tools/<tool>.<op>`** — discovery: the ops this
   caller may use (filtered by policy, with effect/risk/description), and one op's
   args on demand. Lets agents discover lazily instead of carrying schemas in context.
+- **`POST /mcp`** — broker-native **MCP** (JSON-RPC, streamable HTTP): the same tools, auth,
+  policy, approval, and audit as the REST gateway, for agents that speak MCP. A `tools/call`
+  maps to the same lifecycle as `POST /v1/actions`; resolution is poll-only (`tools/call`
+  returns a request id to poll, same as a `202` on the REST path).
 - **Identity**: callers + bearer tokens stored as SHA-256 hashes; revoking a token
   or caller takes effect on the next request.
 - **Policy**: per-caller `allow` / `review` / `deny`, **default-deny**.
-- **Registry**: reads tool/op/risk/port from `toolyard.toml` files under
+- **Registry**: reads tool/op/`type`/risk/port from `toolyard.toml` files under
   `TOOLSTACK_TOOLS_ROOT`, and **never parses the `[[secrets]]` block** (the broker
   stays secret-unaware).
 - **Request lifecycle**: registry lookup → policy → **forward to the tool** on
@@ -112,9 +115,14 @@ One process, internal modules (not separate services):
 - `identity.py` — callers + hashed bearer tokens; fail-closed `authenticate`.
 - `policy.py` — `allow` / `review` / `deny`, default-deny (pure).
 - `registry.py` — reads `toolyard.toml` for tool/op/risk/port; ignores `[[secrets]]`.
-- `runtime.py` — forwards an approved call to the tool on `127.0.0.1:<port>`.
+- `runtime.py` — forwards an approved call to the tool on `127.0.0.1:<port>`, dispatching the
+  tool's transport: `api` (POST /v1/actions/<op>), `mcp` (broker is the MCP *client*), or
+  `rest` (verb-as-op passthrough). This is the broker as an MCP **client**.
 - `request_lifecycle.py` — the orchestration across the above (incl. approval resolution).
 - `approval.py` — the operation card + normalized surface state (the adapter contract).
+- `mcp.py` — the **`POST /mcp` ingress**: the broker as an MCP *server*, terminating JSON-RPC
+  and re-entering the same lifecycle. (Two MCP roles: this serves agents; `runtime.py` calls
+  an mcp *tool*.)
 - `surface_nod.py` — `NodSurface`: the HTTP adapter to nod (open / poll / cancel).
 - `store.py` — SQLite persistence (callers, tokens, policies, requests, approvals, audit).
 - `audit.py` — append-only audit log; the server adds a stderr sink.
