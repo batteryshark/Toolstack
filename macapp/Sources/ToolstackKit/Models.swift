@@ -182,6 +182,78 @@ public struct BrokerConfigInfo: Codable, Sendable {
     public var nodTokenSet: Bool { nodToken == "set" }
 }
 
+/// A decoded arbitrary JSON value — audit `details` can be any shape. Rendered compactly for a cell.
+public indirect enum AnyJSON: Codable, Sendable, Equatable {
+    case string(String), number(Double), bool(Bool), object([String: AnyJSON]), array([AnyJSON]), null
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null }
+        else if let b = try? c.decode(Bool.self) { self = .bool(b) }       // before number: JSON true/false
+        else if let n = try? c.decode(Double.self) { self = .number(n) }
+        else if let s = try? c.decode(String.self) { self = .string(s) }
+        else if let o = try? c.decode([String: AnyJSON].self) { self = .object(o) }
+        else if let a = try? c.decode([AnyJSON].self) { self = .array(a) }
+        else { throw DecodingError.dataCorruptedError(in: c, debugDescription: "unsupported JSON value") }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .string(let s): try c.encode(s)
+        case .number(let n): try c.encode(n)
+        case .bool(let b): try c.encode(b)
+        case .object(let o): try c.encode(o)
+        case .array(let a): try c.encode(a)
+        case .null: try c.encodeNil()
+        }
+    }
+
+    /// Compact one-line rendering for a table cell (not strict JSON — readability over fidelity).
+    public var compact: String {
+        switch self {
+        case .string(let s): return s
+        case .number(let n): return n == n.rounded() ? String(Int(n)) : String(n)
+        case .bool(let b): return b ? "true" : "false"
+        case .null: return "null"
+        case .array(let a): return "[" + a.map(\.compact).joined(separator: ", ") + "]"
+        case .object(let o):
+            return "{" + o.sorted { $0.key < $1.key }
+                .map { "\($0.key): \($0.value.compact)" }.joined(separator: ", ") + "}"
+        }
+    }
+}
+
+/// One audit event (admin.* or broker.*). `details` is free-form. (snake_case → camelCase.)
+public struct AuditEvent: Codable, Sendable, Identifiable, Equatable {
+    public let id: Int
+    public let at: Double
+    public let component: String
+    public let eventType: String
+    public let outcome: String
+    public let correlationId: String?
+    public let requestId: Int?
+    public let details: AnyJSON?
+}
+
+/// One broker request row (a caller's tool.op call + its status). Extra columns are ignored.
+public struct RequestRow: Codable, Sendable, Identifiable, Equatable {
+    public let id: Int
+    public let correlationId: String
+    public let callerId: Int
+    public let tool: String
+    public let op: String
+    public let status: String
+    public let error: String?
+    public let createdAt: Double
+    public let updatedAt: Double?
+}
+
+public struct AuditResponse: Codable, Sendable {
+    public let audit: [AuditEvent]
+    public let requests: [RequestRow]
+}
+
 /// What went wrong talking to the admin API. `unauthorized` is special-cased so the UI can
 /// drop back to the login screen; everything else carries a status + server message.
 public enum ApiError: Error, Equatable, Sendable {

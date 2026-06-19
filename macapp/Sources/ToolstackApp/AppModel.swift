@@ -124,6 +124,12 @@ final class AppModel: ObservableObject {
         await run { self.secretBackend = try await self.client.secretBackend() }
     }
 
+    @Published var audit: AuditResponse?
+
+    func refreshAudit() async {
+        await run { self.audit = try await self.client.audit(limit: 100) }
+    }
+
     @Published var config: BrokerConfigInfo?
 
     func refreshConfig() async {
