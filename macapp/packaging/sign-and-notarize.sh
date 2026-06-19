@@ -1,24 +1,30 @@
 #!/bin/bash
 # Build → code-sign (Hardened Runtime) → notarize → staple build/ToolstackApp.app for distribution
-# outside the App Store. Config (identity / team id / notary profile) is read from the gitignored
-# packaging/signing.env, so this is one command:
+# outside the App Store. One command, no account/password step:
 #
 #   ./packaging/sign-and-notarize.sh
 #
-# ONE-TIME, run by YOU (it needs your Apple ID + an app-specific password — not stored in the repo):
-#   xcrun notarytool store-credentials toolstack-notary \
-#       --apple-id "<your-apple-id>" --team-id "Y734633UDM" --password "<app-specific-password>"
-# (Create the app-specific password at appleid.apple.com → Sign-In and Security.)
+# Reads two gitignored files:
+#   packaging/signing.env  — DEVELOPER_ID_APP (the "Developer ID Application: …" identity)
+#   secrets/secrets.env    — APP_STORE_CONNECT_API_ISSUER_ID + APP_STORE_CONNECT_API_KEY_PATH
+#                            (.p8 path; the key-id is read from the AuthKey_<KEYID>.p8 filename)
+# The App Store Connect API key notarizes WITHOUT an Apple ID / app-specific password, so it can't
+# trip the account lock that password auth does.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Local, gitignored signing config (identity / team id / notary profile). Env vars still override.
 [ -f packaging/signing.env ] && . packaging/signing.env
+[ -f secrets/secrets.env ] && . secrets/secrets.env
 
 APP="build/ToolstackApp.app"
 ZIP="build/ToolstackApp.zip"
-: "${DEVELOPER_ID_APP:?set it in packaging/signing.env (or the env) to your 'Developer ID Application: …' identity}"
-: "${NOTARY_PROFILE:?set it in packaging/signing.env (or the env) to your notarytool keychain profile}"
+: "${DEVELOPER_ID_APP:?set it in packaging/signing.env to your 'Developer ID Application: …' identity}"
+: "${APP_STORE_CONNECT_API_ISSUER_ID:?set it in secrets/secrets.env (App Store Connect API issuer id)}"
+: "${APP_STORE_CONNECT_API_KEY_PATH:?set it in secrets/secrets.env (path to your AuthKey_*.p8)}"
+[ -f "$APP_STORE_CONNECT_API_KEY_PATH" ] || { echo "error: API key not found at $APP_STORE_CONNECT_API_KEY_PATH" >&2; exit 1; }
+# key-id is the AuthKey_<KEYID>.p8 filename stem
+KEY_ID="$(basename "$APP_STORE_CONNECT_API_KEY_PATH" | sed -E 's/^AuthKey_([A-Za-z0-9]+)\.p8$/\1/')"
+[ "$KEY_ID" != "$(basename "$APP_STORE_CONNECT_API_KEY_PATH")" ] || { echo "error: key must be named AuthKey_<KEYID>.p8" >&2; exit 1; }
 
 echo "› building a fresh bundle"
 ./packaging/build-app.sh >/dev/null
@@ -30,10 +36,14 @@ echo "› signing (Hardened Runtime, secure timestamp)"
 codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
-echo "› notarizing (zip → submit → wait)"
+echo "› notarizing via App Store Connect API key (key-id $KEY_ID)"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
-xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun notarytool submit "$ZIP" \
+    --key "$APP_STORE_CONNECT_API_KEY_PATH" \
+    --key-id "$KEY_ID" \
+    --issuer "$APP_STORE_CONNECT_API_ISSUER_ID" \
+    --wait
 
 echo "› stapling the ticket"
 xcrun stapler staple "$APP"

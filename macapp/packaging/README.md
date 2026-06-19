@@ -15,21 +15,17 @@ windowed app — the `AppDelegate` activation-policy shim only mattered for `swi
 
 ## 2. Sign + notarize (one command)
 
-Config lives in **`packaging/signing.env`** (gitignored) — already filled in with this Mac's
-Developer ID identity, team id `Y734633UDM`, and the notary profile name `toolstack-notary`.
-Nothing in that file is a secret.
+Notarization uses an **App Store Connect API key** — no Apple ID or app-specific password, so it
+can't trip the account lock that `notarytool store-credentials` password auth sometimes does.
 
-**One-time, run by you** — registers your Apple credential in the login keychain:
+Two gitignored files supply the config (both already set up on this Mac):
 
-```sh
-./packaging/notarize-setup.sh
-```
+- **`packaging/signing.env`** — `DEVELOPER_ID_APP` (the "Developer ID Application: …" identity) + `TEAM_ID`.
+- **`secrets/secrets.env`** — `APP_STORE_CONNECT_API_ISSUER_ID` + `APP_STORE_CONNECT_API_KEY_PATH`
+  (path to your `AuthKey_<KEYID>.p8`; the key-id is read from that filename).
 
-It reads your Apple ID / team / profile from `signing.env` and lets `notarytool` prompt you for the
-**app-specific password** (hidden input — never on the command line, in shell history, or in this
-repo). Create that password at appleid.apple.com → Sign-In and Security → App-Specific Passwords,
-signed in as the **same Apple ID** as `APPLE_ID` in `signing.env` (it must be a member of the team —
-a mismatch is the usual cause of a `401` here).
+Create the key once at **App Store Connect → Users and Access → Integrations → App Store Connect
+API**, download the `.p8` into `macapp/secrets/`, and put its issuer id + path in `secrets/secrets.env`.
 
 Then, every release — one command (builds, signs, notarizes, staples):
 
@@ -37,9 +33,9 @@ Then, every release — one command (builds, signs, notarizes, staples):
 ./packaging/sign-and-notarize.sh
 ```
 
-It signs with Hardened Runtime + a secure timestamp, submits to Apple, waits, and staples the
-ticket. `spctl --assess` at the end should report **accepted / Notarized Developer ID** — i.e. it
-opens on any Mac with no Gatekeeper warning.
+It signs with Hardened Runtime + a secure timestamp, submits with the API key, waits, and staples
+the ticket. `spctl --assess` at the end should report **accepted / Notarized Developer ID** — i.e.
+it opens on any Mac with no Gatekeeper warning.
 
 ### Entitlements
 
