@@ -19,16 +19,17 @@ Config lives in **`packaging/signing.env`** (gitignored) — already filled in w
 Developer ID identity, team id `Y734633UDM`, and the notary profile name `toolstack-notary`.
 Nothing in that file is a secret.
 
-**One-time, run by you** — stores your Apple credential in the login keychain (the app-specific
-password never goes in the repo, and the assistant won't enter it for you):
+**One-time, run by you** — registers your Apple credential in the login keychain:
 
 ```sh
-xcrun notarytool store-credentials toolstack-notary \
-    --apple-id "<your-apple-id>" --team-id "Y734633UDM" --password "<app-specific-password>"
+./packaging/notarize-setup.sh
 ```
 
-Create the app-specific password at appleid.apple.com → Sign-In and Security. (Use the same
-profile name as `NOTARY_PROFILE` in `signing.env`.)
+It reads your Apple ID / team / profile from `signing.env` and lets `notarytool` prompt you for the
+**app-specific password** (hidden input — never on the command line, in shell history, or in this
+repo). Create that password at appleid.apple.com → Sign-In and Security → App-Specific Passwords,
+signed in as the **same Apple ID** as `APPLE_ID` in `signing.env` (it must be a member of the team —
+a mismatch is the usual cause of a `401` here).
 
 Then, every release — one command (builds, signs, notarizes, staples):
 
