@@ -7,3 +7,5 @@ build/
 *.zip
 # Local signing config (Developer ID identity / team id / notary profile name)
 packaging/signing.env
+# App Store Connect API key + issuer for notarization — NEVER commit
+secrets/
