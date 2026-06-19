@@ -5,6 +5,7 @@ stopped). Requires the admin venv:  admin/.venv/bin/python -m unittest admin.tes
 
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -272,11 +273,32 @@ class JsonApi(unittest.TestCase):
         r = self.client.post("/api/tools", headers=self._auth(), json={"source": str(src)})
         self.assertEqual(r.status_code, 400)
 
-    def test_add_tool_requires_source(self):
+    def test_add_tool_requires_source_or_repo(self):
         self.assertEqual(self.client.post("/api/tools", headers=self._auth(), json={}).status_code, 400)
 
     def test_add_tool_needs_auth(self):
         self.assertEqual(self.client.post("/api/tools", json={"source": "/x"}).status_code, 401)
+
+    def test_add_tool_from_github(self):
+        def fake_clone(cmd, *a, **k):
+            dest = Path(cmd[-1])           # `git clone … -- <url> <dest>`
+            dest.mkdir(parents=True)
+            (dest / "toolyard.toml").write_text(
+                'id = "gh_tool"\ntype = "rest"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4900\n\n'
+                '[[operations]]\nname = "go"\nrisk = "low"\n', encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        with mock.patch("admin.tool_sources.shutil.which", return_value="/usr/bin/git"), \
+             mock.patch("admin.tool_sources.subprocess.run", side_effect=fake_clone):
+            r = self.client.post("/api/tools", headers=self._auth(),
+                                 json={"repo": "https://github.com/x/y", "ref": "main"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["id"], "gh_tool")
+        ids = [t["id"] for t in self.client.get("/api/tools", headers=self._auth()).json()["tools"]]
+        self.assertIn("gh_tool", ids)
+
+    def test_add_tool_bad_repo_url_400(self):
+        r = self.client.post("/api/tools", headers=self._auth(), json={"repo": "file:///etc/passwd"})
+        self.assertEqual(r.status_code, 400)
 
     def test_config_round_trip_write_only_token_and_validation(self):
         # save settings, partial-merge style

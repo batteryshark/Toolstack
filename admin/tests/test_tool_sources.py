@@ -1,9 +1,11 @@
 """admin.tool_sources: copy a tool folder into the managed tools dir + record its source."""
 
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from admin import tool_sources
 
@@ -122,6 +124,91 @@ class AddFromPath(unittest.TestCase):
         plain = self.tmp / "plain"
         plain.mkdir()
         self.assertIsNone(tool_sources.read_source(plain))
+
+
+class AddFromGithub(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="tool-gh-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.root = self.tmp / "tools_root"
+
+    def _fake_clone(self, *, with_subdir: bool):
+        """Return a subprocess.run stand-in that 'clones' by populating the dest dir."""
+        def run(cmd, *a, **k):
+            dest = Path(cmd[-1])                       # `git clone … -- <url> <dest>`
+            target = dest / "sub" if with_subdir else dest
+            target.mkdir(parents=True)
+            (target / "toolyard.toml").write_text(MANIFEST, encoding="utf-8")
+            (target / "app.py").write_text("# code\n", encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        return run
+
+    def test_clones_root_and_records_github_source(self):
+        with mock.patch.object(tool_sources.shutil, "which", return_value="/usr/bin/git"), \
+             mock.patch.object(tool_sources.subprocess, "run",
+                               side_effect=self._fake_clone(with_subdir=False)):
+            tool = tool_sources.add_from_github("https://github.com/x/y", str(self.root), ref="main")
+        self.assertEqual(tool["id"], "weather")
+        src = tool_sources.read_source(self.root / "weather")
+        self.assertEqual(src, {"type": "github", "url": "https://github.com/x/y",
+                               "subdir": "", "ref": "main"})
+        self.assertFalse((self.root / "weather" / ".git").exists())   # VCS cruft not copied
+
+    def test_clones_subdir(self):
+        with mock.patch.object(tool_sources.shutil, "which", return_value="/usr/bin/git"), \
+             mock.patch.object(tool_sources.subprocess, "run",
+                               side_effect=self._fake_clone(with_subdir=True)):
+            tool = tool_sources.add_from_github("https://github.com/x/y", str(self.root), subdir="sub")
+        self.assertEqual(tool["id"], "weather")
+        self.assertEqual(tool_sources.read_source(self.root / "weather")["subdir"], "sub")
+
+    def test_rejects_dangerous_or_nongit_urls(self):
+        # file://, ext::/fd:: (run commands), a flag-looking URL, a bare path, ftp:// — all rejected
+        for bad in ("file:///etc/passwd", "ext::sh -c whoami", "--upload-pack=evil",
+                    "/local/repo", "ftp://host/x", ""):
+            with self.assertRaises(ValueError, msg=bad):
+                tool_sources.add_from_github(bad, str(self.root))
+
+    def test_rejects_subdir_traversal(self):
+        with mock.patch.object(tool_sources.shutil, "which", return_value="/usr/bin/git"):
+            for bad in ("../etc", "a/../../b", ".."):
+                with self.assertRaises(ValueError, msg=bad):
+                    tool_sources.add_from_github("https://github.com/x/y", str(self.root), subdir=bad)
+
+    def test_missing_git_errors(self):
+        with mock.patch.object(tool_sources.shutil, "which", return_value=None):
+            with self.assertRaises(ValueError):
+                tool_sources.add_from_github("https://github.com/x/y", str(self.root))
+
+    def test_clone_argv_is_injection_safe(self):
+        # Pin the security-critical shape: a flag-looking ref is bound to --branch (never a free
+        # token), and the url sits only AFTER '--'. Guards against a future arg-order regression.
+        captured = {}
+        def run(cmd, *a, **k):
+            captured["cmd"] = list(cmd)
+            dest = Path(cmd[-1])
+            dest.mkdir(parents=True)
+            (dest / "toolyard.toml").write_text(MANIFEST, encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        with mock.patch.object(tool_sources.shutil, "which", return_value="/usr/bin/git"), \
+             mock.patch.object(tool_sources.subprocess, "run", side_effect=run):
+            tool_sources.add_from_github("https://github.com/x/y", str(self.root),
+                                         ref="--upload-pack=evil")
+        cmd = captured["cmd"]
+        self.assertEqual(cmd[:4], ["git", "clone", "--depth", "1"])     # shallow
+        self.assertIn("--branch=--upload-pack=evil", cmd)               # ref bound as a value
+        self.assertNotIn("--upload-pack=evil", cmd)                     # not a standalone arg
+        sep = cmd.index("--")
+        self.assertEqual(cmd[sep + 1], "https://github.com/x/y")        # url only after '--'
+        self.assertEqual(cmd[sep + 2], cmd[-1])                         # dest is last
+
+    def test_clone_failure_is_clean_valueerror(self):
+        def boom(cmd, *a, **k):
+            raise subprocess.CalledProcessError(128, cmd, b"", b"fatal: repository not found")
+        with mock.patch.object(tool_sources.shutil, "which", return_value="/usr/bin/git"), \
+             mock.patch.object(tool_sources.subprocess, "run", side_effect=boom):
+            with self.assertRaises(ValueError):
+                tool_sources.add_from_github("https://github.com/x/y", str(self.root))
 
 
 if __name__ == "__main__":

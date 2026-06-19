@@ -76,17 +76,27 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Add a tool by copying a local folder into the broker's tools dir. A folder without a
-    /// toolyard.toml comes back as 422 — surfaced as a friendly note (in-app authoring is next).
+    /// Add a tool by copying a local folder into the broker's tools dir.
     func addTool(source: String) async {
+        await performAdd { try await self.client.addTool(source: source) }
+    }
+
+    /// Add a tool by cloning a git repo (optionally a subdir, at a branch/tag) into the tools dir.
+    func addToolFromGitHub(repo: String, subdir: String, ref: String) async {
+        await performAdd { try await self.client.addToolFromGitHub(repo: repo, subdir: subdir, ref: ref) }
+    }
+
+    /// Shared add bookkeeping. A source without a toolyard.toml comes back 422 — surfaced as a
+    /// friendly note (in-app authoring is the next step) rather than a raw server error.
+    private func performAdd(_ op: @escaping () async throws -> CreatedTool) async {
         busy = true
         error = nil
         do {
-            let created = try await client.addTool(source: source)
+            let created = try await op()
             await refreshTools()
             banner = "Added \(created.id). Restart the broker to register it, then grant a caller access."
         } catch ApiError.http(422, _) {
-            error = "That folder has no toolyard.toml — it's code, not a tool yet. "
+            error = "No toolyard.toml at that location — it's code, not a tool yet. "
                   + "Authoring a manifest in-app is the next step."
         } catch ApiError.unauthorized {
             authenticated = false

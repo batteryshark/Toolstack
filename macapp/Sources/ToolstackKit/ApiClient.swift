@@ -122,6 +122,17 @@ public actor ApiClient {
         try await send("POST", "/api/tools", body: ["source": source])
     }
 
+    /// Add a tool by cloning a git repo (optionally a `subdir` within it, at branch/tag `ref`) into
+    /// the managed tools dir. The clone is third-party code — copied in, not started. 422 if no manifest.
+    @discardableResult
+    public func addToolFromGitHub(repo: String, subdir: String = "",
+                                  ref: String = "") async throws -> CreatedTool {
+        var body: [String: Any] = ["repo": repo]
+        if !subdir.isEmpty { body["subdir"] = subdir }
+        if !ref.isEmpty { body["ref"] = ref }
+        return try await send("POST", "/api/tools", body: body)
+    }
+
     public func policy(for caller: String) async throws -> PolicyResponse {
         try await send("GET", "/api/callers/\(caller)/policy")
     }
