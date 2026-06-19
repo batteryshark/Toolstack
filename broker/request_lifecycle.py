@@ -14,6 +14,8 @@ after approval) and cleared at any terminal state. They are never audited.
 
 from __future__ import annotations
 
+import logging
+
 import json
 import time
 from dataclasses import dataclass, replace
@@ -42,6 +44,8 @@ class Outcome:
     note: str | None = None  # the approver's note, surfaced back to the agent
     decided_at: str | None = None  # when the human answered, per the surface (ISO 8601)
 
+
+log = logging.getLogger(__name__)
 
 def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Outcome:
     sweep_expired(ctx)  # lazy GC of stale approvals — the broker has no background worker
@@ -136,6 +140,7 @@ def execute_request(ctx, request_id, tool, op, arguments, correlation_id, caller
     try:
         result = ctx.runtime.execute(tool_op, arguments, request_id, caller_name)
     except Exception as exc:  # a tool failure must not crash the broker
+        log.warning("tool %s.%s failed: %s: %s", tool, op, type(exc).__name__, exc)
         ctx.store.update_request(request_id, status="failed", error="tool_failed",
                                  arguments_json=None)
         audit.record("runtime", "execution_failed", FAILED, correlation_id,

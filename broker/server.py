@@ -16,6 +16,7 @@ Run it:  python3 -m broker.server
 from __future__ import annotations
 
 import json
+import logging
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -133,6 +134,8 @@ def build_server(
 
 
 def main() -> None:
+    logging.basicConfig(level=os.environ.get("TOOLSTACK_LOG_LEVEL", "INFO").upper(),
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     # TOOLSTACK_TOOLS_DIRS is an os.pathsep-separated list of individual tool
     # directories (each holding a toolyard.toml), in addition to the tools root.
     raw_dirs = os.environ.get("TOOLSTACK_TOOLS_DIRS", "")

@@ -7,12 +7,14 @@ cookie uses; clients send it back as ``Authorization: Bearer <token>`` and a dep
 ``auth.verify_session``. No CSRF is needed (a header token is not auto-sent cross-site). Loopback
 only, like the rest of the admin.
 
-Split out of ``server.create_app`` so the JSON surface can grow (callers / policies / tools /
-secrets / audit) without bloating the HTML server. **Phase 1 (T-029):** auth + broker status/
-control; the remaining operator endpoints land as the native app ([[T-030]]) needs them.
+Split out of ``server.create_app`` so the JSON surface stays separate from the HTML server.
+Covers the full operator surface: auth, broker status/control, callers/policies/tokens, tools
+(add/author/update + secret declarations), secret values, and the request + audit log.
 """
 
 from __future__ import annotations
+
+import logging
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 
@@ -26,6 +28,8 @@ from .store_access import open_store
 # broker lifecycle action -> the admin.* audit event it records (shared with the HTML handler)
 _BROKER_EVENTS = {"start": "broker_started", "stop": "broker_stopped", "restart": "broker_restarted"}
 
+
+log = logging.getLogger(__name__)
 
 def _rows(rows) -> list[dict]:
     """sqlite3.Row list -> JSON-serializable dicts."""
@@ -211,14 +215,16 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
             for op in Registry.from_sources(config.tools_root, config.tool_dirs).list_ops():
                 ops_by_tool.setdefault(op["tool"], []).append(
                     {"op": op["op"], "risk": op["risk"], "description": op["description"]})
-        except Exception:
-            pass  # tools still listed (without ops) if the registry can't be read
+        except Exception as exc:
+            log.warning("could not read tool ops for the policy editor: %s", exc)
+            # tools still listed (without ops) if the registry can't be read
         # attach each tool's secret DECLARATIONS (name/field/writable/vault/item) for display.
         # The broker registry ignores [[secrets]], but the admin (control plane) may show them —
         # these are declarations, never values.
         try:
             defs = toolyard_ops._all_defs(config.tools_root, config.tool_dirs)
-        except Exception:
+        except Exception as exc:
+            log.warning("could not read tool secret declarations: %s", exc)
             defs = {}
         for tool in tools:
             tool["ops"] = ops_by_tool.get(tool["id"], [])
@@ -339,7 +345,8 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
         """The secret FIELDS a tool declares (or None if there's no such tool)."""
         try:
             defs = toolyard_ops._all_defs(config.tools_root, config.tool_dirs)
-        except Exception:
+        except Exception as exc:
+            log.warning("could not read tool secret declarations: %s", exc)
             defs = {}
         td = defs.get(tool_id)
         return None if td is None else [s.field for s in td.secrets]

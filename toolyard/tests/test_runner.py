@@ -18,6 +18,7 @@ import threading
 import time
 import tomllib
 import unittest
+from unittest import mock
 import urllib.request
 from pathlib import Path
 
@@ -271,6 +272,23 @@ class RestProcessRunnerE2E(unittest.TestCase):
         result = self._call("GET", {"path": "/items/ghost"})
         self.assertEqual(result["status"], 404)
         self.assertEqual(result["body"]["error"], "not_found")
+
+
+class ProcessRunnerLogging(unittest.TestCase):
+    """The process runner captures a tool's stdout/stderr onto a per-tool logfile under the
+    state dir, so a crashed/noisy tool is diagnosable instead of lost."""
+
+    def test_start_creates_the_per_tool_logfile(self):
+        import toolyard.runner as runner_mod
+        state = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, state, ignore_errors=True)
+        tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
+        runner = ProcessRunner()
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": state}):
+            logpath = runner_mod._tool_log_path(tool.id)
+            running = runner.start(tool, {"api_key": SECRET})
+            self.addCleanup(runner.stop, running)
+            self.assertTrue(logpath.exists())   # the child's fd 1/2 were redirected here
 
 
 def _docker_ok() -> bool:
