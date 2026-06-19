@@ -277,9 +277,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func savePolicy(caller: String, allow: [String], review: [String]) async {
+    func savePolicy(caller: String, allow: [String], review: [String], deny: [String] = []) async {
         await run {
-            _ = try await self.client.setPolicy(caller: caller, allow: allow, review: review)
+            _ = try await self.client.setPolicy(caller: caller, allow: allow, review: review, deny: deny)
             await self.refreshCallers()
         }
     }

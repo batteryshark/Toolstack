@@ -46,9 +46,10 @@ def path_scoped_keys(policy: dict) -> set:
 
 def coarse_update_drops_scope(store: Store, name: str, allow, review, deny=None) -> set:
     """Return the path-scoped keys that a coarse allow/review/deny update would DROP for this
-    caller (empty == safe). The GUI policy editors can only express bare verb/op effects, so
-    saving one over a caller that has path rules would silently flatten them — the editor
-    entry points call this to refuse instead. brokerctl is explicit and stays unguarded."""
+    caller (empty == safe). A path-blind client (the web policy editor) can't express path
+    rules, so saving one over a caller that has them would silently flatten them — that entry
+    point calls this to refuse. A path-aware client (the macapp, which renders + manages the
+    rules) declares itself and is trusted to send the full picture; brokerctl is unguarded."""
     caller = require_caller(store, name)
     prior = path_scoped_keys(store.policy_for(caller["id"]))
     incoming = path_scoped_keys(build_policy(allow, review, deny))

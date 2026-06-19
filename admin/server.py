@@ -301,8 +301,8 @@ def create_app() -> FastAPI:
                 review.append(spec)
         try:
             with open_store(config) as store:
-                # A coarse (verb-level) save must not silently drop a caller's path-scoped
-                # rules — refuse so they aren't flattened (set those via brokerctl).
+                # The web editor is verb-level (path-blind) — refuse a save that would silently
+                # flatten a caller's rest path rules. Manage those in the macapp or with brokerctl.
                 if operations.coarse_update_drops_scope(store, name, allow, review):
                     current = store.policy_for(operations.require_caller(store, name)["id"])
                     all_ops = ops_by_tool(config)
@@ -310,8 +310,8 @@ def create_app() -> FastAPI:
                     return HTMLResponse(views.policy_view(
                         user=user, csrf=csrf_for(request), caller=name,
                         ops_by_tool=shown, current=current, has_tools=bool(all_ops),
-                        error="This caller has path-scoped rules; the web editor manages "
-                              "verb-level effects only. Edit path rules with brokerctl."))
+                        error="This caller has path-scoped rules; the web editor is verb-level "
+                              "only. Edit path rules in the macapp app or with brokerctl."))
                 operations.set_policy(store, name, allow, review, user)
         except LookupError as exc:
             return render_dashboard(request, user, error=str(exc))

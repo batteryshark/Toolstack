@@ -159,16 +159,20 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
         data = await _json_object(request)
         allow, review = _str_list(data.get("allow"), "allow"), _str_list(data.get("review"), "review")
         deny = _str_list(data.get("deny"), "deny")
+        # A path-aware client (the macapp policy editor) renders + manages rest path rules and
+        # sends the full picture, so it may intentionally drop rules; it declares itself with
+        # this flag. A path-blind client that omits it is refused if it would flatten path rules.
+        manages_path = bool(data.get("manages_path_rules"))
         with open_store(broker_config.load()) as store:
             try:
-                # A coarse (verb-level) update must not silently drop a caller's path-scoped
-                # rules — refuse so the path rules aren't flattened (set those via brokerctl).
-                dropped = operations.coarse_update_drops_scope(store, name, allow, review, deny)
-                if dropped:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="caller has path-scoped rules this editor can't manage yet; "
-                               "edit them with brokerctl. Would drop: " + ", ".join(sorted(dropped)))
+                if not manages_path:
+                    dropped = operations.coarse_update_drops_scope(store, name, allow, review, deny)
+                    if dropped:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="caller has path-scoped rules this client can't manage; edit "
+                                   "them with a path-aware client or brokerctl. Would drop: "
+                                   + ", ".join(sorted(dropped)))
                 operations.set_policy(store, name, allow, review, user, deny=deny)
                 policy = store.policy_for(operations.require_caller(store, name)["id"])
             except LookupError as exc:

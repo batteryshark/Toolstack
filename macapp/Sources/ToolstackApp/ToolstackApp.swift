@@ -416,20 +416,25 @@ struct ToolsPane: View {
     }
 }
 
-/// Per-caller policy editor: an allow / review / deny picker for every op of the caller's
-/// ENABLED tools (enable tools via the caller menu first). "deny" just means the op isn't in the
-/// allow or review list (that's how the broker stores it).
+/// One editable rest path rule: a verb, a path glob (blank = any path), and an effect.
+struct EditableRule: Identifiable {
+    let id = UUID()
+    var verb: String
+    var pattern: String
+    var effect: Effect
+}
+
+/// Per-caller policy editor. For api/mcp tools it's an allow / review / deny picker per op.
+/// For a rest tool it edits PATH RULES: (verb, path-glob, effect) rows — most-specific wins,
+/// an unmatched path is denied, and an explicit deny carves a hole inside a broader allow.
 struct PolicyEditor: View {
     @EnvironmentObject var model: AppModel
     let caller: String
     @Environment(\.dismiss) private var dismiss
-    @State private var effects: [String: Effect] = [:]   // "tool.op" -> effect
-    @State private var enabled: Set<String> = []         // tools this caller is enabled for
+    @State private var effects: [String: Effect] = [:]            // "tool.op" -> effect (api/mcp)
+    @State private var restRules: [String: [EditableRule]] = [:]  // tool id -> path rules (rest)
+    @State private var enabled: Set<String> = []
     @State private var loaded = false
-    // This caller has rest path-scoped rules (an op key like "GET /items/**"). This
-    // verb-level editor can't express them and a save would flatten them, so it goes
-    // read-only and points the operator at brokerctl until the path-rule UI lands.
-    @State private var hasPathScoped = false
 
     private var enabledTools: [ToolInfo] { model.tools.filter { enabled.contains($0.id) } }
 
@@ -438,13 +443,8 @@ struct PolicyEditor: View {
             HStack {
                 Text("Policy — \(caller)").font(.title2.bold())
                 Spacer()
-                Button("Allow all") { setAll(.allow) }.disabled(!loaded || enabledTools.isEmpty || hasPathScoped)
-                Button("Deny all") { setAll(.deny) }.disabled(!loaded || enabledTools.isEmpty || hasPathScoped)
-            }
-            if hasPathScoped {
-                Label("This caller has path-scoped rules. Edit them with brokerctl — this editor "
-                      + "manages verb-level effects only and would drop them.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                Button("Allow all") { setAll(.allow) }.disabled(!loaded || effects.isEmpty)
+                Button("Deny all") { setAll(.deny) }.disabled(!loaded || effects.isEmpty)
             }
             if !loaded {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -458,23 +458,8 @@ struct PolicyEditor: View {
                 List {
                     ForEach(enabledTools) { tool in
                         Section(tool.id) {
-                            ForEach(tool.ops) { op in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack {
-                                        Text(op.op).bold()
-                                        Text(op.risk).font(.caption2)
-                                            .padding(.horizontal, 5).padding(.vertical, 1)
-                                            .background(.secondary.opacity(0.15), in: .capsule)
-                                        Spacer()
-                                    }
-                                    if !op.description.isEmpty {
-                                        Text(op.description).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Picker("", selection: bind("\(tool.id).\(op.op)")) {
-                                        ForEach(Effect.allCases) { Text($0.rawValue.capitalized).tag($0) }
-                                    }.pickerStyle(.segmented).labelsHidden()
-                                }.padding(.vertical, 2)
-                            }
+                            if tool.type == "rest" { restEditor(tool) }
+                            else { ForEach(tool.ops) { op in opRow(tool: tool, op: op) } }
                         }
                     }
                 }
@@ -483,16 +468,67 @@ struct PolicyEditor: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Save") { Task { await save() } }
-                    .keyboardShortcut(.defaultAction).disabled(!loaded || model.busy || hasPathScoped)
+                    .keyboardShortcut(.defaultAction).disabled(!loaded || model.busy)
             }
         }
         .padding()
-        .frame(minWidth: 520, minHeight: 460)
+        .frame(minWidth: 560, minHeight: 480)
         .task { await load() }
+    }
+
+    @ViewBuilder
+    private func opRow(tool: ToolInfo, op: OpInfo) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(op.op).bold()
+                Text(op.risk).font(.caption2)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(.secondary.opacity(0.15), in: .capsule)
+                Spacer()
+            }
+            if !op.description.isEmpty {
+                Text(op.description).font(.caption).foregroundStyle(.secondary)
+            }
+            Picker("", selection: bind("\(tool.id).\(op.op)")) {
+                ForEach(Effect.allCases) { Text($0.rawValue.capitalized).tag($0) }
+            }.pickerStyle(.segmented).labelsHidden()
+        }.padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func restEditor(_ tool: ToolInfo) -> some View {
+        let verbs = tool.ops.map(\.op)   // the verbs this tool exposes
+        Text("Path rules — most specific wins; a path matching no rule is denied.")
+            .font(.caption).foregroundStyle(.secondary)
+        ForEach(rulesBinding(tool.id)) { $rule in
+            HStack(spacing: 6) {
+                Picker("", selection: $rule.verb) {
+                    ForEach(verbs, id: \.self) { Text($0).tag($0) }
+                }.labelsHidden().frame(width: 92)
+                TextField("/path/**  (blank = any path)", text: $rule.pattern)
+                Picker("", selection: $rule.effect) {
+                    ForEach(Effect.allCases) { Text($0.rawValue.capitalized).tag($0) }
+                }.pickerStyle(.segmented).labelsHidden().frame(width: 170)
+                Button(role: .destructive) { removeRule(tool.id, rule.id) } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+            }
+        }
+        Button {
+            restRules[tool.id, default: []].append(
+                EditableRule(verb: verbs.first ?? "GET", pattern: "", effect: .allow))
+        } label: { Label("Add rule", systemImage: "plus") }.font(.caption)
     }
 
     private func bind(_ key: String) -> Binding<Effect> {
         Binding(get: { effects[key] ?? .deny }, set: { effects[key] = $0 })
+    }
+
+    private func rulesBinding(_ tool: String) -> Binding<[EditableRule]> {
+        Binding(get: { restRules[tool] ?? [] }, set: { restRules[tool] = $0 })
+    }
+
+    private func removeRule(_ tool: String, _ id: UUID) {
+        restRules[tool]?.removeAll { $0.id == id }
     }
 
     private func setAll(_ effect: Effect) {
@@ -503,20 +539,45 @@ struct PolicyEditor: View {
         await model.refreshTools()
         guard let resp = await model.loadPolicy(for: caller) else { loaded = true; return }
         enabled = Set(resp.enabled)
-        // a rest path-scoped key has a space in its op part ("GET /items/**")
-        hasPathScoped = resp.policy.tools.values.contains { ops in ops.keys.contains { $0.contains(" ") } }
-        var current: [String: Effect] = [:]
+        var ops: [String: Effect] = [:]
+        var rules: [String: [EditableRule]] = [:]
         for tool in enabledTools {
-            for op in tool.ops { current["\(tool.id).\(op.op)"] = resp.policy.effect(tool: tool.id, op: op.op) }
+            if tool.type == "rest" {
+                rules[tool.id] = (resp.policy.tools[tool.id] ?? [:]).map { key, value in
+                    // a key is "<VERB>" or "<VERB> <path-glob>"
+                    let parts = key.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
+                    return EditableRule(verb: String(parts[0]),
+                                        pattern: parts.count > 1 ? String(parts[1]) : "",
+                                        effect: Effect(rawValue: value) ?? .deny)
+                }.sorted { ($0.verb, $0.pattern) < ($1.verb, $1.pattern) }
+            } else {
+                for op in tool.ops { ops["\(tool.id).\(op.op)"] = resp.policy.effect(tool: tool.id, op: op.op) }
+            }
         }
-        effects = current
+        effects = ops
+        restRules = rules
         loaded = true
     }
 
     private func save() async {
-        let allow = effects.filter { $0.value == .allow }.map(\.key)
-        let review = effects.filter { $0.value == .review }.map(\.key)
-        await model.savePolicy(caller: caller, allow: allow, review: review)
+        var allow: [String] = [], review: [String] = [], deny: [String] = []
+        // api/mcp ops: allow/review listed; deny == omitted (absent is denied)
+        for (key, effect) in effects {
+            if effect == .allow { allow.append(key) } else if effect == .review { review.append(key) }
+        }
+        // rest path rules: "tool.VERB" or "tool.VERB pattern"; deny is explicit (a carve-out)
+        for (tool, rules) in restRules {
+            for rule in rules where !rule.verb.isEmpty {
+                let p = rule.pattern.trimmingCharacters(in: .whitespaces)
+                let spec = p.isEmpty ? "\(tool).\(rule.verb)" : "\(tool).\(rule.verb) \(p)"
+                switch rule.effect {
+                case .allow: allow.append(spec)
+                case .review: review.append(spec)
+                case .deny: deny.append(spec)
+                }
+            }
+        }
+        await model.savePolicy(caller: caller, allow: allow, review: review, deny: deny)
         dismiss()
     }
 }
