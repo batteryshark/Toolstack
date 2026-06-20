@@ -180,6 +180,14 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/echo/restart")
     }
 
+    func testDeleteToolSendsDELETE() async throws {
+        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"removed":"echo"}"#.utf8)) }
+        let removed = try await makeClient(token: "t").deleteTool(id: "echo")
+        XCTAssertEqual(removed, "echo")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "DELETE")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/echo")
+    }
+
     func testListToolsDecodesOps() async throws {
         let json = #"{"tools":[{"id":"echo","type":"api","port":4601,"running":false,"#
                  + #""ops":[{"op":"say","risk":"low","description":"echo it"}]}]}"#

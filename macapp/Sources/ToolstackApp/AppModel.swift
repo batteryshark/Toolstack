@@ -117,6 +117,14 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func removeTool(id: String) async {
+        await run {
+            _ = try await self.client.deleteTool(id: id)
+            await self.refreshTools()
+            self.banner = "Removed \(id). Restart the broker to drop it from the registry."
+        }
+    }
+
     /// Banner after a tool is added (any source): it lands on disk but needs a broker restart to register.
     private func addedBanner(_ id: String, authored: Bool = false) -> String {
         "Added \(id)\(authored ? " (authored)" : ""). Restart the broker to register it, then grant a caller access."

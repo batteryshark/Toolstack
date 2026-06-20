@@ -11,6 +11,7 @@ them, keeping secrets off the control plane.
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import asdict
 from pathlib import Path
 
@@ -94,3 +95,27 @@ def stop(tool_id: str) -> None:
 def restart(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend: str = "process") -> None:
     stop(tool_id)
     start(tool_id, tools_root, tool_dirs, secrets_file, backend)
+
+
+def remove(tool_id: str, tools_root: str, tool_dirs=()) -> None:
+    """Stop a tool if running, then delete its managed folder under ``tools_root``.
+
+    Only TSR-managed tools (those that live UNDER ``tools_root`` — the copy-into-managed-dir
+    model) are deletable here. A tool referenced via an external ``tool_dirs`` entry is the
+    operator's own folder, so it is left on disk (unregister it by editing ``tool_dirs``). The
+    path comes from discovery (its id is validated at ingest), and the under-root check is a
+    defence-in-depth guard so this can never ``rmtree`` outside the managed tree."""
+    defs = _all_defs(tools_root, tool_dirs)
+    if tool_id not in defs:
+        raise LookupError(f"unknown tool: {tool_id}")
+    tool_path = Path(defs[tool_id].path).resolve()
+    root = Path(tools_root).resolve() if tools_root else None
+    if root is None or tool_path == root or not tool_path.is_relative_to(root):
+        raise ValueError(
+            f"tool {tool_id!r} is not managed under the tools root — it was registered from an "
+            "external directory; unregister it by removing that path from tool_dirs")
+    stop(tool_id)  # kill any running process + drop its state record before deleting the code
+    try:
+        shutil.rmtree(tool_path)
+    except OSError as exc:  # stopped but couldn't delete -> a clear 400, not an opaque 500
+        raise ValueError(f"stopped {tool_id!r} but could not delete its folder: {exc}") from exc

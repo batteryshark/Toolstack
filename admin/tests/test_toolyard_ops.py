@@ -64,6 +64,26 @@ class ToolyardOps(unittest.TestCase):
         with self.assertRaises(LookupError):
             toolyard_ops.start("ghost", str(self.tools_root), [], "secrets.toml")
 
+    def test_remove_deletes_a_managed_tool_dir(self):
+        self.assertTrue((self.tools_root / "echo").exists())
+        toolyard_ops.remove("echo", str(self.tools_root))
+        self.assertFalse((self.tools_root / "echo").exists())   # folder gone
+        self.assertEqual(toolyard_ops.list_tools(str(self.tools_root)), [])
+
+    def test_remove_unknown_tool_raises(self):
+        with self.assertRaises(LookupError):
+            toolyard_ops.remove("ghost", str(self.tools_root))
+
+    def test_remove_refuses_external_tool_dir(self):
+        # A tool registered from an external dir is the operator's folder — never delete it.
+        other = Path(self.tmp, "elsewhere", "weather")
+        other.mkdir(parents=True)
+        (other / "toolyard.toml").write_text(
+            'id = "weather"\ntype = "api"\n[entrypoint]\ncommand = "x"\nport = 4700\n', encoding="utf-8")
+        with self.assertRaises(ValueError):
+            toolyard_ops.remove("weather", str(self.tools_root), [str(other)])
+        self.assertTrue(other.exists())   # left on disk
+
 
 if __name__ == "__main__":
     unittest.main()
