@@ -1,1 +1,0 @@
-This document describes the collapsed Toolstack architecture, where the broker owns approvals and forwards requests to tool containers while toolyard injects secrets at container start and redaction rules protect audit data.

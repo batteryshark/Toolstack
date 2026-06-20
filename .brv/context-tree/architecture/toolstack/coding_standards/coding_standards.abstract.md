@@ -1,1 +1,0 @@
-Coding standards require boring, explicit, transport-neutral code with small public surfaces, behavior-focused tests, and deferred infrastructure choices.

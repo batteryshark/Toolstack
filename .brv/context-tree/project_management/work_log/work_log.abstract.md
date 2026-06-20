@@ -1,1 +1,0 @@
-The work log records the greenfield rebuild history and the 2026-06-13 pivot to a collapsed deployment reality, with Phase 0 tunnel access and fail-closed broker behavior as the next step.

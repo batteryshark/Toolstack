@@ -1,8 +1,0 @@
-- Documents the collapsed Toolstack architecture, replacing the old 9-service model with a few processes and hard physical boundaries.
-- Describes the main flow as agent -> tailnet ingress -> broker -> tool container, with toolyard handling container startup and secret injection off the request path.
-- Clarifies that former service responsibilities now live as in-process broker module seams backed by one SQLite file, not separate networked services.
-- Establishes broker ownership of approval truth and nod as the external approval surface.
-- Notes that only process/trust boundaries require wire contracts; internal module interactions are in-process with no inter-module auth.
-- Highlights dependencies on tailnet/VPN ingress, SQLite, nod, Toolyard, and a secret backend such as Infisical or SOPS.
-- Includes redaction and secrecy rules: tool arguments/results must be redacted before audit/approval cards, raw tokens are never logged, and sensitive content must not appear in nod titles/summaries.
-- Structure summary: reason, raw concept with task/changes/files/flow/patterns, then narrative sections for structure, dependencies, highlights, and rules.
