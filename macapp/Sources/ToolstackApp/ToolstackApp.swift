@@ -265,6 +265,7 @@ struct ToolsPane: View {
     @State private var editing: ToolInfo?
     @State private var managingSecrets: ToolInfo?
     @State private var addingTool = false
+    @State private var removingTool: ToolInfo?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -288,15 +289,16 @@ struct ToolsPane: View {
                             }
                             Spacer()
                             Button("Edit…") { editing = tool }.font(.caption)
-                            if let source = tool.source {
-                                Menu {
+                            Menu {
+                                if let source = tool.source {
                                     Button("Update from \(sourceKind(source))") {
                                         Task { await model.resyncTool(id: tool.id) }
                                     }
-                                } label: { Image(systemName: "ellipsis.circle") }
-                                    .menuStyle(.borderlessButton).fixedSize()
-                                    .help("Re-pull this tool from its source")
-                            }
+                                }
+                                Button("Remove tool…", role: .destructive) { removingTool = tool }
+                            } label: { Image(systemName: "ellipsis.circle") }
+                                .menuStyle(.borderlessButton).fixedSize()
+                                .help("Manage this tool")
                         }
                         .padding(.vertical, 2)
                         if let source = tool.source {
@@ -347,7 +349,18 @@ struct ToolsPane: View {
         .sheet(item: $managingSecrets) { tool in
             SecretValuesSheet(tool: tool).environmentObject(model)
         }
+        .confirmationDialog("Remove tool?", isPresented: removingToolBinding, presenting: removingTool) { tool in
+            Button("Remove \(tool.id)", role: .destructive) {
+                Task { await model.removeTool(id: tool.id) }
+            }
+        } message: { tool in
+            Text("Deletes \(tool.id)'s folder from the broker's tools dir. This can't be undone.")
+        }
         .task { await model.refreshTools(); await model.refreshSecretBackend() }
+    }
+
+    private var removingToolBinding: Binding<Bool> {
+        Binding(get: { removingTool != nil }, set: { if !$0 { removingTool = nil } })
     }
 
     private var headerBar: some View {

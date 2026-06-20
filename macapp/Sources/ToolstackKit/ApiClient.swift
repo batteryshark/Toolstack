@@ -158,6 +158,14 @@ public actor ApiClient {
         try await send("POST", "/api/tools/\(id)/update", body: [:])
     }
 
+    /// Remove a TSR-managed tool (stops it, deletes its folder under the tools root). Returns the
+    /// removed id. Throws `.http(400)` for a tool registered from an external dir (not deletable).
+    @discardableResult
+    public func deleteTool(id: String) async throws -> String {
+        let result: RemovedTool = try await send("DELETE", "/api/tools/\(id)")
+        return result.removed
+    }
+
     /// Set/unset status of a tool's declared secret fields (vault only; never the values).
     public func secretStatus(toolId: String) async throws -> SecretStatus {
         try await send("GET", "/api/tools/\(toolId)/secrets")

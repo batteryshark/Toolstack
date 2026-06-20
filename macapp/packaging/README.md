@@ -33,9 +33,11 @@ Then, every release — one command (builds, signs, notarizes, staples):
 ./packaging/sign-and-notarize.sh
 ```
 
-It signs with Hardened Runtime + a secure timestamp, submits with the API key, waits, and staples
-the ticket. `spctl --assess` at the end should report **accepted / Notarized Developer ID** — i.e.
-it opens on any Mac with no Gatekeeper warning.
+It signs with Hardened Runtime + a secure timestamp, submits with the API key, waits, staples the
+ticket, and finally zips the **stapled** bundle to `build/ToolstackApp.zip` — that zip is the
+deliverable (the ticket travels inside the `.app`, so it passes Gatekeeper offline; the recipient
+unzips and drags it to `/Applications`). `spctl --assess` at the end should report **accepted /
+Notarized Developer ID** — i.e. it opens on any Mac with no Gatekeeper warning.
 
 ### Entitlements
 
@@ -45,14 +47,16 @@ items (the saved bearer token) are allowed without an entitlement. Add
 `--entitlements packaging/Toolstack.entitlements` to the `codesign` line only if a future feature
 needs a specific Hardened-Runtime exception (e.g. JIT).
 
-## 3. (optional) Wrap in a .dmg
+## 3. Distribute
+
+`build/ToolstackApp.zip` (produced in step 2) is the artifact — hand it out as-is. If you'd
+rather ship a disk image instead of a zip, wrap the stapled app in a signed `.dmg`:
 
 ```sh
 hdiutil create -volname "Toolstack" -srcfolder build/ToolstackApp.app \
     -ov -format UDZO build/Toolstack.dmg
+codesign --sign "$DEVELOPER_ID_APP" build/Toolstack.dmg   # sign the dmg too if you ship it
 ```
-
-Sign the dmg too if you distribute it: `codesign --sign "$DEVELOPER_ID_APP" build/Toolstack.dmg`.
 
 ## Versioning
 

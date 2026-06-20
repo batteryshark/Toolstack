@@ -117,6 +117,11 @@ public struct CreatedTool: Codable, Sendable {
     public let path: String   // where it now lives under the broker's tools dir
 }
 
+/// Result of removing a managed tool (`DELETE /api/tools/{id}`).
+public struct RemovedTool: Codable, Sendable {
+    public let removed: String
+}
+
 /// The active secret backend (deployment-wide). `path` (file/vault) or `host`/`environment`/
 /// `defaultVault` (Infisical) are present depending on `name`.
 public struct SecretBackend: Codable, Sendable {

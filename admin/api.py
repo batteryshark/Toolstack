@@ -371,6 +371,22 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             operations.record_admin_event(store, user, "tool_updated", {"tool": tool_id, "dir": tool["path"]})
         return tool
 
+    @app.delete("/api/tools/{tool_id}")
+    async def api_remove_tool(tool_id: str, user: str = Depends(require_user)):
+        """Remove a TSR-managed tool: stop it if running and delete its folder under the tools
+        root. A tool referenced from an external tool_dir is not deleted (a 400 explains how to
+        unregister it)."""
+        config = broker_config.load()
+        try:
+            toolyard_ops.remove(tool_id, config.tools_root, config.tool_dirs)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        with open_store(config) as store:
+            operations.record_admin_event(store, user, "tool_removed", {"tool": tool_id})
+        return {"removed": tool_id}
+
     def _declared_fields(config, tool_id: str) -> list[str]:
         """The secret FIELDS a tool declares (or None if there's no such tool)."""
         try:

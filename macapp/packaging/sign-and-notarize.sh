@@ -17,7 +17,8 @@ cd "$(dirname "$0")/.."
 [ -f secrets/secrets.env ] && . secrets/secrets.env
 
 APP="build/ToolstackApp.app"
-ZIP="build/ToolstackApp.zip"
+SUBMIT_ZIP="build/ToolstackApp-submit.zip"   # what notarytool ingests (pre-staple)
+ZIP="build/ToolstackApp.zip"                 # the distributable (the STAPLED .app, zipped)
 : "${DEVELOPER_ID_APP:?set it in packaging/signing.env to your 'Developer ID Application: …' identity}"
 : "${APP_STORE_CONNECT_API_ISSUER_ID:?set it in secrets/secrets.env (App Store Connect API issuer id)}"
 : "${APP_STORE_CONNECT_API_KEY_PATH:?set it in secrets/secrets.env (path to your AuthKey_*.p8)}"
@@ -37,18 +38,25 @@ codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
 echo "› notarizing via App Store Connect API key (key-id $KEY_ID)"
-rm -f "$ZIP"
-ditto -c -k --keepParent "$APP" "$ZIP"
-xcrun notarytool submit "$ZIP" \
+rm -f "$SUBMIT_ZIP"
+ditto -c -k --keepParent "$APP" "$SUBMIT_ZIP"
+xcrun notarytool submit "$SUBMIT_ZIP" \
     --key "$APP_STORE_CONNECT_API_KEY_PATH" \
     --key-id "$KEY_ID" \
     --issuer "$APP_STORE_CONNECT_API_ISSUER_ID" \
     --wait
+rm -f "$SUBMIT_ZIP"
 
 echo "› stapling the ticket"
 xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 spctl --assess --type execute --verbose=4 "$APP"   # Gatekeeper should say: accepted, Notarized Developer ID
 
-echo "✓ signed + notarized: $APP"
-echo "  distribute it, or wrap it in a .dmg (see packaging/README.md)."
+echo "› zipping the stapled app for distribution"
+# Zip the STAPLED bundle so Gatekeeper accepts it offline (the ticket travels in the .app, not
+# the notarization service). ditto --keepParent preserves the .app wrapper + symlinks/perms.
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
+
+echo "✓ signed + notarized + stapled: $APP"
+echo "  distribute: $ZIP — a signed, notarized .app zipped up (unzip → drag to /Applications)."
