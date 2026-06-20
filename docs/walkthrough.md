@@ -11,8 +11,8 @@ decide what's next. Companion docs: [PROJECT.md](../PROJECT.md) (nerve center),
 The planned build order (Phases 0–4) is **complete and tested**, the agent-side
 client (the `toolstack` CLI + MCP adapter + skill) is built on top, and an operator
 **admin web app** now runs and manages the whole stack (with a native desktop shell and a
-native macOS app on top) — 509 tests pass (219 broker + 78 toolyard + 23 client + 180 admin
-+ 9 desktop), plus 31 `swift test` tests for the native app; incl. opt-in Docker runner tests
+native macOS app on top) — 513 tests pass (219 broker + 78 toolyard + 23 client + 184 admin
++ 9 desktop), plus 32 `swift test` tests for the native app; incl. opt-in Docker runner tests
 and an opt-in live-nod test, with live walkthroughs end to end. The full vertical slice runs:
 
 > **agent → broker (auth + policy) → human approval in nod → tool execution with
@@ -263,12 +263,12 @@ python3 -m unittest discover -s broker/tests -t .        # 219 tests (1 live-nod
 python3 -m unittest discover -s toolyard/tests -t .       # 78 tests (19 skipped by default: vault, docker e2e, live-Infisical)
 python3 -m unittest discover -s client/tests -t .         # 23 tests (CLI + MCP, vs a real broker)
 python3 -m unittest discover -s desktop/tests -t .        # 9 tests (desktop shell lifecycle)
-admin/.venv/bin/python -m unittest discover -s admin/tests -t .   # 180 tests (needs admin/.venv; incl. the JSON /api)
+admin/.venv/bin/python -m unittest discover -s admin/tests -t .   # 184 tests (needs admin/.venv; incl. the JSON /api)
 TOOLSTACK_TEST_DOCKER=1 python3 -m unittest toolyard.tests.test_runner   # + the opt-in real-container tests
 pip install -e '.[vault]' && python3 -m unittest discover -s toolyard/tests -t .  # + the encrypted-vault tests
 ```
 
-The native macOS app has its own `swift test` suite (31 tests; needs Xcode):
+The native macOS app has its own `swift test` suite (32 tests; needs Xcode):
 
 ```bash
 cd macapp && swift test     # ToolstackKit: ApiClient, Keychain store, response decoding
