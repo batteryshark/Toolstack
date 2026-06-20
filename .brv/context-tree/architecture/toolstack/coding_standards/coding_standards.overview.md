@@ -1,7 +1,0 @@
-- Coding standards emphasize simple, explicit, behavior-focused code with transport-neutral design, narrow public surfaces, and clear ownership.
-- The document’s purpose is to capture implementation style and code quality expectations for the Toolstack rebuild.
-- It summarizes standards as cross-cutting implementation principles rather than component-specific rules.
-- Key rules include building one component at a time, preferring boring/explicit code over clever abstractions, keeping interfaces small, and focusing tests on behavior and boundaries.
-- It explicitly warns against making premature decisions about REST, queues, databases, sandboxing, mTLS, or deployment shape until needed by a component.
-- The standards support the broader architecture choice of keeping components isolated and transport-neutral.
-- Notable entities/terms include the one-component-at-a-time build approach, behavior-driven tests, boundary testing, and no active verification command until the first isolated component exists.

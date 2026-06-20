@@ -1,1 +1,0 @@
-The Toolstack architecture pivots to a collapsed broker/toolyard design with approval handled in-broker, secrets kept at the workload, and a phased build starting with Phase 0 boundary validation.

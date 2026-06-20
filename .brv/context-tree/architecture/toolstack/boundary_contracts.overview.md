@@ -1,8 +1,0 @@
-- Defines boundary contracts for the collapsed Toolstack architecture across agent, broker, toolyard, tool containers, and nod.
-- Lists standard outcomes used across boundaries: ok, accepted, pending_approval, denied, invalid, not_found, expired, unavailable, failed.
-- Specifies the relevant message surfaces: Agent->Broker, Broker->Tool container, Toolyard->Secret backend, Tool container->Toolyard, and Broker<->nod.
-- Captures audit event taxonomy families, including gateway, identity, policy, request, approval, runtime, and admin events.
-- Reinforces secrecy and redaction rules: arguments are redacted before audit, raw tokens are never logged, and the broker never inspects or materializes secrets.
-- Notes that the approval boundary is defined in a separate spec, approval-surface-adapter.md, and that most former inter-service messages are now in-process broker calls.
-- Highlights operational rules such as only GET /v1/health being open, MCP frames being forwarded unchanged after a params.name policy check, and the broker owning approval truth while nod acts as the messenger.
-- Structure summary: reason, raw concept with task/changes/files/flow/patterns, then narrative sections covering structure, dependencies, highlights, and rules.

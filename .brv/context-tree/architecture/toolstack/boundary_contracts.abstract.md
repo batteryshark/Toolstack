@@ -1,1 +1,0 @@
-This document defines the process and trust boundary contracts for Toolstack, including standard outcomes, audit event families, secret-access restrictions, and mandatory redaction rules.

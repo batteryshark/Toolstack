@@ -1,10 +1,8 @@
 __pycache__/
 *.py[cod]
 .DS_Store
-.brv/*
-!.brv/config.json
-!.brv/context-tree/
-!.brv/context-tree/**
+# brv context-tool working state — local only (like .ordna / tasks), not repo content.
+.brv/
 .pytest_cache/
 .venv/
 build/

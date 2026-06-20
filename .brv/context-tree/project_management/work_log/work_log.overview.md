@@ -1,7 +1,0 @@
-- The work log records the greenfield Toolstack rebuild from its 2026-05-27 kickoff through the 2026-06-13 architecture pivot.
-- It preserves the transition from the original service-oriented plan to the collapsed deployment-reality design centered on broker/toolyard boundaries.
-- The latest direction replaces the old ClientProfileService-first approach with Phase 0 boundary work.
-- The next likely step is Phase 0: verify tailnet ingress to a localhost-only broker and confirm fail-closed behavior.
-- The log includes cleanup and migration notes, prototype removal, verification status, and key decisions from the rebuild history.
-- It explicitly warns against direct communication between BrokerGateway, RequestService, ToolRegistryService, and SecretsManagementService, and states ToolRegistryService has no secret awareness.
-- Approval surfaces are treated as external in the older model and pass through an Approval Surface Endpoint, while the newer canonical docs govern current direction.

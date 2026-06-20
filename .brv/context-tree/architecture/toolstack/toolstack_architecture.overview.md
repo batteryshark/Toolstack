@@ -1,7 +1,0 @@
-- Toolstack architecture has pivoted from a multi-service decomposition to a deployment-reality model centered on a broker, toolyard, tool template, and an in-broker nod adapter.
-- The prior external approver process and direct proxying through toolyard were removed; nod is now the approval surface via an adapter inside the broker.
-- The build is phased: Phase 0 boundary, Phase 1 broker core vs stub tool, Phase 2 toolyard plus real tools and secrets-at-workload, Phase 3 approval via nod, and Phase 4 admin/hardening.
-- Core rules emphasize one component at a time, fail-closed behavior, secrets living with the workload, and direct broker-to-tool execution.
-- The broker is the approval authority, forwards approved calls directly to the tool container, and never holds secret-backend credentials; the registry is secret-unaware.
-- Phase 0 is specifically tailnet ingress plus a broker bound to 127.0.0.1 that serves only GET /v1/health, proving only the agent can reach it.
-- Canonical docs are now plan.md, component-decomposition.md, message-contracts.md, approval-surface-adapter.md, and PROJECT.md; superseded component plans and I/O contracts were deleted.
