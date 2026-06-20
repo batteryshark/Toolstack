@@ -417,5 +417,75 @@ class Factory(unittest.TestCase):
             get_backend("nope")
 
 
+
+class InfisicalRetry(unittest.TestCase):
+    """_request retries transient (429/5xx/network) failures, fails auth fast, then gives up."""
+
+    def _backend(self):
+        import tempfile
+        return InfisicalBackend(host="https://infisical.test",
+                                credentials_dir=tempfile.mkdtemp(),
+                                environment="dev", default_vault="Proj")
+
+    @staticmethod
+    def _http_error(code):
+        import io
+        import urllib.error
+        return urllib.error.HTTPError("https://infisical.test/x", code, "err", {}, io.BytesIO(b""))
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"ok": true}'
+
+    def test_retries_5xx_then_succeeds(self):
+        calls = []
+
+        def fake_urlopen(req, timeout=None):
+            calls.append(1)
+            if len(calls) < 3:
+                raise self._http_error(503)
+            return self._Resp()
+
+        with mock.patch("toolyard.secrets.urllib.request.urlopen", fake_urlopen), \
+                mock.patch("toolyard.secrets.time.sleep"):
+            out = self._backend()._request("GET", "https://infisical.test/x", {}, None)
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(len(calls), 3)  # two transient failures, then success
+
+    def test_auth_error_is_not_retried(self):
+        calls = []
+
+        def fake_urlopen(req, timeout=None):
+            calls.append(1)
+            raise self._http_error(401)
+
+        with mock.patch("toolyard.secrets.urllib.request.urlopen", fake_urlopen), \
+                mock.patch("toolyard.secrets.time.sleep"):
+            with self.assertRaises(RuntimeError) as cm:
+                self._backend()._request("GET", "https://infisical.test/x", {}, None)
+        self.assertEqual(len(calls), 1)            # 401 is terminal — no retry
+        self.assertIn("auth", str(cm.exception).lower())
+
+    def test_exhausts_retries_on_persistent_5xx(self):
+        calls = []
+
+        def fake_urlopen(req, timeout=None):
+            calls.append(1)
+            raise self._http_error(503)
+
+        b = self._backend()
+        with mock.patch("toolyard.secrets.urllib.request.urlopen", fake_urlopen), \
+                mock.patch("toolyard.secrets.time.sleep"):
+            with self.assertRaises(RuntimeError) as cm:
+                b._request("GET", "https://infisical.test/x", {}, None)
+        self.assertEqual(len(calls), b._RETRIES)   # all attempts used
+        self.assertIn("transient", str(cm.exception).lower())
+
 if __name__ == "__main__":
     unittest.main()

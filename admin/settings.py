@@ -138,6 +138,13 @@ def load_or_create_session_secret() -> str:
     path = session_secret_file()
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
+    return rotate_session_secret()
+
+
+def rotate_session_secret() -> str:
+    """Replace the session-signing secret, invalidating every existing signed session. Called
+    when the admin password changes so a reset also logs out any other live sessions (it takes
+    effect on the next app start, which loads the secret once)."""
     secret = secrets.token_urlsafe(32)
-    _write_private(path, secret)
+    _write_private(session_secret_file(), secret)
     return secret
