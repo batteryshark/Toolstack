@@ -343,11 +343,23 @@ class AdminApp(unittest.TestCase):
         self.assertNotIn(str(newdir), broker_config.load().tool_dirs)
         self.assertTrue((newdir / "toolyard.toml").exists())  # files left on disk
 
-    def test_remove_root_tool_is_refused(self):
+    def test_activity_views_are_filterable(self):
+        self._login()
+        html = self.client.get("/").text
+        self.assertIn("data-filter-for='audit-table'", html)       # audit text filter
+        self.assertIn("data-filter-sel='audit-table'", html)       # audit outcome dropdown
+        self.assertIn("data-filter-for='requests-table'", html)    # requests text filter
+        self.assertIn("All statuses", html)
+
+    def test_remove_root_tool_deletes_its_folder(self):
         self._login()
         csrf = _csrf(self.client.get("/").text)
+        tool_dir = Path(self.tmp, "tools", "echo")
+        self.assertTrue(tool_dir.exists())
         r = self.client.post("/tools/echo/remove", data={"_csrf": csrf})  # echo lives under the tools root
-        self.assertIn("tools root", r.text)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Removed tool", r.text)
+        self.assertFalse(tool_dir.exists())   # managed tool under the root is deleted, not refused
 
     def test_edit_tool_rewrites_toml(self):
         self._login()
