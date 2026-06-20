@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Toolstack</string>
+    <string>Toolstack Operator</string>
     <key>CFBundleDisplayName</key>
     <string>Toolstack Operator</string>
     <key>CFBundleIdentifier</key>

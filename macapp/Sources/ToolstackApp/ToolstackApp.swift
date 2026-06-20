@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // Keep running when the window closes — the app lives on in the menu bar (systray) and is
-    // reopened from there ("Open Toolstack"). Quit explicitly from the menu bar or ⌘Q.
+    // reopened from there ("Open Toolstack Operator"). Quit explicitly from the menu bar or ⌘Q.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 
@@ -24,7 +24,7 @@ enum AppImages {
     static let menuBar: NSImage = {
         let image = Bundle.module.url(forResource: "MenuBarIcon", withExtension: "png")
             .flatMap { NSImage(contentsOf: $0) }
-            ?? NSImage(systemSymbolName: "square.stack.3d.up.fill", accessibilityDescription: "Toolstack")!
+            ?? NSImage(systemSymbolName: "square.stack.3d.up.fill", accessibilityDescription: "Toolstack Operator")!
         image.isTemplate = true
         image.size = NSSize(width: 18, height: 18)
         return image
@@ -37,7 +37,7 @@ struct ToolstackApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        Window("Toolstack", id: "main") {
+        Window("Toolstack Operator", id: "main") {
             ContentView()
                 .environmentObject(model)
                 .frame(minWidth: 760, minHeight: 520)
@@ -67,17 +67,17 @@ struct MenuBarMenu: View {
                 .disabled(model.busy)
             Divider()
         }
-        Button("Open Toolstack") {
+        Button("Open Toolstack Operator") {
             NSApplication.shared.activate(ignoringOtherApps: true)
             openWindow(id: "main")
         }
         Divider()
-        Button("Quit Toolstack") { NSApplication.shared.terminate(nil) }
+        Button("Quit Toolstack Operator") { NSApplication.shared.terminate(nil) }
     }
 
     // Plain String (not a localized Text literal), so the port renders without a thousands separator.
     private var statusLine: String {
-        guard model.authenticated else { return "Toolstack — not signed in" }
+        guard model.authenticated else { return "Toolstack Operator — not signed in" }
         guard let broker = model.broker else { return "Broker: —" }
         return broker.running ? "Broker: running" + (broker.port.map { " :\($0)" } ?? "") : "Broker: stopped"
     }
@@ -114,7 +114,7 @@ struct LoginView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("Toolstack").font(.largeTitle.bold())
+            Text("Toolstack Operator").font(.largeTitle.bold())
             Text("Connect to an admin").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Admin URL").font(.caption).foregroundStyle(.secondary)
