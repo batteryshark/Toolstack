@@ -59,9 +59,9 @@ For a real (systemd) install — the admin panel supervising the broker, with an
 ## Status
 
 The planned build order (Phases 0–4) is **complete and tested**, with an operator
-**admin web app**, a desktop shell, and a native macOS app on top — 509 tests across
+**admin web app**, a desktop shell, and a native macOS app on top — 513 tests across
 [broker/](broker/), [toolyard/](toolyard/), [client/](client/), [admin/](admin/), and
-[desktop/](desktop/), plus 31 `swift test` tests for the native app ([macapp/](macapp/)).
+[desktop/](desktop/), plus 32 `swift test` tests for the native app ([macapp/](macapp/)).
 The full vertical slice runs end to end:
 agent → broker (auth, policy, request lifecycle) → human approval in nod → tool
 execution with workload secrets, and the broker never sees a secret. Operators manage

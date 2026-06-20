@@ -61,12 +61,12 @@ supervises the broker process, manages callers/tokens/policies, **authors and ed
 tools** (writes their `toolyard.toml` from a form into a directory you name, which the
 broker then discovers), and shows requests + audit. It shares the broker's `Store` and
 `broker.operations`, so the panel and `brokerctl` write **one** audit trail; it binds
-loopback only and keeps secrets off the browser. 509 tests pass across [broker/](broker/)
-(219), [toolyard/](toolyard/) (78), [client/](client/) (23), [admin/](admin/) (180), and
+loopback only and keeps secrets off the browser. 513 tests pass across [broker/](broker/)
+(219), [toolyard/](toolyard/) (78), [client/](client/) (23), [admin/](admin/) (184), and
 [desktop/](desktop/) (9), plus opt-in docker + live-nod/Infisical + vault (`[vault]` extra)
 tests and a full author → register → run → call live walkthrough. The admin also serves a
 JSON operator API (`/api/*`) for native clients, consumed by a native SwiftUI macOS app
-([macapp/](macapp/) — `ApiClient` + core screens; 31 `swift test` tests).
+([macapp/](macapp/) — `ApiClient` + core screens; 32 `swift test` tests).
 
 ## Suggested next step
 
