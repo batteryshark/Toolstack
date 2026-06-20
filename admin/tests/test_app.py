@@ -88,6 +88,18 @@ class AdminApp(unittest.TestCase):
         self.assertEqual(r.status_code, 401)
         self.assertIn("Invalid", r.text)
 
+    def test_login_throttled_and_failures_audited(self):
+        for _ in range(5):
+            r = self.client.post("/login", data={"username": "admin", "password": "wrong"})
+            self.assertEqual(r.status_code, 401)
+        r = self.client.post("/login", data={"username": "admin", "password": "wrong"})
+        self.assertEqual(r.status_code, 429)          # locked out after the per-IP limit
+        self.assertIn("retry-after", {k.lower() for k in r.headers})
+        events = self._store().recent_audit(limit=20)
+        failed = [e for e in events if e["event_type"] == "login_failed"]
+        self.assertTrue(failed)                        # failures are audited
+        self.assertNotIn("wrong", json.dumps(failed))  # but never the submitted password
+
     def test_create_caller_and_set_policy(self):
         self._login()
         csrf = _csrf(self.client.get("/").text)

@@ -87,6 +87,13 @@ def record_admin_event(store: Store, operator: str, event_type: str, details: di
                        {"operator": operator, **details})
 
 
+def record_admin_denied(store: Store, event_type: str, details: dict) -> None:
+    """Append a *denied* ``admin.<event_type>`` audit event (e.g. a failed login). Unlike
+    :func:`record_admin_event` there is no authenticated operator — the actor (IP, attempted
+    username) rides in ``details``. Callers MUST NOT put the submitted password in ``details``."""
+    store.append_audit(time.time(), "admin", event_type, "denied", uuid.uuid4().hex, None, details)
+
+
 def require_caller(store: Store, name: str):
     """Return the caller row, or raise ``LookupError`` if there is no such caller."""
     caller = store.caller_by_name(name)

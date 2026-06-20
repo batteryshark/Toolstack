@@ -11,19 +11,23 @@ here at all.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import sqlite3
 from pathlib import Path
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from broker import operations
 from broker.registry import Registry
 
-from . import (api, auth, broker_config, settings, supervisor, tool_authoring,
-               tool_sources, toolyard_ops, views)
+from . import (api, auth, broker_config, loginguard, settings, supervisor,
+               tool_authoring, tool_sources, toolyard_ops, views)
 from .store_access import open_store
+
+log = logging.getLogger(__name__)
 
 SESSION_COOKIE = "toolstack_admin_session"
 
@@ -33,7 +37,25 @@ def create_app() -> FastAPI:
     if settings.read_password_hash() is None:
         raise RuntimeError("no admin password set — run: python3 -m admin set-password")
     secret = settings.load_or_create_session_secret()
+    guard = loginguard.LoginGuard()  # shared by /login and /api/login
     app = FastAPI(title="Toolstack Admin", docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.exception_handler(sqlite3.OperationalError)
+    async def _operational_error(request: Request, exc: sqlite3.OperationalError):
+        # The admin opens short-lived connections; under sustained write contention with the
+        # broker one can still exceed the store's busy_timeout. Answer "busy, retry" — a 503,
+        # not an opaque 500 — so the operator (or the API client) knows it's transient. A
+        # NON-lock OperationalError (a schema/SQL bug) is a real 500: don't mask it as "busy".
+        text = str(exc).lower()
+        busy = "lock" in text or "busy" in text
+        status, msg = (503, "Database is busy — please retry in a moment.") if busy \
+            else (500, "Internal database error.")
+        log.warning("sqlite OperationalError on %s (%s): %s", request.url.path,
+                    "busy" if busy else "fatal", exc)
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": msg}, status_code=status)
+        return HTMLResponse(f"<!doctype html><title>Error</title><h1>{status}</h1><p>{msg}</p>",
+                            status_code=status)
 
     # --- small request helpers ------------------------------------------------
     def session_value(request: Request) -> str | None:
@@ -104,17 +126,29 @@ def create_app() -> FastAPI:
 
     @app.post("/login")
     async def login(request: Request):
+        ip = api.client_ip(request)
+        wait = guard.retry_after(ip)
+        if wait > 0:  # locked out — reject before touching the password (no timing leak)
+            resp = HTMLResponse(views.login_view(
+                error="Too many failed attempts. Try again later."), status_code=429)
+            resp.headers["Retry-After"] = str(int(wait) + 1)
+            return resp
         data = await read_form(request)
         username = data.get("username", "")
         password = data.get("password", "")
         stored = settings.read_password_hash()
         if username != settings.admin_username() or stored is None or not auth.verify_password(password, stored):
+            guard.record_failure(ip)
+            api.audit_login_failure(ip, username)
             return HTMLResponse(views.login_view(error="Invalid username or password"), status_code=401)
+        guard.record_success(ip)
         resp = redirect("/")
         resp.set_cookie(
             SESSION_COOKIE,
             auth.sign_session(username, secret, settings.session_ttl_seconds()),
-            httponly=True, samesite="strict", secure=False,  # loopback http; tunnel for remote
+            # Secure only when reached over TLS (TOOLSTACK_ADMIN_SECURE_COOKIE=1); loopback http
+            # and the container's http-behind-publish would otherwise drop the cookie.
+            httponly=True, samesite="strict", secure=settings.cookie_secure(),
         )
         return resp
 
@@ -149,11 +183,13 @@ def create_app() -> FastAPI:
         if action not in events:
             return render_dashboard(request, user, error="Unknown broker action.")
         try:
-            getattr(supervisor, action)(config) if action != "stop" else supervisor.stop()
+            result = supervisor.stop() if action == "stop" else getattr(supervisor, action)(config)
         except Exception as exc:  # surface a failed spawn rather than 500
             return render_dashboard(request, user, error=f"Broker {action} failed: {exc}")
         with open_store(config) as store:
             operations.record_admin_event(store, user, events[action], {})
+        if isinstance(result, dict) and result.get("error"):  # started but never went healthy
+            return render_dashboard(request, user, error=f"Broker {action}: {result['error']}")
         return redirect("/")
 
     # --- run config -----------------------------------------------------------
@@ -174,7 +210,14 @@ def create_app() -> FastAPI:
             return HTMLResponse(views.config_view(
                 user=user, csrf=csrf_for(request), config=broker_config.load(),
                 error="Invalid CSRF token."))
-        broker_config.save(_config_from_form(data, broker_config.load()))
+        try:
+            updated = _config_from_form(data, broker_config.load())
+            broker_config.validate_nod_url(updated.nod_url)  # SSRF guard (carries the nod token)
+        except ValueError as exc:
+            return HTMLResponse(views.config_view(
+                user=user, csrf=csrf_for(request), config=broker_config.load(),
+                error=f"Invalid config: {exc}"))
+        broker_config.save(updated)
         return render_dashboard(request, user,
                                 banner="Saved broker config. Restart the broker to apply changes.")
 
@@ -605,7 +648,7 @@ def create_app() -> FastAPI:
 
     # JSON operator API (bearer-token auth) for native / automation clients — same ops,
     # JSON face. See admin/api.py (T-029).
-    api.add_api_routes(app, secret)
+    api.add_api_routes(app, secret, guard)
     return app
 
 

@@ -37,8 +37,12 @@ ENV XDG_CONFIG_HOME=/data/config \
     # Bind 0.0.0.0 INSIDE the container so Docker can publish the ports. The boundary
     # then lives in the publish mapping — publish to 127.0.0.1:<port> on the HOST only
     # (docker-compose.yml does this). Never run this image with a 0.0.0.0 publish.
+    # The *_ALLOW_NONLOOPBACK opt-ins are required because admin/broker fail closed on a
+    # non-loopback bind; here it's safe precisely because of the loopback publish mapping.
     TOOLSTACK_ADMIN_HOST=0.0.0.0 \
-    TOOLSTACK_BROKER_HOST=0.0.0.0
+    TOOLSTACK_BROKER_HOST=0.0.0.0 \
+    TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK=1 \
+    TOOLSTACK_BROKER_ALLOW_NONLOOPBACK=1
 # The secret backend (file/vault) is deployment config, set in .env / compose — not baked
 # into the image. Code defaults to 'file'; the compose .env sets 'vault'.
 

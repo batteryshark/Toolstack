@@ -11,12 +11,19 @@ python - <<'PY'
 import os, sys
 from admin import auth, settings
 
+# Reject the shipped .env.example placeholders, so a box can never go live with a guessable
+# secret because someone copied .env.example and forgot to edit it.
+_PLACEHOLDERS = {"change-me", "change-me-too", "changeme", "change_me", "password", "secret"}
+
 # 1) Admin login password. The admin refuses to serve without one (no default creds).
 if settings.read_password_hash() is None:
     pw = os.environ.get("TOOLSTACK_ADMIN_PASSWORD") or ""
     if not pw:
         sys.exit("[entrypoint] no admin password set. Put TOOLSTACK_ADMIN_PASSWORD in your "
                  ".env, or run `python -m admin set-password` against the /data volume.")
+    if pw.strip().lower() in _PLACEHOLDERS:
+        sys.exit("[entrypoint] TOOLSTACK_ADMIN_PASSWORD is still the example placeholder — "
+                 "set a real password in your .env before starting.")
     settings.write_password_hash(auth.hash_password(pw))
     print("[entrypoint] admin password set from TOOLSTACK_ADMIN_PASSWORD")
 else:
@@ -24,6 +31,9 @@ else:
 
 # 2) Encrypted vault: create it once if that backend is selected and a passphrase is given.
 if os.environ.get("TOOLSTACK_SECRET_BACKEND") == "vault" and os.environ.get("TOOLSTACK_VAULT_PASSPHRASE"):
+    if os.environ["TOOLSTACK_VAULT_PASSPHRASE"].strip().lower() in _PLACEHOLDERS:
+        sys.exit("[entrypoint] TOOLSTACK_VAULT_PASSPHRASE is still the example placeholder — "
+                 "set a real passphrase in your .env before starting.")
     from pathlib import Path
     from toolyard import secrets as ts
     vault = os.environ.get("TOOLSTACK_VAULT_FILE") or ts._default_vault_file()

@@ -15,6 +15,7 @@ Run it:  python3 -m broker.server
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
@@ -34,9 +35,27 @@ DEFAULT_PORT = 8765
 MAX_BODY_BYTES = 64 * 1024  # cap request bodies to bound memory use
 
 
+def _is_loopback(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def _configured_host() -> str:
-    # 127.0.0.1 unless explicitly overridden (only for the in-container case).
-    return os.environ.get("TOOLSTACK_BROKER_HOST") or DEFAULT_HOST
+    # 127.0.0.1 unless explicitly overridden. A non-loopback bind exposes the broker to the
+    # network, so it fails closed unless TOOLSTACK_BROKER_ALLOW_NONLOOPBACK=1 is also set (the
+    # container sets it — there the boundary is Docker's publish-to-127.0.0.1 mapping).
+    host = os.environ.get("TOOLSTACK_BROKER_HOST") or DEFAULT_HOST
+    allow = os.environ.get("TOOLSTACK_BROKER_ALLOW_NONLOOPBACK", "").lower() in ("1", "true", "yes")
+    if not _is_loopback(host) and not allow:
+        raise SystemExit(
+            f"refusing to bind the broker to non-loopback host {host!r} without "
+            "TOOLSTACK_BROKER_ALLOW_NONLOOPBACK=1 — binding off 127.0.0.1 exposes the broker to "
+            "the network; set it only behind a boundary you trust (e.g. Docker's publish mapping).")
+    return host
 
 
 def _configured_port() -> int:

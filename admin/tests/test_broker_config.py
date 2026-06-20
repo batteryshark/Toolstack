@@ -90,11 +90,50 @@ class AdminHost(unittest.TestCase):
             os.environ.pop("TOOLSTACK_ADMIN_HOST", None)
             self.assertEqual(settings.admin_host(), "127.0.0.1")
 
-    def test_env_override(self):
+    def test_nonloopback_fails_closed(self):
         from unittest import mock
         from admin import settings
         with mock.patch.dict(os.environ, {"TOOLSTACK_ADMIN_HOST": "0.0.0.0"}):
+            os.environ.pop("TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK", None)
+            with self.assertRaises(SystemExit):  # exposes the panel — refuse without the opt-in
+                settings.admin_host()
+
+    def test_nonloopback_allowed_with_optin(self):
+        from unittest import mock
+        from admin import settings
+        with mock.patch.dict(os.environ, {"TOOLSTACK_ADMIN_HOST": "0.0.0.0",
+                                          "TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK": "1"}):
             self.assertEqual(settings.admin_host(), "0.0.0.0")
+
+
+class ValidateNodUrl(unittest.TestCase):
+    """nod_url carries the nod token outward, so the config surface guards it (SSRF / exfil)."""
+
+    def test_allows_https_loopback_http_and_empty(self):
+        from admin import broker_config
+        broker_config.validate_nod_url("")                       # no approval surface
+        broker_config.validate_nod_url("https://nod.example.com")
+        broker_config.validate_nod_url("http://127.0.0.1:8080")  # loopback http ok for dev
+        broker_config.validate_nod_url("http://localhost:8080")
+
+    def test_rejects_plain_http_to_remote(self):
+        from admin import broker_config
+        with self.assertRaises(ValueError):
+            broker_config.validate_nod_url("http://nod.example.com")
+
+    def test_rejects_metadata_and_link_local(self):
+        from admin import broker_config
+        for url in ("https://169.254.169.254/latest/meta-data/",
+                    "http://169.254.169.254/", "https://[fe80::1]/",
+                    "https://2852039166/"):  # decimal spelling of 169.254.169.254
+            with self.assertRaises(ValueError):
+                broker_config.validate_nod_url(url)
+
+    def test_rejects_non_http_scheme(self):
+        from admin import broker_config
+        for url in ("file:///etc/passwd", "gopher://x/", "ftp://host/"):
+            with self.assertRaises(ValueError):
+                broker_config.validate_nod_url(url)
 
 
 if __name__ == "__main__":

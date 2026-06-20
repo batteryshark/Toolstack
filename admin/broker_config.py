@@ -13,14 +13,55 @@ never rendered back to the browser (see :meth:`masked`).
 
 from __future__ import annotations
 
+import ipaddress
 import os
+import socket
 import tomllib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from urllib.parse import urlparse
 
 from broker.store import default_db_path
 
 from . import settings
+
+
+def validate_nod_url(url: str) -> None:
+    """Guard the one config field that points the broker outward: ``nod_url`` is where the
+    broker sends approval cards **carrying the nod issuer token**, so a hostile value is an
+    SSRF + token-exfil primitive. Reject anything that isn't a plain routable http(s) target.
+    Empty is allowed (it means "no approval surface"). Raises ``ValueError`` on a bad URL.
+
+    Plain ``http`` is permitted only for loopback (local dev); everything else must be
+    ``https``. Literal link-local / cloud-metadata (169.254.169.254, fe80::/10), multicast,
+    reserved, and unspecified (0.0.0.0) addresses are refused outright."""
+    if not url:
+        return
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("nod_url must be an http(s) URL")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("nod_url must include a host")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None  # a hostname, not a literal IP
+    if ip is None:
+        # Catch non-dotted IPv4 spellings (decimal / octal / hex) that ipaddress rejects but the
+        # resolver accepts — e.g. http://2852039166/ resolves to 169.254.169.254 (cloud metadata).
+        try:
+            ip = ipaddress.ip_address(socket.inet_aton(host))
+        except (OSError, ValueError):
+            ip = None
+    loopback = host == "localhost" or (ip is not None and ip.is_loopback)
+    if parsed.scheme == "http" and not loopback:
+        raise ValueError("nod_url must use https (plain http is allowed only for loopback)")
+    if ip is not None and (ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified):
+        raise ValueError("nod_url host is not a routable address (link-local / metadata / reserved)")
+    # NOTE: a *hostname* whose DNS points at metadata/internal space is not blocked here — the
+    # broker (not the admin) is the eventual requester, and DNS can rebind after this check; the
+    # https requirement is the backstop for hostname targets.
 
 
 @dataclass

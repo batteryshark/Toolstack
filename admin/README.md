@@ -47,10 +47,15 @@ by binding a public interface.
 
 ## Security
 
-- Binds `127.0.0.1` only (hardcoded, like the broker).
+- Binds `127.0.0.1` by default; a non-loopback bind **fails closed** unless
+  `TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK=1` (set it only behind a tunnel/proxy you trust, and
+  add `TOOLSTACK_ADMIN_SECURE_COOKIE=1` so the session cookie is TLS-only). Mirrors the broker.
 - Fail-closed auth: with no password set, the server refuses to start. Scrypt
-  password + HMAC-signed session cookie (`HttpOnly`, `SameSite=Strict`) + a
-  session-bound **CSRF** token on every POST.
+  password + HMAC-signed session cookie (`HttpOnly`, `SameSite=Strict`, `Secure` when
+  `TOOLSTACK_ADMIN_SECURE_COOKIE=1`) + a session-bound **CSRF** token on every POST.
+- Login is rate-limited (per-IP + global lockout, shared by the HTML and JSON login) and
+  failed attempts are audited (`admin.login_failed` with the IP + attempted username — never
+  the password).
 - Secrets stay off the browser: the nod token is **write-only / masked**, and tool
   secret *values* are never entered here (the toolyard resolves them from the on-disk
   secrets file) — the tool editor authors only secret *declarations* (name + field).

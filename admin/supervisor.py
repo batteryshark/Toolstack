@@ -14,8 +14,11 @@ admin app does not track multiple brokers.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shlex
 import signal
+import subprocess
 import sys
 import time
 import urllib.error
@@ -24,6 +27,27 @@ from pathlib import Path
 
 from . import settings
 from .broker_config import BrokerRunConfig
+
+log = logging.getLogger(__name__)
+
+
+def _is_broker(pid: int) -> bool:
+    """Confirm ``pid`` is actually our broker before signalling its process group. The broker is
+    supervised out of band, so after the admin app itself restarts it is no longer our child to
+    reap — and a bare PID can be reused by an unrelated process. Killing that recycled PID's group
+    would be a serious bug, so verify the command line names ``broker.server`` first."""
+    try:
+        out = subprocess.run(["ps", "-p", str(pid), "-o", "args="],
+                             capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return False  # can't confirm -> treat as 'not the broker' and refuse to signal
+    # Match the exact invocation (`… -m broker.server`) as whole argv tokens, not a loose
+    # substring — `tail -f broker.server.log` or `-m pkg.broker.server_x` must NOT count.
+    try:
+        args = shlex.split(out.stdout)
+    except ValueError:
+        return False
+    return any(tok == "-m" and args[i + 1] == "broker.server" for i, tok in enumerate(args[:-1]))
 
 
 def _state_file() -> Path:
@@ -136,11 +160,23 @@ def start(config: BrokerRunConfig) -> dict:
     finally:
         os.close(log_fd)
     _write_state({"pid": pid, "port": config.port})
-    _await_health(config.port)
-    return status()
+    healthy = _await_health(config.port)
+    result = status()
+    if not healthy and not result.get("healthy"):
+        # The process spawned but never answered /v1/health — don't let the caller report a
+        # bare success. Surface it (the dashboard/API turn this into an error, not a redirect).
+        log.warning("broker pid %s did not become healthy on :%s", pid, config.port)
+        result = {**result, "error": (f"broker started (pid {pid}) but did not become healthy "
+                                      f"on port {config.port} — check the broker log")}
+    return result
 
 
 def _terminate(pid: int) -> None:
+    if not _is_broker(pid):
+        # PID reuse after an admin restart: the recorded pid is now some other process. Never
+        # signal it — just let the caller clear the stale state.
+        log.warning("not terminating pid %s — it is not the broker (stale state / PID reuse)", pid)
+        return
     try:
         os.killpg(pid, signal.SIGTERM)
     except (ProcessLookupError, PermissionError):
