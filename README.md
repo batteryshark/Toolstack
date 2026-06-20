@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="macapp/packaging/AppIcon-source.png" alt="Toolstack logo" width="150" height="150">
+</p>
+
 # Toolstack Rebuild
 
 A brokered, action-without-access tool layer for agents: the agent can *ask*, the
