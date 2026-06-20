@@ -66,6 +66,9 @@ The full vertical slice runs end to end:
 agent → broker (auth, policy, request lifecycle) → human approval in nod → tool
 execution with workload secrets, and the broker never sees a secret. Operators manage
 callers/policies/tokens with `brokerctl` or the [admin panel](admin/README.md). It is
-**not yet deployment-hardened** — see the deferred items in [docs/walkthrough.md](docs/walkthrough.md)
-before running it for real. See [plan.md](plan.md) for the build order and
+**hardened for a real (single-host) install** — systemd state-dir + sandbox, admin login
+throttle + bind/SSRF guards, runtime timeouts + partial-failure cleanup, pinned deps, and
+DB backups (see [deploy/README.md](deploy/README.md)). A few **narrower items stay deferred**
+— container tmpfs secret injection, JIT/temporary grants, a background approval-expiry sweeper
+(see [docs/walkthrough.md](docs/walkthrough.md)). See [plan.md](plan.md) for the build order and
 [PROJECT.md](PROJECT.md) for what's next.
