@@ -260,6 +260,23 @@ struct CallersPane: View {
     }
 }
 
+/// A colored capsule for an operation's risk — read (blue) / write (orange) / destructive (red),
+/// matching the web admin's risk pills — so the level is skimmable at a glance in the tool list
+/// and the policy editor.
+func riskBadge(_ risk: String) -> some View {
+    let color: Color
+    switch risk {
+    case "read": color = .blue
+    case "write": color = .orange
+    case "destructive": color = .red
+    default: color = .secondary
+    }
+    return Text(risk).font(.caption2)
+        .padding(.horizontal, 6).padding(.vertical, 1)
+        .background(color.opacity(0.18), in: .capsule)
+        .foregroundStyle(color)
+}
+
 struct ToolsPane: View {
     @EnvironmentObject var model: AppModel
     @State private var editing: ToolInfo?
@@ -405,8 +422,7 @@ struct ToolsPane: View {
     private func opRow(_ op: OpInfo) -> some View {
         HStack {
             Text(op.op).bold()
-            Text(op.risk).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
-                .background(.secondary.opacity(0.15), in: .capsule)
+            riskBadge(op.risk)
             Spacer()
             Text(op.description).font(.caption).foregroundStyle(.secondary)
         }
@@ -494,9 +510,7 @@ struct PolicyEditor: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(op.op).bold()
-                Text(op.risk).font(.caption2)
-                    .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(.secondary.opacity(0.15), in: .capsule)
+                riskBadge(op.risk)
                 Spacer()
             }
             if !op.description.isEmpty {
