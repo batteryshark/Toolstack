@@ -145,7 +145,7 @@ class Infisical(unittest.TestCase):
 
 
 class _FakeInfisical(BaseHTTPRequestHandler):
-    """A wire-faithful, in-memory Infisical v4 over real HTTP — so the backend's actual
+    """A wire-faithful, in-memory Infisical v4 over real HTTP, so the backend's actual
     urllib / auth / project-lookup / parse / PATCH code is exercised (the tests above
     monkeypatch `_request`, skipping all of it). One project ("Proj"/"p1"), one path."""
 
@@ -202,7 +202,7 @@ class _FakeInfisical(BaseHTTPRequestHandler):
 
 
 class InfisicalHTTP(unittest.TestCase):
-    """InfisicalBackend driven over REAL HTTP against the fake above — auth, project
+    """InfisicalBackend driven over REAL HTTP against the fake above: auth, project
     lookup, secret parse, token caching, the write→re-read round trip, and the
     HTTPError path, none of which the `_request`-monkeypatch tests reach."""
 
@@ -386,7 +386,7 @@ class Vault(unittest.TestCase):
 
     def test_params_read_from_envelope_survive_default_change(self):
         # A vault written with one scrypt cost must still open if the compiled-in default
-        # changes — the params travel in the envelope, not the code.
+        # changes; the params travel in the envelope, not the code.
         path = self._path()
         VaultBackend.init(path, self.PW)
         VaultBackend(path, self.PW).set_secret("demo", "API_KEY", "v1")
@@ -469,7 +469,7 @@ class InfisicalRetry(unittest.TestCase):
                 mock.patch("toolyard.secrets.time.sleep"):
             with self.assertRaises(RuntimeError) as cm:
                 self._backend()._request("GET", "https://infisical.test/x", {}, None)
-        self.assertEqual(len(calls), 1)            # 401 is terminal — no retry
+        self.assertEqual(len(calls), 1)            # 401 is terminal: no retry
         self.assertIn("auth", str(cm.exception).lower())
 
     def test_exhausts_retries_on_persistent_5xx(self):

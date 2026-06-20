@@ -1,4 +1,4 @@
-"""broker.operations — the operator mutations shared by brokerctl and the admin
+"""broker.operations: the operator mutations shared by brokerctl and the admin
 web app. Each mutation must persist its effect and record exactly one admin.*
 audit event; a missing caller must raise LookupError (not SystemExit) so each
 caller can choose how to surface it."""
@@ -206,7 +206,7 @@ class Operations(unittest.TestCase):
         self.assertEqual(self._cancel_events(), [])
 
     def test_revoke_token_empty_prefix_is_refused(self):
-        # an empty prefix LIKE-matches every token — must not nuke them all
+        # an empty prefix LIKE-matches every token; must not nuke them all
         token = operations.create_caller(self.store, "hermes", None, None, "op")
         self.assertEqual(operations.revoke_token(self.store, "", "op"), 0)
         self.assertIsNotNone(authenticate(self.store, f"Bearer {token}"))  # still live

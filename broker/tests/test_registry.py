@@ -103,7 +103,7 @@ class FromSources(unittest.TestCase):
 
 
 class McpType(unittest.TestCase):
-    """A type='mcp' tool registers like any other — ops are the policy unit — and its
+    """A type='mcp' tool registers like any other (ops are the policy unit) and its
     ToolOp carries type='mcp' so the runtime routes it over the MCP transport."""
 
     def setUp(self):
@@ -157,7 +157,7 @@ class RestType(unittest.TestCase):
 
 
 class PortValidation(unittest.TestCase):
-    """An api or mcp tool with no/invalid port must fail at load, naming the file + tool —
+    """An api or mcp tool with no/invalid port must fail at load, naming the file + tool;
     not register silently and 502 at call time."""
 
     def setUp(self):
@@ -214,7 +214,7 @@ class PortValidation(unittest.TestCase):
 
 
 class IdValidation(unittest.TestCase):
-    """A tool id must match the routing charset — and especially carry no dot: a policy spec is
+    """A tool id must match the routing charset, and especially carry no dot: a policy spec is
     split on the FIRST dot into (tool, op) (broker/operations.build_policy), so a dotted id like
     'my.tool' would silently misroute its policy. Reject it at load, naming the file + id."""
 

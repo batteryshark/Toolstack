@@ -1,12 +1,12 @@
-"""toolstack MCP server — exposes the broker's tools to an MCP-native agent.
+"""toolstack MCP server: exposes the broker's tools to an MCP-native agent.
 
 A minimal stdio JSON-RPC (MCP) server: `tools/list` maps the caller's allowed broker
 ops to MCP tools (with input schemas from the op's declared args), and `tools/call`
 forwards to the broker, blocking on approval and returning the result (plus the
-approver's note). The agent passes a structured `arguments` object — no shell, so no
+approver's note). The agent passes a structured `arguments` object, so there is no shell and no
 quoting breakage. Run it as an MCP server command: `python3 -m client.mcp_server`.
 
-Review ops advertise an optional `_reason` string in their input schema — the MCP
+Review ops advertise an optional `_reason` string in their input schema, the MCP
 analogue of the CLI's `--reason`. `tools/call` pulls `_reason` out of the arguments
 (it is never forwarded to the tool) and sends it as the broker's justification, so it
 reaches the human approver and the audit log.
@@ -30,7 +30,7 @@ _JSON_TYPES = {"string", "integer", "number", "boolean", "object", "array"}
 
 def _call(method: str, path: str, body=None):
     # Same broker call as the CLI (client.toolstack._send); only the unreachable
-    # case differs — surface it as a JSON-RPC error rather than exiting.
+    # case differs: surface it as a JSON-RPC error rather than exiting.
     try:
         return _send(method, path, body)
     except urllib.error.URLError as exc:
@@ -61,7 +61,7 @@ def _with_reason(schema: dict) -> dict:
     props = dict(schema.get("properties", {}))
     props["_reason"] = {
         "type": "string",
-        "description": ("Why you need this — shown to the human approver and recorded "
+        "description": ("Why you need this, shown to the human approver and recorded "
                         "in the audit log. Recommended on review ops; not passed to the tool."),
     }
     return {**schema, "type": "object", "properties": props}
@@ -116,7 +116,7 @@ class Server:
             return _result(f'unknown tool "{name}"', is_error=True)
         tool, op = self._names[name]
         # `_reason` is adapter metadata, not a tool argument: pull it out (so it is
-        # never forwarded to the tool) and pass it as the broker's justification —
+        # never forwarded to the tool) and pass it as the broker's justification,
         # the MCP equivalent of the CLI's --reason. It rides to the human approver
         # on review ops and is audited (redacted).
         args = dict(arguments)
@@ -133,7 +133,7 @@ class Server:
 
     def _poll(self, request_id) -> dict:
         # On timeout, report status="timeout" (in _FAIL) so the tools/call result is
-        # isError:true — the call has NOT completed, even though the request may still
+        # isError:true: the call has NOT completed, even though the request may still
         # be pending on the broker. Otherwise an MCP agent reads a timed-out call as a
         # successful one.
         deadline = time.monotonic() + self._poll_timeout

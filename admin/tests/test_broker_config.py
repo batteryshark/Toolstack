@@ -95,7 +95,7 @@ class AdminHost(unittest.TestCase):
         from admin import settings
         with mock.patch.dict(os.environ, {"TOOLSTACK_ADMIN_HOST": "0.0.0.0"}):
             os.environ.pop("TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK", None)
-            with self.assertRaises(SystemExit):  # exposes the panel — refuse without the opt-in
+            with self.assertRaises(SystemExit):  # exposes the panel; refuse without the opt-in
                 settings.admin_host()
 
     def test_nonloopback_allowed_with_optin(self):

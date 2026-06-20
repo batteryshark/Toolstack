@@ -1,14 +1,14 @@
-"""SQLite persistence for the broker — the store behind every module.
+"""SQLite persistence for the broker: the store behind every module.
 
 The broker holds one long-lived connection (``check_same_thread=False``; the dev
 server is single-threaded). The admin web app opens its own short-lived
 connections to the same file. WAL mode plus a busy timeout (set in ``__init__``)
-let those coexist safely — many readers and a single writer at a time. Tests pass
+let those coexist safely: many readers and a single writer at a time. Tests pass
 ``":memory:"`` (WAL is skipped there).
 
 Tables: callers, tokens (hashed), caller_policies, requests, approvals, audit_events.
-A request's arguments/results are stored only transiently — arguments while it is
-pending approval (needed to run it after approval), the result on completion — and
+A request's arguments/results are stored only transiently: arguments while it is
+pending approval (needed to run it after approval), the result on completion, and
 arguments are cleared at any terminal state. They are never written to audit.
 """
 
@@ -235,7 +235,7 @@ class Store:
 
     def pending_approvals_for_caller(self, caller_id: int) -> list[sqlite3.Row]:
         """Pending approvals (with their request's tool/op/correlation) owned by a
-        caller — the worklist for cancelling on caller/last-token revocation."""
+        caller, the worklist for cancelling on caller/last-token revocation."""
         return self._conn.execute(
             """
             SELECT a.id AS id, a.surface_ref AS surface_ref, a.request_id AS request_id,
@@ -247,7 +247,7 @@ class Store:
         ).fetchall()
 
     def expired_pending_approvals(self, now: float) -> list[sqlite3.Row]:
-        """Pending approvals past their broker deadline — the lazy sweep's worklist.
+        """Pending approvals past their broker deadline, the lazy sweep's worklist.
         (Same row shape as :meth:`pending_approvals_for_caller`.)"""
         return self._conn.execute(
             """

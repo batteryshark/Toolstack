@@ -4,7 +4,7 @@ import Security
 /// Persists the operator's bearer token in the macOS Keychain, keyed by the admin URL (so a token
 /// for one admin doesn't leak to another). A signed/notarized app reads its own items without a
 /// prompt; an unsigned `swift run` build changes signature each rebuild, so macOS may prompt to
-/// allow access on a later launch — click "Always Allow" (or it just falls back to the login screen).
+/// allow access on a later launch; click "Always Allow" (or it just falls back to the login screen).
 enum TokenStore {
     private static let service = "com.toolstack.operator"
 

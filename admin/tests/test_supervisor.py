@@ -1,5 +1,5 @@
 """admin.supervisor: spawn a real broker, confirm it becomes healthy, then stop
-it — exercising the posix_spawn/killpg/health-probe lifecycle and the state file.
+it, exercising the posix_spawn/killpg/health-probe lifecycle and the state file.
 
 Runs on stdlib Python (no FastAPI needed). Must be run from the repo root so the
 spawned ``python -m broker.server`` can import the broker package.
@@ -81,7 +81,7 @@ class IsBrokerIdentity(unittest.TestCase):
 
     def test_non_broker_pid_is_rejected(self):
         from admin import supervisor
-        # the test runner is `python -m unittest …`, not `-m broker.server`
+        # the test runner is `python -m unittest ...`, not `-m broker.server`
         self.assertFalse(supervisor._is_broker(os.getpid()))
 
     def test_nonexistent_pid_is_rejected(self):

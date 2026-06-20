@@ -1,7 +1,7 @@
 """JSON operator API (under ``/api``) for native / automation clients.
 
 The HTML panel and this API share the SAME operations (``broker.operations`` / ``supervisor`` /
-``broker_config`` / the store) — this is just a JSON face with **bearer-token** auth instead of a
+``broker_config`` / the store): this is just a JSON face with **bearer-token** auth instead of a
 session cookie + CSRF. ``POST /api/login {password}`` returns the same signed-session value the
 cookie uses; clients send it back as ``Authorization: Bearer <token>`` and a dependency runs
 ``auth.verify_session``. No CSRF is needed (a header token is not auto-sent cross-site). Loopback
@@ -37,7 +37,7 @@ def client_ip(request: Request) -> str:
 
 
 def audit_login_failure(ip: str, username: str) -> None:
-    """Record a denied ``admin.login_failed`` audit event — IP + attempted username, NEVER the
+    """Record a denied ``admin.login_failed`` audit event: IP + attempted username, NEVER the
     submitted password. Best-effort (auditing must not change the login response); the login
     throttle bounds how many of these an attacker can drive. Shared by /login and /api/login."""
     try:
@@ -91,7 +91,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
     async def api_login(request: Request):
         ip = client_ip(request)
         wait = guard.retry_after(ip)
-        if wait > 0:  # locked out — reject before checking the password
+        if wait > 0:  # locked out: reject before checking the password
             raise HTTPException(status_code=429, detail="too many failed attempts",
                                 headers={"Retry-After": str(int(wait) + 1)})
         data = await _json_object(request)
@@ -101,7 +101,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         if username != settings.admin_username() or not stored or not auth.verify_password(password, stored):
             guard.record_failure(ip)
             audit_login_failure(ip, username)
-            # same fail-closed message for bad user OR bad password — don't reveal which
+            # same fail-closed message for bad user OR bad password; don't reveal which
             raise HTTPException(status_code=401, detail="invalid credentials")
         guard.record_success(ip)
         token = auth.sign_session(username, secret, settings.session_ttl_seconds())
@@ -249,7 +249,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             log.warning("could not read tool ops for the policy editor: %s", exc)
             # tools still listed (without ops) if the registry can't be read
         # attach each tool's secret DECLARATIONS (name/field/writable/vault/item) for display.
-        # The broker registry ignores [[secrets]], but the admin (control plane) may show them —
+        # The broker registry ignores [[secrets]], but the admin (control plane) may show them;
         # these are declarations, never values.
         try:
             defs = toolyard_ops._all_defs(config.tools_root, config.tool_dirs)
@@ -272,7 +272,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         """Add a tool by COPYING it into the broker's tools dir (where it's auto-discovered). The
         source is either a local folder (``source``) or a git repo (``repo`` + optional ``subdir`` /
         ``ref``). It must contain a toolyard.toml; otherwise 422 so the client can offer to author a
-        manifest (a separate flow). A cloned repo is third-party code — copied in, never started here.
+        manifest (a separate flow). A cloned repo is third-party code: copied in, never started here.
         Restart the broker to register the new tool."""
         data = await _json_object(request)
         repo = (data.get("repo") or "").strip()
@@ -298,7 +298,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             else:
                 tool = tool_sources.add_from_path(source, config.tools_root, existing)
         except tool_sources.NoManifest:
-            raise HTTPException(status_code=422, detail="no toolyard.toml at that location — author one to add it")
+            raise HTTPException(status_code=422, detail="no toolyard.toml at that location; author one to add it")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         with open_store(config) as store:
@@ -326,7 +326,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"could not read tool: {exc}")
         # Only these two fields are editable here; id/command/image/port/operations come from
-        # `read()` (disk) and are intentionally NOT overridable from the body — a tool can't be
+        # `read()` (disk) and are intentionally NOT overridable from the body: a tool can't be
         # repointed at other code via this endpoint.
         if "description" in data:
             if not isinstance(data["description"], str):
@@ -401,14 +401,14 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
     async def api_tool_secret_status(tool_id: str, user: str = Depends(require_user)):
         """Which of a tool's declared secret fields currently have a value, and whether the operator
         can set them here. Provisioning is supported only for the local 'vault' backend; values are
-        NEVER returned — only set/unset status."""
+        NEVER returned, only set/unset status."""
         config = broker_config.load()
         declared = _declared_fields(config, tool_id)
         if declared is None:
             raise HTTPException(status_code=404, detail=f"no such tool: {tool_id}")
         try:
             provisioned = secret_values.provisioned_fields(tool_id, declared)
-        except Exception as exc:  # vault locked/misconfigured — report it without leaking specifics
+        except Exception as exc:  # vault locked/misconfigured: report it without leaking specifics
             raise HTTPException(status_code=400, detail=f"could not read the vault: {exc}")
         return {"backend": settings.secret_backend(),
                 "settable": secret_values.is_settable(),
@@ -417,7 +417,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
 
     @app.post("/api/tools/{tool_id}/secrets")
     async def api_set_tool_secret(tool_id: str, request: Request, user: str = Depends(require_user)):
-        """Provision a secret VALUE for a tool (local vault only). The value is write-only — it's
+        """Provision a secret VALUE for a tool (local vault only). The value is write-only: it's
         stored in the vault, never returned, and the audit event records only tool+field. Restricted
         to fields the tool actually declares."""
         data = await _json_object(request)
@@ -425,7 +425,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         value = data.get("value")
         if not field:
             raise HTTPException(status_code=400, detail="field is required")
-        # reject an all-whitespace value (a likely paste/typo) but store whatever's given VERBATIM —
+        # reject an all-whitespace value (a likely paste/typo) but store whatever's given VERBATIM;
         # stripping could corrupt a secret that legitimately has surrounding whitespace.
         if not isinstance(value, str) or value.strip() == "":
             raise HTTPException(status_code=400, detail="value must be a non-empty string")
@@ -507,7 +507,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         nod_token = (data.get("nod_token") or "").strip() or current.nod_token
         updated = broker_config.BrokerRunConfig(
             port=port,
-            db_path=current.db_path,  # not editable here — changing it would orphan the DB
+            db_path=current.db_path,  # not editable here: changing it would orphan the DB
             tools_root=(data.get("tools_root") or current.tools_root).strip() or current.tools_root,
             nod_url=data.get("nod_url", current.nod_url).strip(),
             nod_token=nod_token,

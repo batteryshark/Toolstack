@@ -1,6 +1,6 @@
-# Toolstack — Walkthrough
+# Toolstack: Walkthrough
 
-How Toolstack works end to end — the architecture, the request lifecycle, and the security
+How Toolstack works end to end: the architecture, the request lifecycle, and the security
 properties with the evidence behind them. Companion docs: [PROJECT.md](../PROJECT.md)
 (design notes), [plan.md](../plan.md) (component design),
 [component-decomposition.md](component-decomposition.md) (diagrams), and
@@ -12,17 +12,17 @@ Toolstack is a brokered tool layer for agents: the agent reaches one broker, whi
 authenticates it, checks policy, gates sensitive operations on human approval, and forwards
 approved calls to tools that hold their own secrets. The agent-side `toolstack` CLI (with an
 MCP adapter and a skill) sits on top, and an operator runs the whole stack from a loopback
-admin app — web, plus a native macOS app and a desktop shell. The full vertical slice runs:
+admin app: web, plus a native macOS app and a desktop shell. The full vertical slice runs:
 
 > **agent → broker (auth + policy) → human approval in nod → tool execution with
-> its own workload secrets — and the broker never sees a secret.**
+> its own workload secrets, and the broker never sees a secret.**
 
 The broker, toolyard, and client are **zero-dependency stdlib Python** (Docker only
 for the production tool runner), runnable with `python3`. The admin app is the one
 component that carries runtime deps (FastAPI + uvicorn, in its own venv). It is
 **hardened for a real single-host install** (systemd state-dir + sandbox, admin login
 throttle + bind/SSRF guards, runtime timeouts + partial-failure cleanup, pinned deps,
-DB backups — see [deploy/README.md](../deploy/README.md)); the narrower remaining items
+DB backups; see [deploy/README.md](../deploy/README.md)); the narrower remaining items
 are in [Deferred & caveats](#deferred--caveats).
 
 ## Contents
@@ -56,16 +56,16 @@ not from rules on paper.
 
 ```mermaid
 flowchart TB
-    subgraph Untrusted["Agent host — untrusted"]
+    subgraph Untrusted["Agent host, untrusted"]
         Agent["Agent / client<br/>holds only a low-power broker token"]
     end
-    Ingress["Tailnet / VPN ingress<br/>— the ONLY path in —"]
-    subgraph BrokerHost["Broker host — authority boundary"]
+    Ingress["Tailnet / VPN ingress<br/>(the ONLY path in)"]
+    subgraph BrokerHost["Broker host, authority boundary"]
         Broker["Broker (one process)<br/>auth · policy · request lifecycle<br/>approval orchestration · audit"]
         DB[("SQLite<br/>callers · tokens · requests<br/>approvals · audit")]
         Admin["Admin web app<br/>operator · loopback only<br/>runs the broker · clients · tools · audit"]
     end
-    subgraph Workload["Tool runtime — execution boundary"]
+    subgraph Workload["Tool runtime, execution boundary"]
         Toolyard["Toolyard<br/>container lifecycle + secret resolution<br/>(not in the request path)"]
         Tools["Tool containers<br/>127.0.0.1:port · secrets at /run/secrets"]
     end
@@ -85,8 +85,8 @@ flowchart TB
 
 **Trust boundaries:** agent → broker (tailnet, one-caller bearer token); broker →
 tool container (localhost); toolyard → secret backend (per-tool identity on the
-host); tool → secret backend (none — it reads files); broker → nod (issuer token on
-the broker host); operator → broker (`brokerctl`, or the **admin web app** — both
+host); tool → secret backend (none: it reads files); broker → nod (issuer token on
+the broker host); operator → broker (`brokerctl`, or the **admin web app**: both
 direct on the host, the panel over loopback with a login).
 
 The broker is **one process with internal module seams** (not a service mesh). The
@@ -121,7 +121,7 @@ Broker internal modules (each keeps its "owns / must not" rule):
 | [approval.py](../broker/approval.py) | the operation card + normalized surface state (adapter contract) |
 | [surface_nod.py](../broker/surface_nod.py) | `NodSurface`: the HTTP adapter to nod (open / poll / cancel) |
 | [store.py](../broker/store.py) | SQLite persistence (WAL, so the broker and admin app share the file) + operator/audit queries |
-| [operations.py](../broker/operations.py) | operator mutations (create/revoke caller, set policy, issue/revoke token) + `admin.*` audit — shared by `brokerctl` and the admin app |
+| [operations.py](../broker/operations.py) | operator mutations (create/revoke caller, set policy, issue/revoke token) + `admin.*` audit, shared by `brokerctl` and the admin app |
 | [audit.py](../broker/audit.py) | append-only audit log (stderr sink when serving) |
 | [ratelimit.py](../broker/ratelimit.py) · [redaction.py](../broker/redaction.py) | per-caller rate limiting · free-text redaction |
 | [server.py](../broker/server.py) · [brokerctl.py](../broker/brokerctl.py) | HTTP transport (binds localhost) · operator CLI |
@@ -131,7 +131,7 @@ Broker internal modules (each keeps its "owns / must not" rule):
 Because the broker exposes **no admin API** (only health / actions / tools / requests),
 the panel reaches broker state two ways: it **supervises the broker process**
 (`posix_spawn` / `killpg` / `/v1/health`, mirroring the toolyard runner) from a
-persisted run-config, and it opens the broker's SQLite `Store` **directly** — mutating
+persisted run-config, and it opens the broker's SQLite `Store` **directly**, mutating
 through `broker.operations`, the same path `brokerctl` uses, so the panel and the CLI
 write **one** `admin.*` audit trail. It authors tools by writing a `toolyard.toml`
 into a directory you name (registered via `TOOLSTACK_TOOLS_DIRS`, picked up on the next
@@ -142,10 +142,10 @@ Modules: [admin/README.md](../admin/README.md).
 
 ### You deploy these (external)
 
-- **nod** — the self-hosted approval surface ([batteryshark/nod](https://github.com/batteryshark/nod)).
-- **Secret backend** — a dev TOML `FileBackend`, a local encrypted `VaultBackend`, or
+- **nod**: the self-hosted approval surface ([batteryshark/nod](https://github.com/batteryshark/nod)).
+- **Secret backend**: a dev TOML `FileBackend`, a local encrypted `VaultBackend`, or
   `InfisicalBackend` (HTTP); all shipped.
-- **Tailnet** — Tailscale Serve (or any VPN); the ingress boundary.
+- **Tailnet**: Tailscale Serve (or any VPN); the ingress boundary.
 
 ---
 
@@ -170,7 +170,7 @@ Modules: [admin/README.md](../admin/README.md).
 Arguments are persisted only while a request is pending approval (needed to run it
 later), cleared at a terminal state, and **never audited**.
 
-The agent discovers callable ops via `GET /v1/tools` and `GET /v1/tools/<tool>.<op>` (policy-filtered —
+The agent discovers callable ops via `GET /v1/tools` and `GET /v1/tools/<tool>.<op>` (policy-filtered:
 it only sees what it may use) and uses the `toolstack` client to call them. A
 reviewed request's status response carries the approver's **note** back, so the
 human's reason for approving or rejecting reaches the agent.
@@ -185,13 +185,13 @@ Each invariant, how it's enforced, and the test that proves it.
 |---|---|---|
 | Agent reaches only the broker | binds `127.0.0.1` (not configurable); tailnet is the sole ingress | `test_server.test_bound_to_localhost_only`; live demos |
 | Fail closed | no caller → `401`; no policy grant → `403` (default-deny); no surface → `503`; timeout → `expired`; tool down → `502` | `test_gateway`, `test_policy`, `test_lifecycle`, `test_approval`, `test_runtime` |
-| Secrets never on the control plane | broker holds no backend credential; registry ignores `[[secrets]]`; toolyard injects secrets to the tool | `test_registry.test_registry_is_secret_unaware`; `toolyard…test_runner` (tool reads secret, value not returned); the demos show **0** occurrences in audit |
+| Secrets never on the control plane | broker holds no backend credential; registry ignores `[[secrets]]`; toolyard injects secrets to the tool | `test_registry.test_registry_is_secret_unaware`; `toolyard...test_runner` (tool reads secret, value not returned); the demos show **0** occurrences in audit |
 | Tokens hashed; revocation immediate | only SHA-256 stored; per-request token+caller check | `test_identity` (revoked token/caller denied); `test_brokerctl` (revoke → next auth denied) |
 | Redaction | args/results never audited; `reason` redacted; tokens never logged | `test_lifecycle.test_arguments_never_appear_in_audit`, `test_gateway.test_reason_is_redacted_in_audit` |
-| Broker owns approval truth; timer wins | poll is authoritative; broker timeout ignores a late approval | `test_approval.test_timeout_fails_closed_even_if_surface_says_approved`, `…gates_execution`, `…rejection_denies` |
+| Broker owns approval truth; timer wins | poll is authoritative; broker timeout ignores a late approval | `test_approval.test_timeout_fails_closed_even_if_surface_says_approved`, `...gates_execution`, `...rejection_denies` |
 | Every decision auditable (4 questions) | gateway/request/policy/runtime/approval/admin events, queryable by request id; liveness probes excluded as noise | `test_lifecycle.test_audit_trail_answers_the_questions`; `test_operations` (admin.* events); `test_gateway.test_health_is_not_audited` |
 | Abuse control | per-caller fixed-window rate limit | `test_ratelimit`, `test_gateway.test_rate_limit_returns_429` |
-| Admin panel is contained | binds `127.0.0.1`; scrypt password + HMAC session + CSRF on every POST; fail-closed (no password set → refuses to start); nod token / tool secrets never rendered back | `admin…test_auth` (session/CSRF), `test_app` (login gate, CSRF rejection), `test_broker_config` (token masked) |
+| Admin panel is contained | binds `127.0.0.1`; scrypt password + HMAC session + CSRF on every POST; fail-closed (no password set → refuses to start); nod token / tool secrets never rendered back | `admin...test_auth` (session/CSRF), `test_app` (login gate, CSRF rejection), `test_broker_config` (token masked) |
 
 The "four audit questions" (what was asked / decided & by whom / actually ran /
 which credential) are answerable via `brokerctl audit --request-id <N>`: a request
@@ -204,7 +204,7 @@ credential" answer); a rejected bearer emits `identity.token_rejected`.
 
 ## Run it
 
-Two ways, both from the repo root: the **admin panel** (easiest — it runs the broker
+Two ways, both from the repo root: the **admin panel** (easiest: it runs the broker
 and tools for you) or the **CLI** (zero-dependency, scriptable).
 
 ### The admin panel
@@ -220,7 +220,7 @@ broker, create a caller (copy its one-time token), edit its policy, and add/star
 tools. Only the panel uses its venv; the broker, toolyard, and client it drives are
 still zero-dependency stdlib.
 
-### The CLI (zero dependencies — Python 3 only)
+### The CLI (zero dependencies: Python 3 only)
 
 ```bash
 # 1. start a tool (toolyard resolves its secret from the dev backend and runs it)
@@ -289,7 +289,7 @@ create-caller → set-policy flow via FastAPI's TestClient.
 
 ## Design decisions to confirm
 
-These are judgment calls made along the way — worth a deliberate yes/no:
+These are judgment calls made along the way, worth a deliberate yes/no:
 
 1. **Collapse to deployment reality.** The earlier 9-service decomposition became
    module seams inside one broker process. *Why:* security from physical
@@ -298,7 +298,7 @@ These are judgment calls made along the way — worth a deliberate yes/no:
    `python3`", boring, junior-readable. Confirm this still fits as the broker grows.
 3. **`toolyard.toml` (not `toolyard.yaml`).** *Why:* YAML would force a PyYAML
    dependency on both broker and toolyard; TOML is stdlib (`tomllib`). *This deviates
-   from the original docs* — confirm you're happy with TOML.
+   from the original docs*; confirm you're happy with TOML.
 4. **Caller model, no profiles.** Identity is caller + token (the old design's
    profiles were dropped). Confirm a single policy bundle per caller is enough.
 5. **nod via a pluggable adapter; poll-only by design.** Resolution is poll-based
@@ -323,38 +323,38 @@ These are judgment calls made along the way — worth a deliberate yes/no:
 
 ## Deferred & caveats
 
-Honest list of what is **not** done — none block the slice working, but they matter
+Honest list of what is **not** done; none block the slice working, but they matter
 before a real deployment:
 
 - **Secrets touch host disk transiently.** The process runner writes secrets to a
-  `0700` temp dir; the docker runner bind-mounts a host dir — both removed on stop.
+  `0700` temp dir; the docker runner bind-mounts a host dir, both removed on stop.
   Production hardening: inject into a container **tmpfs** at start (no host disk).
-- **Approval `deliver` callback** deliberately not built and not planned — a design
+- **Approval `deliver` callback** deliberately not built and not planned: a design
   decision, not a gap. `poll` is the sole source of approval truth; a receiver of
   nod's unauthenticated callback would be forgeable (anyone reaching it could forge
   an "approved"). Poll-only closes that hole.
 - **Expiry/revocation are lazy, not a background worker.** A pending request expires on
   its next poll, on any new `submit` (which sweeps all stale approvals), or via
   `brokerctl sweep`; revoking a caller/token cancels its pending approvals eagerly. There
-  is still no always-on background thread — an unattended, never-swept request lingers
+  is still no always-on background thread; an unattended, never-swept request lingers
   until the next submit or a manual sweep (fine: the single-threaded broker stays simple).
 - **Single-threaded broker serving.** The broker's `HTTPServer` serves one request at
   a time. SQLite is now in **WAL mode**, so the admin app's short-lived connections
   safely coexist with the broker's long-lived one; but concurrent *serving inside the
   broker* would still need a connection pool + locking (the in-memory rate limiter too).
 - **Admin app is single-operator.** One login (scrypt password + HMAC session); no
-  multi-user, roles, or SSO. Loopback-only and no TLS of its own — reach it over a
+  multi-user, roles, or SSO. Loopback-only and no TLS of its own; reach it over a
   tunnel that terminates TLS, never a public bind.
 - **No DB migrations.** The schema grew across phases via `CREATE TABLE` / new
   columns; assume a **fresh DB** when upgrading a dev instance (delete the sqlite file).
-- **nod API contract — verified.** The create / decision-read / cancel shapes in
+- **nod API contract: verified.** The create / decision-read / cancel shapes in
   `surface_nod.py` are pinned against nod **v1.0.1** (`nod-proto` crate, commit
   `01d535d`): every request field and response key was checked against that
   source and the base routing live-probed against a running instance. The default
   test suite exercises the mapping against a wire-faithful fake; an opt-in live
   test (`test_surface_nod_live.py`, skipped unless `TOOLSTACK_NOD_URL` /
   `TOOLSTACK_NOD_TOKEN` are set) drives a real open→poll→cancel cycle. Re-verify
-  if you bump the nod version — the create body is `deny_unknown_fields`.
+  if you bump the nod version; the create body is `deny_unknown_fields`.
 - **Rate limiter is in-memory, per process.** Resets on restart; not shared across
   broker instances.
 - **Temporary grants / JIT elevation** not implemented (policy is static

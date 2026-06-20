@@ -16,7 +16,7 @@ final class AppModel: ObservableObject {
     @Published var error: String?
     @Published var busy = false
 
-    /// The admin URL the user signs in against — editable on the login screen, remembered
+    /// The admin URL the user signs in against, editable on the login screen, remembered
     /// across launches. Works for a local admin (the default) or a remote one (a tailnet /
     /// tunnelled homeserver), as long as it's reachable.
     @Published var serverURL: String
@@ -29,7 +29,7 @@ final class AppModel: ObservableObject {
         self.client = ApiClient(baseURL: AppModel.adminURL())  // rebuilt from serverURL on login
     }
 
-    /// The default admin URL — `$TOOLSTACK_ADMIN_URL` or loopback.
+    /// The default admin URL: `$TOOLSTACK_ADMIN_URL` or loopback.
     nonisolated static func adminURL() -> URL {
         if let raw = ProcessInfo.processInfo.environment["TOOLSTACK_ADMIN_URL"],
            let url = URL(string: raw) { return url }
@@ -39,7 +39,7 @@ final class AppModel: ObservableObject {
     func login(password: String) async {
         let trimmed = serverURL.trimmingCharacters(in: .whitespaces)
         guard let url = URL(string: trimmed), url.scheme != nil, url.host != nil else {
-            error = "Enter a valid admin URL — e.g. http://127.0.0.1:8780"
+            error = "Enter a valid admin URL, e.g. http://127.0.0.1:8780"
             return
         }
         serverURL = trimmed
@@ -71,7 +71,7 @@ final class AppModel: ObservableObject {
         } catch ApiError.unauthorized {
             TokenStore.delete(account: saved)
         } catch {
-            // admin unreachable / transient — keep the token, let the user sign in manually
+            // admin unreachable / transient; keep the token, let the user sign in manually
         }
     }
 
@@ -176,7 +176,7 @@ final class AppModel: ObservableObject {
             await refreshTools()
             banner = addedBanner(created.id)
         } catch ApiError.http(422, _) {
-            error = "That repo/subdir has no toolyard.toml — point at one that does, or add it from a local folder to author it."
+            error = "That repo/subdir has no toolyard.toml. Point at one that does, or add it from a local folder to author it."
         } catch ApiError.unauthorized {
             authenticated = false; error = ApiError.unauthorized.message
         } catch let apiError as ApiError {
@@ -198,7 +198,7 @@ final class AppModel: ObservableObject {
         await run { self.audit = try await self.client.audit(limit: 100) }
     }
 
-    /// Load a tool's secret set/unset status (returns it rather than storing — used by the sheet).
+    /// Load a tool's secret set/unset status (returns it rather than storing, used by the sheet).
     func secretStatus(toolId: String) async -> SecretStatus? {
         await run { try await self.client.secretStatus(toolId: toolId) }
     }
@@ -239,7 +239,7 @@ final class AppModel: ObservableObject {
     func rotateToken(caller: String) async {
         await run {
             let result = try await self.client.rotateToken(caller: caller)
-            self.banner = "New token for \(result.name) — copy it now, it won't be shown again:\n\(result.token)"
+            self.banner = "New token for \(result.name). Copy it now, it won't be shown again:\n\(result.token)"
             await self.refreshCallers()
         }
     }
@@ -275,7 +275,7 @@ final class AppModel: ObservableObject {
         guard !trimmed.isEmpty else { return }
         await run {
             let created = try await self.client.createCaller(name: trimmed)
-            self.banner = "Token for \(created.name) — copy it now, it won't be shown again:\n\(created.token)"
+            self.banner = "Token for \(created.name). Copy it now, it won't be shown again:\n\(created.token)"
             await self.refreshCallers()
         }
     }

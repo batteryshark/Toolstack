@@ -57,7 +57,7 @@ def _tool_log_path(tool_id: str) -> Path:
 
 
 def _check_port_free(port: int) -> None:
-    """Fail early + clearly if the tool's loopback port is already taken — otherwise the tool
+    """Fail early + clearly if the tool's loopback port is already taken; otherwise the tool
     binds, exits, and only surfaces as a 502 at call time."""
     s = socket.socket()
     try:
@@ -72,7 +72,7 @@ def _cleanup_partial_start(secrets_dir: str, proxy_pid: str | None, proxy_dir: s
                            child_pid: int | None = None) -> None:
     """Best-effort cleanup when start() fails partway: never leave the (world-readable) secrets
     dir on disk, an orphaned write-proxy, or an unreaped child zombie behind. start() runs inside
-    the long-lived admin handler, so a leaked zombie per failed start would accrue there — kill
+    the long-lived admin handler, so a leaked zombie per failed start would accrue there; kill
     AND reap both the tool child and the proxy (a readiness-failed child is already a zombie)."""
     for pid in (child_pid, proxy_pid):
         if pid is None:
@@ -195,11 +195,11 @@ class ProcessRunner:
             running = RunningTool(tool_def.id, tool_def.port, self.backend, str(pid), secrets_dir,
                                   proxy_pid, proxy_dir)
             # Readiness: a bad command (missing file, import error) execs and exits at once.
-            # Catch it now — with the logfile to diagnose — instead of recording a phantom
+            # Catch it now (with the logfile to diagnose) instead of recording a phantom
             # "running" tool that 502s every call.
             time.sleep(_READINESS_WAIT)
             if not self.is_alive(running):
-                raise RuntimeError(f"tool {tool_def.id} exited immediately on start — see {log_path}")
+                raise RuntimeError(f"tool {tool_def.id} exited immediately on start: see {log_path}")
             log.info("started tool %s on 127.0.0.1:%s (pid %s, log %s)",
                      tool_def.id, tool_def.port, pid, log_path)
             return running
@@ -283,11 +283,11 @@ class DockerRunner:
             running = RunningTool(tool_def.id, tool_def.port, self.backend, name, secrets_dir,
                                   proxy_pid, proxy_dir)
             # Readiness: a container that exits at once (bad image / port clash) must not record
-            # as running, then 502 every call. Settle briefly first — `docker run -d` returns at
+            # as running, then 502 every call. Settle briefly first: `docker run -d` returns at
             # create, so an immediate crash can still read Running=true for a moment.
             time.sleep(_READINESS_WAIT)
             if not self.is_alive(running):
-                raise RuntimeError(f"tool {tool_def.id} container exited immediately — docker logs {name}")
+                raise RuntimeError(f"tool {tool_def.id} container exited immediately: docker logs {name}")
             log.info("started tool %s in container %s on :%s (docker logs %s)",
                      tool_def.id, name, tool_def.port, name)
             return running
@@ -308,10 +308,10 @@ class DockerRunner:
             if r.returncode != 0:
                 # The caller clears the state record after stop(); surface the leftover so an
                 # operator can `docker rm` it (the next start's `rm -f` also clears it by name).
-                log.warning("docker rm %s failed on stop (rc=%s): %s — container may still exist",
+                log.warning("docker rm %s failed on stop (rc=%s): %s; container may still exist",
                             running.handle, r.returncode, (r.stderr or "").strip())
         except subprocess.TimeoutExpired:
-            log.warning("docker rm %s timed out on stop — container may still exist", running.handle)
+            log.warning("docker rm %s timed out on stop; container may still exist", running.handle)
         _stop_proxy(running)
         shutil.rmtree(running.workdir, ignore_errors=True)
         log.info("stopped tool %s (container %s)", running.tool_id, running.handle)

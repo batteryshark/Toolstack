@@ -1,12 +1,12 @@
-# Toolstack — Component design
+# Toolstack: Component design
 
-The component-by-component architecture reference for the system — the module
+The component-by-component architecture reference for the system: the module
 seams, the security invariants, and the per-component design. Read
 [PROJECT.md](PROJECT.md) for the design notes and principles.
 
 **Architecture direction:** collapse the logical decomposition to
 *deployment reality*. The fine-grained ownership rules from the earlier 9-service
-decomposition survive — but as **module seams inside one broker process**, not as
+decomposition survive, but as **module seams inside one broker process**, not as
 separate network services. Security comes from physical boundaries you can point
 at, not from rules written between co-equal boxes.
 
@@ -27,18 +27,18 @@ Everything below is in service of that one sentence.
 
 ```mermaid
 flowchart TB
-    subgraph Untrusted["Agent host — untrusted"]
+    subgraph Untrusted["Agent host, untrusted"]
         Agent["Agent / client<br/>holds only a low-power broker token"]
     end
 
-    Ingress["Tailnet / VPN ingress<br/>— the ONLY path in —"]
+    Ingress["Tailnet / VPN ingress<br/>(the ONLY path in)"]
 
-    subgraph BrokerHost["Broker host — authority boundary (one process)"]
+    subgraph BrokerHost["Broker host, authority boundary (one process)"]
         Broker["Broker<br/>auth · policy · request lifecycle<br/>approval orchestration · audit<br/>reads tool registry from disk"]
         DB[("SQLite<br/>callers · tokens · requests<br/>approvals · audit")]
     end
 
-    subgraph Workload["Tool runtime — execution boundary"]
+    subgraph Workload["Tool runtime, execution boundary"]
         Toolyard["Toolyard<br/>container lifecycle + per-tool secret resolution"]
         Tools["Tool containers<br/>secrets at /run/secrets/&lt;name&gt; (target: tmpfs)"]
     end
@@ -59,13 +59,13 @@ A college student should be able to read that and say: *"The agent can only reac
 the broker over the tunnel. The broker checks who you are and whether you're
 allowed. Risky stuff goes to nod for a human to approve. Approved calls get
 forwarded to a tool running in a container. The tool gets its own secrets from a
-vault — the broker never touches them."* If they can't, the diagram is wrong.
+vault; the broker never touches them."* If they can't, the diagram is wrong.
 
 ---
 
 ## Deployable components
 
-Four things you build, three things you deploy — plus the **agent client**
+Four things you build, three things you deploy, plus the **agent client**
 ([client/](client/)): a generic `toolstack` CLI + skill that discovers and calls
 tools through the broker (lazy discovery, optional per-domain skills).
 
@@ -73,18 +73,18 @@ tools through the broker (lazy discovery, optional per-domain skills).
 
 | Component | Language | Target size | Storage | Role |
 |---|---|---|---|---|
-| **Broker** | Python | ~800–1200 LOC | one SQLite file | Authority boundary. The only thing the agent can address. |
-| **Toolyard** | Python | ~300–500 LOC | filesystem + tmpfs | Execution boundary. Container lifecycle + per-tool secret resolution. |
-| **Tool template** | any | ~50–150 LOC | per-tool | What a new tool needs to wire up. A convention, not a service. |
-| **Approval adapter** | Python | ~150–250 LOC | none | A *module inside the broker* that speaks to nod. Plus a contract doc so others can swap in their own surface. |
+| **Broker** | Python | ~800-1200 LOC | one SQLite file | Authority boundary. The only thing the agent can address. |
+| **Toolyard** | Python | ~300-500 LOC | filesystem + tmpfs | Execution boundary. Container lifecycle + per-tool secret resolution. |
+| **Tool template** | any | ~50-150 LOC | per-tool | What a new tool needs to wire up. A convention, not a service. |
+| **Approval adapter** | Python | ~150-250 LOC | none | A *module inside the broker* that speaks to nod. Plus a contract doc so others can swap in their own surface. |
 
 ### You deploy these (external dependencies)
 
 | Dependency | What it is | Why it's external |
 |---|---|---|
-| **nod** | [batteryshark/nod](https://github.com/batteryshark/nod) — self-hosted approval surface (single Rust binary, Tailscale-native, signed decisions, durable audit) | Already built and proven. The broker calls it through an adapter; it is not ours to maintain inside the stack. |
+| **nod** | [batteryshark/nod](https://github.com/batteryshark/nod): self-hosted approval surface (single Rust binary, Tailscale-native, signed decisions, durable audit) | Already built and proven. The broker calls it through an adapter; it is not ours to maintain inside the stack. |
 | **Secret backend** | Infisical or SOPS | Workload secrets belong with the workload, resolved by toolyard. Pluggable. |
-| **Tailnet** | Tailscale Serve (or any VPN) | The ingress boundary. Not code — topology. |
+| **Tailnet** | Tailscale Serve (or any VPN) | The ingress boundary. Not code: topology. |
 
 The big simplification from the old design: **nod replaces the Discord bot
 *and* a future web approval UI**, so there is no separate approver process to
@@ -96,13 +96,13 @@ opens a nod decision and polls it for the result.
 ## Where the 9-service decomposition went
 
 The earlier decomposition did real, useful work identifying *seams*. None of it
-is lost — it just stops being a distributed system. Every logical owner keeps its
+is lost; it just stops being a distributed system. Every logical owner keeps its
 "owns / must not" rules as an internal module boundary.
 
 | Earlier logical service | New home | Notes |
 |---|---|---|
 | `BrokerGateway` | Broker → **Gateway** module | Ingress/egress, correlation id. |
-| `ClientProfileService` | Broker → **Identity** module | Simplified to the proven **caller** model (caller + hashed token). Profiles deferred — see below. |
+| `ClientProfileService` | Broker → **Identity** module | Simplified to the proven **caller** model (caller + hashed token). Profiles deferred; see below. |
 | `RequestService` | Broker → **Request lifecycle** module | Owns mutable request state + orchestration. |
 | `PolicyService` | Broker → **Policy** module | allow / review / deny, default-deny, grants + TTL. |
 | `ToolRegistryService` | Broker → **Registry-read** loader | Demoted from a service to a `toolyard.toml` reader. Stays secret-unaware *physically* (it never reads the `[[secrets]]` block). |
@@ -126,7 +126,7 @@ plumbing.
 2. **Secrets never touch the control plane.** The broker cannot read workload
    secrets. It does not inject auth into tool calls. (Testable: the broker has no
    secret-backend credential at all.)
-3. **The registry is secret-unaware — physically.** The broker parses tool/op/
+3. **The registry is secret-unaware, physically.** The broker parses tool/op/
    risk/port from `toolyard.toml` and *ignores the `[[secrets]]` block*. (Testable:
    the broker's in-memory registry never contains a secret descriptor.)
 4. **Redact before any boundary.** Arguments and results are redacted before they
@@ -135,7 +135,7 @@ plumbing.
 5. **Tokens are hashed at rest. Revocation is immediate** and takes effect at the
    next request step, including in-flight.
 6. **Approval describes the operation, not the command.** "Approve `media.skip`
-   for caller `hermes`," not "Approve `curl`?" — with caller, tool, op, target,
+   for caller `hermes`," not "Approve `curl`?", with caller, tool, op, target,
    data class, risk, and policy decision.
 7. **The broker owns approval truth.** nod is a messenger. A nod decision is a
    *claim*; the broker validates it, reconciles against nod's durable decision
@@ -185,7 +185,7 @@ GET  /v1/tools, /v1/tools/<tool>.<op>   # discovery (policy-filtered to the call
 POST /v1/actions/<tool>.<op>            # 200 ran · 202 review · 403 denied · 404 unknown · 429 rate-limited · 502 tool failed · 503 no surface
 GET  /v1/requests/<id>                  # poll a request (owner only): status + result + approver/note
 # operator actions (callers/policies/tokens/audit) = brokerctl on the host, not HTTP
-# POST /mcp — broker-native MCP (JSON-RPC), same auth/policy/audit
+# POST /mcp: broker-native MCP (JSON-RPC), same auth/policy/audit
 # no approval callback route: resolution is poll-only (nod callbacks are unauthenticated, so a receiver would be forgeable)
 ```
 
@@ -228,7 +228,7 @@ port = 4601
 name = "say"
 risk = "read"
 
-[[secrets]]                  # READ BY TOOLYARD ONLY — the broker never parses this
+[[secrets]]                  # READ BY TOOLYARD ONLY: the broker never parses this
 name = "api_key"             # -> $TOOLSTACK_SECRETS_DIR/api_key (default /run/secrets)
 field = "API_KEY"
 ```
@@ -257,7 +257,7 @@ secret.
 **Role:** show what a new tool needs. Onboarding a tool is "drop a folder with a
 `toolyard.toml`, pick an entry point, run `toolyard up`."
 
-**Convention:** read secrets from files —
+**Convention:** read secrets from files:
 
 ```python
 def secret(name: str) -> str:
@@ -281,7 +281,7 @@ localhost only. The tunnel is the only path in.
 
 | Host | Holds |
 |---|---|
-| Broker host | SQLite state · **nod issuer token** (to open approvals). No workload-secret credential. (No callback auth secret — resolution is poll-only; there is no callback route.) |
+| Broker host | SQLite state · **nod issuer token** (to open approvals). No workload-secret credential. (No callback auth secret: resolution is poll-only; there is no callback route.) |
 | Toolyard host | Per-tool secret-backend identities (mode `0600`) · `toolyard.toml` files. |
 | Agent host | A low-power broker token. Nothing else. |
 
@@ -300,23 +300,23 @@ a different surface.
 ### The adapter interface (what the broker depends on)
 
 The broker's approval orchestration depends on three operations. Resolution is
-**poll-only** — there is no inbound callback:
+**poll-only**; there is no inbound callback:
 
 | Operation | Direction | Purpose | nod implementation |
 |---|---|---|---|
 | `open(card, expires_at) -> ref` | broker → surface | Publish a redacted, operation-describing prompt; return an opaque handle. | `POST /api/v1/requests` → `request_id` |
 | `poll(ref) -> state` | broker → surface | The **sole source of truth**: `pending` / `approved` / `rejected` / `expired`, with approver + note. | `GET /api/v1/requests/{id}/decision` |
 | `cancel(ref)` | broker → surface | Withdraw a pending prompt on broker timeout or token revocation. | nod issuer cancel |
-| ~~`deliver(decision)`~~ | — | **Not implemented, not planned.** A push fast-path is rejected: nod posts callbacks unauthenticated, so a broker receiver would let anyone forge an approval. | — (no callback route) |
+| ~~`deliver(decision)`~~ | - | **Not implemented, not planned.** A push fast-path is rejected: nod posts callbacks unauthenticated, so a broker receiver would let anyone forge an approval. | - (no callback route) |
 
 ### Data contracts
 
-**OperationCard (broker → surface)** — redacted, safe to leave the trust zone.
+**OperationCard (broker → surface)**: redacted, safe to leave the trust zone.
 Carries: caller, tool, operation, target, data class, risk, policy reason, blast
 radius, links (audit/runbook), allowed actions, `expires_at`, and an idempotency
 key. **Never** raw arguments or secrets.
 
-**SurfaceDecision (surface → broker)** — normalized: `outcome`
+**SurfaceDecision (surface → broker)**, normalized: `outcome`
 (`approved`/`rejected`/`expired`), `approver_ref`, optional `note`, `decided_at`.
 Surface-native ids and option kinds are *metadata*, not authority.
 
@@ -327,7 +327,7 @@ Surface-native ids and option kinds are *metadata*, not authority.
   `options` = approve / approve_with_text / reject_with_text(destructive);
   `dedupe_key` = broker `request_id` (retry-safe); `expires_at` = broker timeout;
   `notification.redact = true` so lock-screen push leaks nothing. (No `callback_url`
-  is set — there is no broker callback route.)
+  is set; there is no broker callback route.)
 - Decision (from the decision read) → SurfaceDecision: `option_kind`
   `approve*` → approved, `reject*` → rejected; `text` → note; `actor_user_id` →
   approver.
@@ -353,11 +353,11 @@ Full spec for writing another adapter:
 
 Deferred, not forgotten. Don't build these until a component actually needs them.
 
-- **Profiles** (multiple policy bundles per caller) — the caller model is enough;
+- **Profiles** (multiple policy bundles per caller): the caller model is enough;
   add only if one caller genuinely needs distinct policies.
-- **Component-to-component credential service / mTLS between modules** — localhost
+- **Component-to-component credential service / mTLS between modules**: localhost
   + tailnet first; only relevant if modules split across hosts.
-- **Multiple simultaneous approval surfaces** — nod is the one surface; the
+- **Multiple simultaneous approval surfaces**: nod is the one surface; the
   adapter contract is what makes a second one *possible*, not *present*.
 - **Sandboxed one-shot jobs, off-host audit replication, heuristic risk
   classification, quorum approvals** (nod `per_user` + issuer logic if ever
@@ -367,11 +367,11 @@ Deferred, not forgotten. Don't build these until a component actually needs them
 
 ## Related docs
 
-- [PROJECT.md](PROJECT.md) — design notes and principles.
-- [docs/component-decomposition.md](docs/component-decomposition.md) — physical
+- [PROJECT.md](PROJECT.md): design notes and principles.
+- [docs/component-decomposition.md](docs/component-decomposition.md): physical
   diagram, broker internals, and trust boundaries.
-- [docs/message-contracts.md](docs/message-contracts.md) — boundary wire contracts,
+- [docs/message-contracts.md](docs/message-contracts.md): boundary wire contracts,
   standard outcomes, audit taxonomy, and redaction rules.
-- [docs/approval-surface-adapter.md](docs/approval-surface-adapter.md) — the
+- [docs/approval-surface-adapter.md](docs/approval-surface-adapter.md): the
   contract for plugging in a different approval surface.
-- [docs/coding-standards.md](docs/coding-standards.md) — clean-code expectations.
+- [docs/coding-standards.md](docs/coding-standards.md): clean-code expectations.

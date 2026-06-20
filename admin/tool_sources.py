@@ -5,7 +5,7 @@ The native app and Docker deployments can't reference arbitrary host paths at ru
 A small ``.tsr-source.json`` sidecar records where it came from (a local path or a git repo) so
 the tool can be re-synced later ("Update").
 
-Secret *values* are never involved here — only the tool's files and its manifest. The manifest
+Secret *values* are never involved here: only the tool's files and its manifest. The manifest
 must already exist in the source folder; authoring one for a code-only folder is a separate flow.
 """
 
@@ -26,12 +26,12 @@ from . import tool_authoring
 SIDECAR = ".tsr-source.json"
 # Don't drag a source's VCS/build cruft (or a stale sidecar) into the managed copy.
 _IGNORE = shutil.ignore_patterns(".git", "__pycache__", "*.pyc", SIDECAR)
-# Only real fetch transports — NOT file://, ext::, fd:: (which can run commands) or a leading '-'.
+# Only real fetch transports: NOT file://, ext::, fd:: (which can run commands) or a leading '-'.
 _GIT_URL_RE = re.compile(r"^(https?://|git@|ssh://)")
 
 
 class NoManifest(Exception):
-    """The source folder has no toolyard.toml — it's code, not yet a tool. The caller decides
+    """The source folder has no toolyard.toml: it's code, not yet a tool. The caller decides
     whether to author a manifest for it (a separate flow) rather than treating this as an error."""
 
 
@@ -40,7 +40,7 @@ def _resolved_dir(source: str) -> Path:
     if not src.is_dir():
         # The path is resolved on the ADMIN's machine. A Docker/remote admin only sees its own
         # filesystem (e.g. /data), so a host folder picked on a laptop won't exist for it.
-        raise ValueError(f"directory not found on the admin: {source} — a Docker or remote admin "
+        raise ValueError(f"directory not found on the admin: {source}; a Docker or remote admin "
                          "sees only its own filesystem (e.g. /data), not this computer's folders")
     return src
 
@@ -64,7 +64,7 @@ def add_from_github(repo: str, tools_root: str, existing_ids=(), *,
     """Shallow-clone a git repo and copy its tool folder (the repo root, or ``subdir`` within it)
     into ``tools_root/<id>``, recording the repo for a later Update. Returns ``{id, type,
     description, path}``. Raises ``NoManifest`` (no toolyard.toml) or ``ValueError`` (bad URL /
-    missing git / clone failure / id clash). NOTE: a cloned tool is THIRD-PARTY code — it is copied
+    missing git / clone failure / id clash). NOTE: a cloned tool is THIRD-PARTY code; it is copied
     in but never executed here; the operator starts it explicitly and grants it policy."""
     if not tools_root:
         raise ValueError("no tools_root is configured")
@@ -94,7 +94,7 @@ def _clone_into(tmp: Path, url: str, branch: str, sub: str) -> Path:
     cmd = ["git", "clone", "--depth", "1"]
     if branch:
         cmd += [f"--branch={branch}"]   # '=' binds the value, so a ref can't be read as a flag
-    cmd += ["--", url, str(clone)]   # '--' so a URL like '--upload-pack=…' can't be read as a flag
+    cmd += ["--", url, str(clone)]   # '--' so a URL like '--upload-pack=...' can't be read as a flag
     try:
         # No tty/credential/host-key prompts: fail fast instead of blocking a request.
         subprocess.run(cmd, capture_output=True, timeout=120, check=True,
@@ -122,7 +122,7 @@ def update(dir_path: str | Path) -> dict:
     dest = Path(dir_path)
     source = read_source(dest)
     if not source:
-        raise ValueError("this tool wasn't added through TSR (no recorded source) — can't update it")
+        raise ValueError("this tool wasn't added through TSR (no recorded source); can't update it")
     tool_id = dest.name
     local = tool_authoring.read(dest)   # the operator's current description + secret declarations
     with tempfile.TemporaryDirectory(prefix="tsr-update-") as tmp:
@@ -143,7 +143,7 @@ def update(dir_path: str | Path) -> dict:
         # the managed dir is named by id (_ingest: root/<id>), so this guards against the source
         # silently becoming a different tool under the same folder.
         if merged["id"] != tool_id:
-            raise ValueError(f"the source now declares id '{merged['id']}', not '{tool_id}' — "
+            raise ValueError(f"the source now declares id '{merged['id']}', not '{tool_id}'; "
                              "remove the tool and add it again")
         # operator's wiring wins WHEN they set it; otherwise fall through to the source's (so a tool
         # the operator never customized still picks up upstream's new description / required secrets).
@@ -164,7 +164,7 @@ def _swap_in_place(dest: Path, new_dir: Path, merged: dict, source: dict) -> Non
     """Replace ``dest``'s contents with ``new_dir``'s files + the merged manifest + the source
     sidecar, via a staged rename so a mid-operation failure leaves the original tool intact.
 
-    Staging/backup live in ``<tools_root>/.tsr-staging/`` — one level deeper than the tools, so the
+    Staging/backup live in ``<tools_root>/.tsr-staging/``: one level deeper than the tools, so the
     ``*/toolyard.toml`` discovery glob never sees them (a half-built or crash-orphaned copy can't be
     mistaken for, or shadow, a real tool), while staying on the same filesystem so ``os.replace`` is
     atomic (no cross-device rename)."""
@@ -192,14 +192,14 @@ def _swap_in_place(dest: Path, new_dir: Path, merged: dict, source: dict) -> Non
 
 def _clone_error(exc: subprocess.CalledProcessError) -> str:
     """A short reason from git's stderr (last line), bounded so we don't dump a wall of text.
-    The common case — a private/missing repo the admin has no credentials for — gets a plain-English
-    message instead of git's cryptic 'could not read Username … terminal prompts disabled'."""
+    The common case (a private/missing repo the admin has no credentials for) gets a plain-English
+    message instead of git's cryptic 'could not read Username ... terminal prompts disabled'."""
     raw = exc.stderr or b""
     text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
     low = text.lower()
     if ("could not read username" in low or "authentication failed" in low
             or "terminal prompts disabled" in low or "permission denied" in low):
-        return ("repository not found or private — the admin has no git credentials for it "
+        return ("repository not found or private; the admin has no git credentials for it "
                 "(use a public repo, or configure credentials on the admin host)")
     lines = [ln for ln in text.splitlines() if ln.strip()]
     return (lines[-1].strip()[:200] if lines else f"exit {exc.returncode}")
@@ -210,9 +210,9 @@ def _ingest(tool_dir: Path, root: Path, existing_ids, meta: dict) -> dict:
     Shared by add_from_path / add_from_github. Raises ``NoManifest`` / ``ValueError``."""
     if not (tool_dir / "toolyard.toml").exists():
         raise NoManifest(str(tool_dir))
-    tool = tool_authoring.read(tool_dir)        # normalized dict (id/description/ops/secrets/…)
+    tool = tool_authoring.read(tool_dir)        # normalized dict (id/description/ops/secrets/...)
     # validate() rejects a broken tool now (not at broker start) AND bounds the id to a safe single
-    # path component (no separators, length-capped) — that's what makes `root / id` safe.
+    # path component (no separators, length-capped): that's what makes `root / id` safe.
     errors = list(tool_authoring.validate(tool))
     ep = tool_authoring.entrypoint_error(tool, tool_dir)
     if ep:
@@ -232,7 +232,7 @@ def add_with_manifest(source: str, tools_root: str, existing_ids, manifest: dict
     """The 'point at code, author the tool in-app' flow: copy a folder that need NOT contain a
     toolyard.toml into ``tools_root/<id>`` and write the authored manifest into the copy. Returns
     ``{id, type, description, path}``. Raises ``ValueError`` on a bad source / invalid manifest / id
-    clash. NO source sidecar is written — there's no upstream manifest to re-pull, so the tool isn't
+    clash. NO source sidecar is written: there's no upstream manifest to re-pull, so the tool isn't
     'updatable' (its id/ops are what you authored; description+secrets stay editable)."""
     src = _resolved_dir(source)
     if not tools_root:

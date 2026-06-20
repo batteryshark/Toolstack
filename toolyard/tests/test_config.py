@@ -80,7 +80,7 @@ class Description(unittest.TestCase):
 
 
 class PortValidation(unittest.TestCase):
-    """An api or mcp tool with no/invalid port must fail at load() — not reach the runner
+    """An api or mcp tool with no/invalid port must fail at load(); not reach the runner
     as TOOLSTACK_PORT='None' / `-p 127.0.0.1:None:None`. Parallel to the broker's registry
     check (broker/tests/test_registry.py::PortValidation)."""
 
@@ -131,7 +131,7 @@ class PortValidation(unittest.TestCase):
 
 
 class IdValidation(unittest.TestCase):
-    """A tool id must match the routing charset — and especially carry no dot: the broker splits
+    """A tool id must match the routing charset, and especially carry no dot: the broker splits
     a policy spec on the FIRST dot into (tool, op), so a dotted id silently misroutes policy.
     Reject it at load(). Parallel to the broker's registry check
     (broker/tests/test_registry.py::IdValidation)."""

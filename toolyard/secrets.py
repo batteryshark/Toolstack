@@ -8,7 +8,7 @@ Resolved values flow only to the tool (via the runner); they never reach the bro
 
 Pick a backend with `get_backend(name)` (or `$TOOLSTACK_SECRET_BACKEND`). Everything here
 is stdlib-only EXCEPT `VaultBackend`, which needs the optional `cryptography` extra
-(`pip install 'toolstack[vault]'`) and imports it lazily — so the toolyard stays
+(`pip install 'toolstack[vault]'`) and imports it lazily, so the toolyard stays
 zero-dependency until you actually use the vault.
 """
 
@@ -96,7 +96,7 @@ def _dump_toml(data: dict) -> str:
 # is stdlib-only until the vault is actually used.
 
 _VAULT_VERSION = 1
-_SCRYPT_N = 2 ** 14            # ~16 MB, tens of ms — interactive-grade stretching
+_SCRYPT_N = 2 ** 14            # ~16 MB, tens of ms: interactive-grade stretching
 _SCRYPT_R = 8
 _SCRYPT_P = 1
 _SCRYPT_MAXMEM = 64 * 1024 * 1024  # headroom for the params above (else scrypt errors)
@@ -129,12 +129,12 @@ def _vault_passphrase() -> str:
 
 
 def _fernet():
-    """Lazy import — keeps the toolyard stdlib-only until the vault is actually used."""
+    """Lazy import: keeps the toolyard stdlib-only until the vault is actually used."""
     try:
         from cryptography.fernet import Fernet, InvalidToken
     except ModuleNotFoundError as exc:
         raise RuntimeError(
-            "the vault backend needs the 'cryptography' package — install the extra: "
+            "the vault backend needs the 'cryptography' package. Install the extra: "
             "pip install 'toolstack[vault]'"
         ) from exc
     return Fernet, InvalidToken
@@ -165,7 +165,7 @@ def _write_vault(path: Path, salt: bytes, key: bytes, data: dict,
         "ciphertext": token.decode("ascii"),
     }
     blob = json.dumps(envelope, indent=2).encode("utf-8")
-    # Write 0o600 from creation (no world-readable window) and rename into place (atomic —
+    # Write 0o600 from creation (no world-readable window) and rename into place (atomic:
     # a concurrent reader sees the old vault or the new one, never a torn half-write).
     tmp = path.with_name(path.name + ".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -177,7 +177,7 @@ def _write_vault(path: Path, salt: bytes, key: bytes, data: dict,
 
 
 class VaultBackend:
-    """Local, encrypted-at-rest secret backend — the laptop path (no Infisical, no
+    """Local, encrypted-at-rest secret backend: the laptop path (no Infisical, no
     plaintext `secrets.toml`). Drop-in with the other backends (`resolve` + `update`).
 
     The file is a JSON envelope (version, scrypt salt+params, Fernet ciphertext); the
@@ -189,7 +189,7 @@ class VaultBackend:
         self._path = Path(path)
         if not self._path.exists():
             raise FileNotFoundError(
-                f"no vault at {self._path} — create one with `toolyard vault-init`"
+                f"no vault at {self._path}: create one with `toolyard vault-init`"
             )
         envelope = json.loads(self._path.read_text(encoding="utf-8"))
         if envelope.get("version") != _VAULT_VERSION:
@@ -234,14 +234,14 @@ class VaultBackend:
         self._persist()
 
     def set_secret(self, tool_id: str, field: str, value: str) -> None:
-        """Operator provisioning path (CLI/admin): set any field. Not gated on `writable`
-        — that allowlist governs the tool writing back at runtime, not the operator
+        """Operator provisioning path (CLI/admin): set any field. Not gated on `writable`:
+        that allowlist governs the tool writing back at runtime, not the operator
         filling the vault."""
         self._data.setdefault(tool_id, {})[field] = value
         self._persist()
 
     def has_secret(self, tool_id: str, field: str) -> bool:
-        """Whether a value is provisioned for ``tool_id.field`` — for the admin to show set/unset
+        """Whether a value is provisioned for ``tool_id.field``, for the admin to show set/unset
         status WITHOUT exposing the value."""
         return field in self._data.get(tool_id, {})
 
@@ -484,16 +484,16 @@ class InfisicalBackend:
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     return json.loads(resp.read().decode("utf-8"))
-            except urllib.error.HTTPError as exc:  # a subclass of URLError — catch it first
+            except urllib.error.HTTPError as exc:  # a subclass of URLError; catch it first
                 code = exc.code
                 exc.close()  # release the response; otherwise it leaks (ResourceWarning)
                 if code in (401, 403):
-                    raise RuntimeError(f"Infisical {method} {path}: HTTP {code} — auth failed "
+                    raise RuntimeError(f"Infisical {method} {path}: HTTP {code}, auth failed "
                                        "(check the machine-identity credentials)") from exc
                 if code != 429 and code < 500:
                     raise RuntimeError(f"Infisical {method} {path}: HTTP {code}") from exc
                 transient = RuntimeError(f"Infisical {method} {path}: HTTP {code} (transient)")
-            except urllib.error.URLError as exc:  # network/timeout — also transient
+            except urllib.error.URLError as exc:  # network/timeout, also transient
                 transient = RuntimeError(f"Infisical {method} {path}: {exc.reason} (network)")
             if attempt < self._RETRIES - 1:
                 time.sleep(0.25 * (2 ** attempt))  # 0.25s, 0.5s backoff before the retry

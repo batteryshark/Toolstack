@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""toolstack — the agent's generic client for calling tools through the broker.
+"""toolstack: the agent's generic client for calling tools through the broker.
 
 Discover, describe, call, and wait on any tool the caller is allowed to use, in a
 uniform, token-light way (schemas are fetched on demand, not carried in context):
@@ -16,7 +16,7 @@ TOOLSTACK_TOKEN_FILE for the caller's bearer token. Stdlib only.
 
 Exit code is non-zero on a denied/expired/failed/unavailable/timeout outcome or a
 transport error, so an agent's shell can branch on success. A `--wait` that times
-out client-side exits non-zero with `status: "timeout"` and the request id — the
+out client-side exits non-zero with `status: "timeout"` and the request id; the
 approval is usually still live on the broker (its TTL outlasts the client wait), so
 resume with `toolstack wait <id>`.
 """
@@ -34,7 +34,7 @@ import urllib.request
 DEFAULT_URL = "http://127.0.0.1:8765"
 # Outcomes the caller's shell should treat as failure (non-zero exit). "timeout" is
 # a CLIENT-side outcome: the wait gave up, but the request may still be pending on
-# the broker — it must NOT read as success.
+# the broker; it must NOT read as success.
 _FAIL = {"denied", "expired", "failed", "unavailable", "invalid", "not_found",
          "rate_limited", "timeout"}
 
@@ -59,7 +59,7 @@ def _token() -> str | None:
 
 def _send(method: str, path: str, body=None):
     """Send a request to the broker and return (status, parsed-json). Raises
-    urllib.error.URLError if the broker is unreachable — callers decide how to
+    urllib.error.URLError if the broker is unreachable; callers decide how to
     surface that (the CLI exits; the MCP server returns a JSON-RPC error). Shared
     with client.mcp_server so the broker HTTP call lives in exactly one place."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
@@ -91,7 +91,7 @@ def _request(method: str, path: str, body=None):
     try:
         return _send(method, path, body)
     except urllib.error.URLError as exc:
-        # Name the error class too — a timeout vs a refused connection vs DNS failure all arrive
+        # Name the error class too: a timeout vs a refused connection vs DNS failure all arrive
         # as URLError subclasses, and the distinction matters when diagnosing.
         print(f"cannot reach broker at {_base()}: {type(exc).__name__}: {exc.reason}",
               file=sys.stderr)
@@ -112,7 +112,7 @@ def _finish(resp: dict) -> None:
 def _poll_until_done(request_id: int, timeout: float, interval: float = 2.0) -> dict:
     """Poll a pending request to a terminal outcome, or to a client-side timeout.
 
-    On timeout the outcome is reported as `status: "timeout"` (a failure — see _FAIL),
+    On timeout the outcome is reported as `status: "timeout"` (a failure; see _FAIL),
     NOT the broker's `pending_approval`: the call has not completed, so it must not read
     as success. The request usually outlives this wait (the broker's approval TTL is far
     longer than the default client timeout), so the result carries the request id to
@@ -125,7 +125,7 @@ def _poll_until_done(request_id: int, timeout: float, interval: float = 2.0) -> 
         if time.monotonic() >= deadline:
             return {**resp, "status": "timeout", "request_id": request_id,
                     "note": (f"client wait timed out after {timeout:g}s; the request is "
-                             f"still pending on the broker — resume with "
+                             f"still pending on the broker. Resume with "
                              f"`toolstack wait {request_id}`")}
         time.sleep(interval)
 
@@ -147,7 +147,7 @@ def _load_arguments(args) -> dict:
     --args-file, then an inline positional, then piped stdin (e.g. a heredoc). An
     explicit inline arg deliberately beats ambient stdin, so a redirected or empty
     stdin can't silently override it. Prefer --args-file or a quoted heredoc for
-    values with quotes, newlines, `$`, or backticks — they avoid shell-quoting
+    values with quotes, newlines, `$`, or backticks; they avoid shell-quoting
     breakage that a hand-built inline JSON string is prone to."""
     if args.args_file:
         try:
@@ -223,7 +223,7 @@ def main() -> None:
     w.add_argument("request_id", type=int)
     w.add_argument("--timeout", type=float, default=300, metavar="SECONDS",
                    help="client-side wait (default 300); on timeout, exits non-zero "
-                        "with status=timeout — re-run `toolstack wait <id>` to keep waiting")
+                        "with status=timeout. Re-run `toolstack wait <id>` to keep waiting")
     w.set_defaults(func=cmd_wait)
 
     args = parser.parse_args()

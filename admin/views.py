@@ -1,6 +1,6 @@
 """Server-rendered HTML for the admin app.
 
-Plain f-strings + ``html.escape`` (the same approach as the old broker-panel) — no
+Plain f-strings + ``html.escape`` (the same approach as the old broker-panel), with no
 template engine to learn, and every dynamic value is escaped at the point of
 interpolation. Static CSS/JS are plain string constants (not f-strings) so their
 braces need no escaping. Every form carries a CSRF token via :func:`_csrf_field`.
@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', function(){
   showTab(want);
 });
 
-// Client-side row filter for the Requests + Audit tables: a text box (matches the row text —
+// Client-side row filter for the Requests + Audit tables: a text box (matches the row text:
 // caller, tool.op, event, details) AND an optional outcome/status dropdown (matches data-key).
 function filterTable(tableId){
   var box = document.querySelector('[data-filter-for="'+tableId+'"]');
@@ -116,7 +116,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
 # Tool editor: builds repeating operation/argument/secret rows from real widgets,
 # pre-fills from window.TOOL_INITIAL, and serializes everything into the hidden
-# tool_json field on submit — so the operator never types TOML or JSON by hand.
+# tool_json field on submit, so the operator never types TOML or JSON by hand.
 _TOOL_EDITOR_JS = """
 (function(){
   var ARG_TYPES = ["string","number","integer","boolean","object","array"];
@@ -401,10 +401,10 @@ def _callers_section(callers, csrf: str) -> str:
 
 
 def _tokens_section(tokens, csrf: str) -> str:
-    # Active tokens only — revocations and rotations are recorded in the Audit log.
+    # Active tokens only; revocations and rotations are recorded in the Audit log.
     rows = "".join(
         "<tr>"
-        f"<td><code>{esc(t['token_hash'][:12])}…</code></td>"
+        f"<td><code>{esc(t['token_hash'][:12])}...</code></td>"
         f"<td>{esc(t['caller'])}</td>"
         "<td>"
         f"<form method='post' action='/tokens/revoke' class='inline-form'>{_csrf_field(csrf)}"
@@ -440,7 +440,7 @@ def _requests_section(requests, caller_names) -> str:
         "</tr>"
         for r in requests
     ) or "<tr><td colspan='4' class='muted'>No requests yet.</td></tr>"
-    bar = _filterbar("requests-table", "Filter by caller / tool…", "All statuses",
+    bar = _filterbar("requests-table", "Filter by caller / tool...", "All statuses",
                      sorted({r["status"] for r in requests}))
     return ("<section><h2>Recent requests</h2>" + bar +
             "<table id='requests-table'><thead><tr><th>#</th><th>Caller</th><th>Operation</th><th>Status</th></tr></thead>"
@@ -457,7 +457,7 @@ def _audit_section(events) -> str:
         "</tr>"
         for e in events
     ) or "<tr><td colspan='4' class='muted'>No audit events yet.</td></tr>"
-    bar = _filterbar("audit-table", "Filter by caller / tool / event…", "All outcomes",
+    bar = _filterbar("audit-table", "Filter by caller / tool / event...", "All outcomes",
                      sorted({e["outcome"] for e in events}))
     return ("<section><h2>Audit</h2>" + bar +
             "<table id='audit-table'><thead><tr><th>Event</th><th>Outcome</th><th>Req</th><th>Details</th></tr></thead>"
@@ -507,13 +507,13 @@ def config_view(*, user, csrf, config, error=None) -> str:
         f"{field('tools_root', 'Tools root', config.tools_root)}"
         f"{field('nod_url', 'nod URL', config.nod_url)}"
         f"<label class='field'>nod token (currently {esc(nod_set)})"
-        f"<input name='nod_token' type='password' placeholder='(unchanged — leave blank to keep)'></label>"
+        f"<input name='nod_token' type='password' placeholder='(unchanged, leave blank to keep)'></label>"
         f"{field('nod_channel', 'nod channel', config.nod_channel, placeholder='default')}"
         f"{field('approval_ttl', 'Approval TTL (seconds)', config.approval_ttl)}"
         f"{field('rate_limit', 'Rate limit (per caller/min, 0=off)', config.rate_limit)}"
         "<div class='actions'><button type='submit'>Save config</button>"
         "<a class='button' href='/'>Back</a></div>"
-        "<p class='muted'>Saving does not restart the broker — restart it from the dashboard to apply changes.</p>"
+        "<p class='muted'>Saving does not restart the broker; restart it from the dashboard to apply changes.</p>"
         "</form></section>"
     )
     return page("Config", body, user=user, csrf=csrf, nav="config")
@@ -653,13 +653,13 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, err
             rest_rules[tool] = rules
             sections.append(
                 "<section>"
-                f"<h2>{esc(tool)} <span class='muted'>(rest — path rules)</span></h2>"
+                f"<h2>{esc(tool)} <span class='muted'>(rest: path rules)</span></h2>"
                 "<p class='muted'>Most specific wins (most literal characters, then fewest "
                 "wildcards; a genuine tie resolves to the most restrictive). A path matching no "
                 "rule is <strong>denied</strong>. Blank pattern = any path; an explicit deny "
                 "carves a hole inside a broader allow.</p>"
                 "<p class='muted'><strong>Specificity warning:</strong> a broad <code>allow</code> "
-                "(e.g. <code>/**</code>) grants every sub-path you didn't separately deny — prefer "
+                "(e.g. <code>/**</code>) grants every sub-path you didn't separately deny; prefer "
                 "narrow allows over a wide allow patched with denies, since one forgotten deny "
                 "leaves the path open.</p>"
                 f"<div id='rules__{esc(tool)}' class='rules'></div>"
@@ -721,11 +721,11 @@ def _secret_backend_note(backend: dict | None) -> str:
     if backend["name"] == "vault":
         return ("<p class='muted'>Secret backend: <strong>local vault</strong> (encrypted, "
                 f"<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "
-                "fields are ignored — only <em>field</em> (the key under <code>[tool_id]</code>) is "
+                "fields are ignored; only <em>field</em> (the key under <code>[tool_id]</code>) is "
                 "used. Provision values with <code>toolyard vault-set</code>.</p>")
     return ("<p class='muted'>Secret backend: <strong>file</strong> "
             f"(<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "
-            "fields are ignored by this backend — only <em>field</em> (the key under "
+            "fields are ignored by this backend; only <em>field</em> (the key under "
             "<code>[tool_id]</code>) is used.</p>")
 
 
@@ -754,9 +754,9 @@ def tool_add_view(*, user, csrf, source_value="", repo_value="", error=None) -> 
         "<input type='hidden' name='kind' value='github'>"
         "<label class='field'>Repository URL"
         f"<input name='repo' value='{esc(repo_value)}' placeholder='https://github.com/owner/repo' required></label>"
-        "<label class='field'>Subdirectory <span class='muted'>(optional — if the tool lives in a subfolder)</span>"
+        "<label class='field'>Subdirectory <span class='muted'>(optional: if the tool lives in a subfolder)</span>"
         "<input name='subdir' placeholder='tools/weather'></label>"
-        "<label class='field'>Ref <span class='muted'>(optional — branch, tag, or commit)</span>"
+        "<label class='field'>Ref <span class='muted'>(optional: branch, tag, or commit)</span>"
         "<input name='ref' placeholder='main'></label>"
         "<div class='actions'><button type='submit'>Clone and add</button></div></form>"
         "<p class='muted'>Cloned code is copied in, never executed by the panel. Restart the broker to "
@@ -777,7 +777,7 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         dir_field = ("<label class='field'>Tool directory (absolute path on the server)"
                      f"<input name='dir' value='{esc(dir_value)}' placeholder='/srv/tools/weather' required>"
                      "</label><p class='muted'>The directory must already exist and hold your tool's "
-                     "code (for a process tool) — the panel writes only <code>toolyard.toml</code> into it.</p>")
+                     "code (for a process tool); the panel writes only <code>toolyard.toml</code> into it.</p>")
         id_attr = ""
     else:
         dir_field = (f"<input type='hidden' name='dir' value='{esc(dir_value)}'>"
@@ -804,7 +804,7 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         "<label class='field'>port <input id='f_port' type='number' placeholder='4700' required></label>"
         "<h3>Operations</h3><div id='ops'></div>"
         "<button type='button' id='add-op'>Add operation</button>"
-        "<h3>Secrets <span class='muted'>— declarations only; values stay in the secret backend</span></h3>"
+        "<h3>Secrets <span class='muted'>(declarations only; values stay in the secret backend)</span></h3>"
         f"{_secret_backend_note(backend)}"
         "<div class='sechead'>"
         "<span>Name <span class='muted'>(file the tool reads)</span></span>"

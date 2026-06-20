@@ -3,7 +3,7 @@ authentication, and mapping request outcomes to HTTP.
 
 The boundary rule still holds: ``GET /v1/health`` is the only route open without a
 caller; everything else requires authentication and otherwise fails closed. Health
-is a liveness probe rather than a decision, so it is deliberately not audited —
+is a liveness probe rather than a decision, so it is deliberately not audited,
 clients (including the admin app, on every page render) poll it frequently, and
 auditing it would bury the real trail.
 """
@@ -115,7 +115,7 @@ def _route(method, path, headers, body, ctx, correlation_id) -> Response:
     if method == "POST" and path == MCP_PATH:
         # Same authority as REST: authenticated above; policy/approval/audit and rate
         # limiting live inside mcp.handle (rate limiting applies to tools/call only, not
-        # the initialize/list/ping handshake — mirroring GET /v1/tools, which is unmetered).
+        # the initialize/list/ping handshake, mirroring GET /v1/tools, which is unmetered).
         # mcp.handle returns the HTTP status so a throttle (429) / internal error (500)
         # audits with the right outcome via _AUDIT_OUTCOME, exactly like the REST path.
         status, mcp_body = mcp.handle(body, ctx, caller, correlation_id)
@@ -208,7 +208,7 @@ def _audit_request_terminal(ctx, outcome, correlation_id, tool, op) -> None:
     """Emit the terminal `request.<completed|denied|failed|expired>` event for a request
     that just reached a terminal state. No-op for a still-pending outcome or a missing
     request row, so callers must guard re-polls (don't re-emit for an already-resolved
-    request) — see `_request_status`."""
+    request); see `_request_status`."""
     mapped = _REQUEST_TERMINAL.get(outcome.status)
     if mapped is None or outcome.request_id is None:
         return

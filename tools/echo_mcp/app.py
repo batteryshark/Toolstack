@@ -1,10 +1,10 @@
-"""Echo-MCP tool — a tiny standalone **streamable-HTTP MCP server** for Toolstack
+"""Echo-MCP tool: a tiny standalone **streamable-HTTP MCP server** for Toolstack
 (the template for a ``type = "mcp"`` tool).
 
 Where the plain echo tool answers ``POST /v1/actions/<op>``, this one speaks MCP: it
 serves the streamable-HTTP transport at ``POST /mcp`` and the broker is the MCP
 *client*. The broker runs the ``initialize`` handshake, then calls a tool with
-``tools/call`` where the MCP tool name IS the toolyard op — so policy/approval still
+``tools/call`` where the MCP tool name IS the toolyard op, so policy/approval still
 key on ``echo-mcp.<op>`` exactly like an api tool. The op names here (``say`` /
 ``whoami``) deliberately mirror the api echo so the two transports are easy to compare.
 
@@ -12,7 +12,7 @@ Everything else is the same tool contract: it binds the port the toolyard gives 
 reads secrets from ``$TOOLSTACK_SECRETS_DIR``, never sees a broker token, and supports
 the same optional ``broker_secret`` defense-in-depth check (the ``X-Toolstack-Secret``
 header). Broker request context (request id + caller) arrives in the MCP call's
-``params._meta`` rather than a JSON body — ``whoami`` reads it from there.
+``params._meta`` rather than a JSON body; ``whoami`` reads it from there.
 
 Stdlib only (``http.server``), so it runs as a bare process or in a container unchanged.
 """
@@ -82,12 +82,12 @@ def call_tool(name: str, arguments: dict, meta: dict):
 
 def dispatch(message: dict):
     """Map one JSON-RPC request to a (result_or_None, error_or_None) pair. A
-    notification (no ``id``) returns (None, None) — nothing to answer."""
+    notification (no ``id``) returns (None, None), nothing to answer."""
     method = message.get("method")
     msg_id = message.get("id")
     params = message.get("params") or {}
 
-    if msg_id is None:  # a notification (e.g. notifications/initialized) — no reply
+    if msg_id is None:  # a notification (e.g. notifications/initialized): no reply
         return None, None
 
     if method == "initialize":

@@ -5,7 +5,7 @@ This captures every environment variable the broker reads at startup (see
 ``_NOD_URL`` / ``_NOD_TOKEN`` / ``_NOD_CHANNEL`` / ``_APPROVAL_TTL`` /
 ``_RATE_LIMIT``). The admin app persists it to a TOML file, turns it into the
 broker child's environment via :meth:`to_env`, and points its own ``Store`` at
-the same ``db_path`` — so there is one source of truth for where broker data lives.
+the same ``db_path``, so there is one source of truth for where broker data lives.
 
 The nod issuer token is a secret: it is written to the ``0600`` config file but
 never rendered back to the browser (see :meth:`masked`).
@@ -52,7 +52,7 @@ def validate_nod_url(url: str) -> None:
         ip = None  # a hostname, not a literal IP
     if ip is None:
         # Catch non-dotted IPv4 spellings (decimal / octal / hex) that ipaddress rejects but the
-        # resolver accepts — e.g. http://2852039166/ resolves to 169.254.169.254 (cloud metadata).
+        # resolver accepts: e.g. http://2852039166/ resolves to 169.254.169.254 (cloud metadata).
         try:
             ip = ipaddress.ip_address(socket.inet_aton(host))
         except (OSError, ValueError):
@@ -62,7 +62,7 @@ def validate_nod_url(url: str) -> None:
         raise ValueError("nod_url must use https (plain http is allowed only for loopback)")
     if ip is not None and (ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified):
         raise ValueError("nod_url host is not a routable address (link-local / metadata / reserved)")
-    # NOTE: a *hostname* whose DNS points at metadata/internal space is not blocked here — the
+    # NOTE: a *hostname* whose DNS points at metadata/internal space is not blocked here; the
     # broker (not the admin) is the eventual requester, and DNS can rebind after this check; the
     # https requirement is the backstop for hostname targets.
 
@@ -110,7 +110,7 @@ class BrokerRunConfig:
         return NodSurface(self.nod_url, self.nod_token, channel=self.nod_channel or "default")
 
     def masked(self) -> dict:
-        """A dict safe to render in the browser: the nod token is never echoed —
+        """A dict safe to render in the browser: the nod token is never echoed,
         only its presence ('set' / 'not set')."""
         data = asdict(self)
         data["nod_token"] = "set" if self.nod_token else "not set"
@@ -142,7 +142,7 @@ def load() -> BrokerRunConfig:
 
 
 def _warn_if_suspect(cfg: BrokerRunConfig) -> None:
-    """Log (don't raise) on a hand-edited broker.toml that bypassed the save-path validation —
+    """Log (don't raise) on a hand-edited broker.toml that bypassed the save-path validation;
     surfaces a misconfig without bricking load() (every code path calls it, incl. the page that
     would let the operator fix it)."""
     if not 1 <= cfg.port <= 65535:
@@ -173,7 +173,7 @@ def _to_toml(data: dict) -> str:
     a reader but no writer; our config is flat, so this stays tiny)."""
     lines = []
     for key, value in data.items():
-        if isinstance(value, bool):  # before int — bool is a subclass of int
+        if isinstance(value, bool):  # before int: bool is a subclass of int
             lines.append(f"{key} = {str(value).lower()}")
         elif isinstance(value, int):
             lines.append(f"{key} = {value}")

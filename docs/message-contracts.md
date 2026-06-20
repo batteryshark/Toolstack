@@ -45,13 +45,13 @@ GET  /v1/requests/<id>           poll a request (owner only) -> status + result 
 - MCP is available two ways over the **same** authority. (1) A **client-side adapter**
   (`client/mcp_server.py`): a stdio bridge that translates MCP to the REST endpoints above
   and blocks per-process until approval resolves. (2) A **broker-native** `POST /mcp` route
-  (`broker/mcp.py`) that terminates JSON-RPC (MCP) frames at the broker itself — stateless,
+  (`broker/mcp.py`) that terminates JSON-RPC (MCP) frames at the broker itself: stateless,
   non-blocking (a review op returns `pending_approval` + a request id, polled via
   `GET /v1/requests/<id>` exactly like REST), and bound by the same token auth. Both apply
   identical policy / approval / audit; over `/mcp` a denied or unknown op reads as
   `unknown tool` to the caller (least privilege) yet is audited exactly as on the REST path,
   auth failure is HTTP 401, and a per-caller throttle is HTTP 429. There is **no** approval
-  callback route — resolution is poll-only by design (nod's callbacks are unauthenticated, so
+  callback route; resolution is poll-only by design (nod's callbacks are unauthenticated, so
   a receiver would be forgeable).
 
 ### 2. Broker → Tool container (forwarding)
@@ -63,10 +63,10 @@ POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
 - Both ingress framings converge here: whether a call arrived as REST `/v1/actions` or as a
   native MCP `tools/call` on `POST /mcp`, the broker terminates the agent-facing frame, checks
   policy, and makes this **one** REST call to the tool. Frames are never relayed verbatim to a
-  tool — tools speak REST.
+  tool; tools speak REST.
 - The broker adds `broker_request_id` and `caller: {"name": "..."}`.
 - **Optional per-tool shared secret (defense in depth, opt-in).** The broker may send an
-  `X-Toolstack-Secret: <value>` header so the tool can verify the call came from the broker —
+  `X-Toolstack-Secret: <value>` header so the tool can verify the call came from the broker,
   not from another loopback process that guessed the tool's port and called it directly,
   bypassing policy/approval. The operator provisions the **same** value twice: the broker
   reads it from `TOOLSTACK_TOOL_SECRET_<TOOL>` (id upper-cased, non-alphanumerics → `_`;
@@ -74,9 +74,9 @@ POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
   normalization) and sends it (`broker/runtime.py`); the tool reads its copy from
   `$TOOLSTACK_SECRETS_DIR/broker_secret` (the toolyard injects it like any other field) and
   compares constant-time, replying `401` on mismatch. With neither side configured, no header
-  is sent and the tool's check stays off — the feature adds nothing to the wire until enabled.
+  is sent and the tool's check stays off; the feature adds nothing to the wire until enabled.
   This shared secret is the broker's **channel** credential for the hop; it is **not** a
-  workload secret (the broker still never reads the secret backend — see §3 and the rule below).
+  workload secret (the broker still never reads the secret backend; see §3 and the rule below).
 - Audit: `runtime.execution_started`, `runtime.execution_completed`, `runtime.execution_failed`.
 - Security: the broker attaches **no workload** secrets. The tool already holds its own; the
   only thing the broker may add is the optional channel shared secret above.
@@ -86,7 +86,7 @@ POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
 Toolyard resolves that tool's fields and injects them into the container's
 `/run/secrets/<name>` tmpfs at boot. Resolved values never persist to host disk. The
 backend is pluggable via `$TOOLSTACK_SECRET_BACKEND` (`toolyard.secrets.get_backend`):
-`file` (dev TOML), `vault` (a local **encrypted-at-rest** file — scrypt-stretched
+`file` (dev TOML), `vault` (a local **encrypted-at-rest** file: scrypt-stretched
 passphrase + Fernet AEAD, for laptop/self-contained deploys; needs the `cryptography`
 extra), or `infisical` (logs in with the per-tool machine identity). The broker holds no
 backend credential for any of them.
@@ -100,16 +100,16 @@ credential is ever mounted in the container.
 ### 5. Broker ↔ nod (approval)
 
 See [approval-surface-adapter.md](approval-surface-adapter.md). The broker owns
-approval truth; nod is the messenger (poll-only — there is no callback route; the
+approval truth; nod is the messenger (poll-only: there is no callback route; the
 broker's timeout wins).
 
 ### 6. Admin → operator clients (JSON API)
 
 Distinct from the **agent-facing** broker REST (§1, bearer = a caller's broker token): the
 admin also exposes an **operator** JSON API under `POST/GET /api/*` (`admin/api.py`) for native
-/ automation clients — the same surface as the HTML panel (broker control, callers / policies /
+/ automation clients, the same surface as the HTML panel (broker control, callers / policies /
 tokens, observe), JSON in/out. Auth is `POST /api/login {password}` → a signed-session bearer
-token (the same value the panel's cookie carries; no CSRF — a header token isn't auto-sent
+token (the same value the panel's cookie carries; no CSRF: a header token isn't auto-sent
 cross-site). Every mutation goes through `broker.operations`, so the API, the HTML panel, and
 `brokerctl` share **one** audit trail. Loopback-only, like the rest of the admin.
 
@@ -124,17 +124,17 @@ are deferred (see [plan.md](../plan.md)).
 
 Append-only, written by the broker's Audit module. Families:
 
-- `gateway.*` — `request_received`, `response_returned`
-- `identity.*` — `token_validated`, `token_rejected` (per-request auth at the gateway;
+- `gateway.*`: `request_received`, `response_returned`
+- `identity.*`: `token_validated`, `token_rejected` (per-request auth at the gateway;
   token *revocation* is an operator action, audited under `admin.token_revoked`)
-- `registry.*` — `tool_lookup_failed`
-- `policy.*` — `decision_allow`, `decision_deny`, `decision_review_required`
-- `request.*` — `received`, `completed`, `denied`, `failed`, `expired` (one terminal
+- `registry.*`: `tool_lookup_failed`
+- `policy.*`: `decision_allow`, `decision_deny`, `decision_review_required`
+- `request.*`: `received`, `completed`, `denied`, `failed`, `expired` (one terminal
   event per request; the producing component also records its own runtime/policy/approval event)
-- `approval.*` — `opened`, `approved`, `rejected`, `expired`, `surface_decision_received`,
+- `approval.*`: `opened`, `approved`, `rejected`, `expired`, `surface_decision_received`,
   `unavailable`, `open_failed`
-- `runtime.*` — `execution_started`, `execution_completed`, `execution_failed`
-- `admin.*` — `caller_created`, `caller_revoked`, `policy_changed`, `token_issued`,
+- `runtime.*`: `execution_started`, `execution_completed`, `execution_failed`
+- `admin.*`: `caller_created`, `caller_revoked`, `policy_changed`, `token_issued`,
   `token_revoked`, `tool_created`, `tool_edited`, `tool_removed`; the admin web app also
   writes supervisory `admin.*` events: `broker_started/stopped/restarted`,
   `tool_started/stopped/restarted`

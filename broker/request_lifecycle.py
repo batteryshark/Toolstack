@@ -48,7 +48,7 @@ class Outcome:
 log = logging.getLogger(__name__)
 
 def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Outcome:
-    sweep_expired(ctx)  # lazy GC of stale approvals — the broker has no background worker
+    sweep_expired(ctx)  # lazy GC of stale approvals, the broker has no background worker
     audit = ctx.audit
     tool_op = ctx.registry.lookup(tool, op)
     if tool_op is None:
@@ -63,7 +63,7 @@ def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Out
     audit.record("request", "received", "accepted", correlation_id,
                  request_id=request_id, details=received)
 
-    # For a rest tool, policy may scope by request path — pass it so decide() can match the
+    # For a rest tool, policy may scope by request path; pass it so decide() can match the
     # path-glob rules. A rest call with no valid path can't be authorized against those rules,
     # so deny it fail-closed here (execute would reject it anyway). api / mcp pass no path.
     target = None  # the rest path, shown on the approval card
@@ -157,7 +157,7 @@ def execute_request(ctx, request_id, tool, op, arguments, correlation_id, caller
 def _expire_approval(ctx, approval_id, request_id, surface_ref, tool, op, correlation_id) -> None:
     """Mark an approval (and its request) expired, withdraw it from the surface (best
     effort), and audit. Shared by the per-request timeout in `resolve_request` and the
-    lazy `sweep_expired` — one place that fails an approval closed."""
+    lazy `sweep_expired`, one place that fails an approval closed."""
     ctx.store.update_approval(approval_id, status="expired")
     ctx.store.update_request(request_id, status="expired", arguments_json=None)
     if ctx.surface is not None:
@@ -172,7 +172,7 @@ def _expire_approval(ctx, approval_id, request_id, surface_ref, tool, op, correl
 def sweep_expired(ctx, now=None) -> int:
     """Expire every pending approval past its broker deadline, whether or not its
     request is being polled. The broker has no background worker, so this runs
-    lazily — on each `submit` and from `brokerctl sweep` / the admin dashboard — to
+    lazily (on each `submit` and from `brokerctl sweep` / the admin dashboard) to
     GC requests nobody polls again. Returns the number expired."""
     now = time.time() if now is None else now
     rows = ctx.store.expired_pending_approvals(now)
@@ -188,7 +188,7 @@ def resolve_request(ctx, request_id, now=None) -> Outcome:
     as-is. `now` is injectable for testing the timeout.
 
     This is the engine of the approval flow, and it runs ONLY when the agent polls
-    (GET /v1/requests/<id>) — there is no background worker. So reading status here
+    (GET /v1/requests/<id>); there is no background worker. So reading status here
     can mutate state and synchronously forward the call to the tool; a request that
     is never polled stays pending until its deadline."""
     now = time.time() if now is None else now
@@ -212,7 +212,7 @@ def resolve_request(ctx, request_id, now=None) -> Outcome:
 
     state = ctx.surface.poll(approval_row["surface_ref"])
     if state.outcome in (approval.APPROVED, approval.REJECTED):
-        # the messenger reported a human decision — recorded distinctly from the
+        # the messenger reported a human decision, recorded distinctly from the
         # broker's own approved/rejected (which the broker owns and could override).
         ctx.audit.record("approval", "surface_decision_received", "ok", correlation_id,
                          request_id=request_id,

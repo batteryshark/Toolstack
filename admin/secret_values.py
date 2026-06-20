@@ -1,8 +1,8 @@
-"""Operator provisioning of secret VALUES — the local-vault path only.
+"""Operator provisioning of secret VALUES: the local-vault path only.
 
 The control plane normally never touches secret values: they live in the backend, off the panel
 (see admin.tool_authoring / admin.toolyard_ops). The local encrypted vault is the deliberate
-exception for the laptop deployment — there's no separate secret manager, so the operator fills it
+exception for the laptop deployment: there's no separate secret manager, so the operator fills it
 here. Values are WRITE-ONLY through this module: set, never read back, never logged. Other backends
 (file / infisical) are managed out-of-band, so this refuses them.
 """
@@ -36,7 +36,7 @@ def set_value(tool_id: str, field: str, value: str) -> None:
 
 def provisioned_fields(tool_id: str, declared: list[str]) -> list[str]:
     """Which of the tool's ``declared`` secret fields currently have a value (vault only). Returns
-    the field NAMES that are set — never the values. Empty list when the backend isn't the vault."""
+    the field NAMES that are set, never the values. Empty list when the backend isn't the vault."""
     if not is_settable():
         return []
     vault = VaultBackend.from_env()

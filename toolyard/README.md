@@ -4,7 +4,7 @@ The **execution boundary**. It reads `toolyard.toml`, resolves each tool's secre
 and starts the tool so the broker can forward approved calls to it on
 `127.0.0.1:<port>`. The broker is never on the secret path. See [../plan.md](../plan.md).
 
-Zero dependencies — stdlib only (TOML via `tomllib`).
+Zero dependencies: stdlib only (TOML via `tomllib`).
 
 ## A tool definition (`toolyard.toml`)
 
@@ -12,7 +12,7 @@ One file per tool, the single source of truth shared with the broker. The broker
 reads only `id` / `type` / `[[operations]]` and the entrypoint `port`; the toolyard
 additionally reads `[entrypoint]` and `[[secrets]]`.
 
-An operation's `risk` is **descriptive metadata** shown during discovery — it does
+An operation's `risk` is **descriptive metadata** shown during discovery; it does
 **not** decide whether a call needs approval. That is the per-caller **policy**
 (`allow` / `review` / `deny`), set by an operator with `brokerctl`. And a tool is not
 callable by anyone until a caller policy grants it (`brokerctl create-caller --allow
@@ -36,14 +36,14 @@ name = "api_key"             # the tool reads $TOOLSTACK_SECRETS_DIR/api_key
 field = "API_KEY"            # looked up in the secret backend
 ```
 
-A tool's `type` is one of `api` / `mcp` / `rest` — the three transports; see
+A tool's `type` is one of `api` / `mcp` / `rest`, the three transports; see
 [../tools/README.md](../tools/README.md) for choosing one. A sample of each lives in
 [../tools/](../tools/).
 
 ## Secrets
 
 The toolyard resolves a tool's declared secrets through a pluggable backend and
-hands the values to the tool — never to the broker.
+hands the values to the tool, never to the broker.
 
 - **Dev (shipped):** `FileBackend` reads a local TOML file shaped as
   `[<tool_id>]  FIELD = "value"`. Copy [../secrets.example.toml](../secrets.example.toml)
@@ -51,7 +51,7 @@ hands the values to the tool — never to the broker.
 - **Local encrypted (shipped, opt-in):** `VaultBackend` keeps secrets in an scrypt+AEAD
   encrypted file unlocked by `$TOOLSTACK_VAULT_PASSPHRASE` (`pip install '.[vault]'`).
 - **Production (shipped):** `InfisicalBackend` resolves each secret from Infisical
-  over its HTTP API (stdlib only — no added dependency). A `[[secrets]]` entry adds
+  over its HTTP API (stdlib only, no added dependency). A `[[secrets]]` entry adds
   `vault` (Infisical project) and `item` (secret path; defaults to the tool id) next
   to `field` (the secret key). Each tool authenticates with its own machine identity
   read from `<credentials_dir>/<item>.env`. Configure with `TOOLSTACK_INFISICAL_HOST`
@@ -114,11 +114,11 @@ stop. No backend credential is ever mounted in the container.
 
 ## Modules
 
-- `config.py` — parse `toolyard.toml` into a `ToolDef`.
-- `secrets.py` — secret backends (`FileBackend`, `VaultBackend`, `InfisicalBackend`; `get_backend()`).
-- `runner.py` — `ProcessRunner` and `DockerRunner` (`get_runner(backend)`).
-- `write_proxy.py` — the writable-secret socket server (message-contracts §4).
-- `cli.py` — `up` / `down` / `ls`, with a small JSON state file.
+- `config.py`: parse `toolyard.toml` into a `ToolDef`.
+- `secrets.py`: secret backends (`FileBackend`, `VaultBackend`, `InfisicalBackend`; `get_backend()`).
+- `runner.py`: `ProcessRunner` and `DockerRunner` (`get_runner(backend)`).
+- `write_proxy.py`: the writable-secret socket server (message-contracts §4).
+- `cli.py`: `up` / `down` / `ls`, with a small JSON state file.
 
 ## Security notes
 

@@ -2,9 +2,9 @@
 # Install into a dedicated virtualenv (the broker/toolyard/client stay stdlib):
 #   python3 -m venv admin/.venv && admin/.venv/bin/pip install -r admin/requirements.txt
 #
-# Pinned (==) so a fresh, wider deploy is reproducible — these are the versions the
+# Pinned (==) so a fresh, wider deploy is reproducible; these are the versions the
 # test suite runs against. Bump deliberately (change here, re-run the admin tests).
-# Transitive deps (starlette, pydantic, anyio, …) float; for a fully frozen install
+# Transitive deps (starlette, pydantic, anyio, ...) float; for a fully frozen install
 # run `admin/.venv/bin/pip freeze > admin/requirements.lock` and install from that.
 fastapi==0.137.1
 uvicorn==0.49.0

@@ -1,25 +1,25 @@
 # Broker
 
-The authority boundary — the only address an agent can reach. See [../plan.md](../plan.md) and
+The authority boundary: the only address an agent can reach. See [../plan.md](../plan.md) and
 [../toolyard/README.md](../toolyard/README.md) for running tools, and
 [../client/SKILL.md](../client/SKILL.md) for how an agent calls in.
 
 ## What works now
 
-- Binds **`127.0.0.1` only** (host not configurable — the boundary depends on it).
-- **`GET /v1/health`** — the only unauthenticated route.
-- **`POST /v1/actions/<tool>.<op>`** — authenticated with `Authorization: Bearer <token>`:
+- Binds **`127.0.0.1` only** (host not configurable; the boundary depends on it).
+- **`GET /v1/health`**: the only unauthenticated route.
+- **`POST /v1/actions/<tool>.<op>`**: authenticated with `Authorization: Bearer <token>`:
   - `200` ran · `202` review-required (opened in nod) · `403` denied · `404` unknown
     · `400` malformed · `429` rate-limited · `502` tool failed · `503` approval
     surface unavailable.
-- **`GET /v1/requests/<id>`** — poll a request (owner only): drives approval
+- **`GET /v1/requests/<id>`**, poll a request (owner only): drives approval
   resolution and returns the current status (`pending_approval` → `ok` / `denied` /
   `expired`), the tool `result` once it completes, and the `approver` + `note` for a
   reviewed request (the human's decision reason, surfaced back to the agent).
-- **`GET /v1/tools`** / **`GET /v1/tools/<tool>.<op>`** — discovery: the ops this
+- **`GET /v1/tools`** / **`GET /v1/tools/<tool>.<op>`**, discovery: the ops this
   caller may use (filtered by policy, with effect/risk/description), and one op's
   args on demand. Lets agents discover lazily instead of carrying schemas in context.
-- **`POST /mcp`** — broker-native **MCP** (JSON-RPC, streamable HTTP): the same tools, auth,
+- **`POST /mcp`**, broker-native **MCP** (JSON-RPC, streamable HTTP): the same tools, auth,
   policy, approval, and audit as the REST gateway, for agents that speak MCP. A `tools/call`
   maps to the same lifecycle as `POST /v1/actions`; resolution is poll-only (`tools/call`
   returns a request id to poll, same as a `202` on the REST path).
@@ -71,19 +71,19 @@ curl -s -X POST http://127.0.0.1:8765/v1/actions/echo.say \
 
 Configuration (env vars):
 
-- `TOOLSTACK_BROKER_PORT` — listen port (default `8765`).
-- `TOOLSTACK_BROKER_DB` — database path (default
+- `TOOLSTACK_BROKER_PORT`: listen port (default `8765`).
+- `TOOLSTACK_BROKER_DB`: database path (default
   `${XDG_STATE_HOME:-~/.local/state}/toolstack/broker/broker.sqlite3`).
-- `TOOLSTACK_TOOLS_ROOT` — directory of `<tool>/toolyard.toml` files for the
+- `TOOLSTACK_TOOLS_ROOT`: directory of `<tool>/toolyard.toml` files for the
   registry (unset = empty registry, every action `404`s).
-- `TOOLSTACK_NOD_URL` + `TOOLSTACK_NOD_TOKEN` — nod base URL and issuer token for
+- `TOOLSTACK_NOD_URL` + `TOOLSTACK_NOD_TOKEN`: nod base URL and issuer token for
   the approval surface (unset = no surface; `review` ops return `503`).
-- `TOOLSTACK_APPROVAL_TTL` — broker-side approval timeout in seconds (default `3600`).
-- `TOOLSTACK_RATE_LIMIT` — action submissions per caller per minute (default `120`; `0` = off).
+- `TOOLSTACK_APPROVAL_TTL`: broker-side approval timeout in seconds (default `3600`).
+- `TOOLSTACK_RATE_LIMIT`: action submissions per caller per minute (default `120`; `0` = off).
 
 ## Operator (brokerctl)
 
-The operator runs `brokerctl` on the broker host (direct SQLite — no networked admin
+The operator runs `brokerctl` on the broker host (direct SQLite: no networked admin
 surface to secure). Mutating actions are recorded as `admin.*` audit events.
 
 ```bash
@@ -111,25 +111,25 @@ python3 -m unittest discover -s broker/tests -t .
 
 One process, internal modules (not separate services):
 
-- `gateway.py` — ingress/egress, routing, correlation ids, body validation.
-- `identity.py` — callers + hashed bearer tokens; fail-closed `authenticate`.
-- `policy.py` — `allow` / `review` / `deny`, default-deny (pure).
-- `registry.py` — reads `toolyard.toml` for tool/op/risk/port; ignores `[[secrets]]`.
-- `runtime.py` — forwards an approved call to the tool on `127.0.0.1:<port>`, dispatching the
+- `gateway.py`: ingress/egress, routing, correlation ids, body validation.
+- `identity.py`: callers + hashed bearer tokens; fail-closed `authenticate`.
+- `policy.py`: `allow` / `review` / `deny`, default-deny (pure).
+- `registry.py`: reads `toolyard.toml` for tool/op/risk/port; ignores `[[secrets]]`.
+- `runtime.py`, forwards an approved call to the tool on `127.0.0.1:<port>`, dispatching the
   tool's transport: `api` (POST /v1/actions/<op>), `mcp` (broker is the MCP *client*), or
   `rest` (verb-as-op passthrough). This is the broker as an MCP **client**.
-- `request_lifecycle.py` — the orchestration across the above (incl. approval resolution).
-- `approval.py` — the operation card + normalized surface state (the adapter contract).
-- `mcp.py` — the **`POST /mcp` ingress**: the broker as an MCP *server*, terminating JSON-RPC
+- `request_lifecycle.py`: the orchestration across the above (incl. approval resolution).
+- `approval.py`: the operation card + normalized surface state (the adapter contract).
+- `mcp.py`, the **`POST /mcp` ingress**: the broker as an MCP *server*, terminating JSON-RPC
   and re-entering the same lifecycle. (Two MCP roles: this serves agents; `runtime.py` calls
   an mcp *tool*.)
-- `surface_nod.py` — `NodSurface`: the HTTP adapter to nod (open / poll / cancel).
-- `store.py` — SQLite persistence (callers, tokens, policies, requests, approvals, audit).
-- `audit.py` — append-only audit log; the server adds a stderr sink.
-- `server.py` — the thin HTTP transport; binds localhost.
-- `brokerctl.py` — operator CLI (callers, policies, tokens, requests, audit).
-- `redaction.py` — bound + mask free-text before it enters audit.
-- `ratelimit.py` — per-caller fixed-window rate limiter.
+- `surface_nod.py`, `NodSurface`: the HTTP adapter to nod (open / poll / cancel).
+- `store.py`: SQLite persistence (callers, tokens, policies, requests, approvals, audit).
+- `audit.py`: append-only audit log; the server adds a stderr sink.
+- `server.py`: the thin HTTP transport; binds localhost.
+- `brokerctl.py`: operator CLI (callers, policies, tokens, requests, audit).
+- `redaction.py`: bound + mask free-text before it enters audit.
+- `ratelimit.py`: per-caller fixed-window rate limiter.
 
 ## The tailnet step (operational, not code)
 

@@ -1,14 +1,14 @@
 """Password hashing, signed browser sessions, and CSRF tokens.
 
 The password and session helpers are ported verbatim from the previous
-broker-panel (stdlib ``scrypt`` + HMAC — no external dependency). Passwords use
+broker-panel (stdlib ``scrypt`` + HMAC, no external dependency). Passwords use
 ``scrypt`` because they are human-chosen and low-entropy; this is deliberately
 different from broker *tokens*, which are high-entropy random and only SHA-256
 hashed (see :mod:`broker.identity`).
 
 CSRF protection uses a synchronizer token derived from the session value. A
 cross-site attacker can drive the browser to POST but cannot read the session
-cookie, so cannot compute a matching token — closing a gap the old panel had.
+cookie, so cannot compute a matching token; this closes a gap the old panel had.
 """
 
 from __future__ import annotations

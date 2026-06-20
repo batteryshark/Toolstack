@@ -22,8 +22,8 @@ class Redact(unittest.TestCase):
 
     def test_bounds_length(self):
         out = redact("word " * 200, limit=50)
-        self.assertLessEqual(len(out), 51)  # 50 + ellipsis
-        self.assertTrue(out.endswith("…"))
+        self.assertLessEqual(len(out), 53)  # 50 + ellipsis (...)
+        self.assertTrue(out.endswith("..."))
 
 
 if __name__ == "__main__":

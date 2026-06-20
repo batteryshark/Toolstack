@@ -5,7 +5,7 @@ plug into the broker. The reference implementation targets
 [nod](https://github.com/batteryshark/nod); this doc exists so you can write your
 own (Slack, a webhook, a pager, a custom app) without changing the broker.
 
-If you only ever use nod, you can skip this — the broker ships a nod adapter. Read
+If you only ever use nod, you can skip this; the broker ships a nod adapter. Read
 on only if you want to swap the surface.
 
 ---
@@ -17,7 +17,7 @@ needs human review, the broker:
 
 1. builds a redacted **OperationCard**,
 2. hands it to the surface (`open`),
-3. waits for a normalized **SurfaceDecision** (via `poll` — the authoritative,
+3. waits for a normalized **SurfaceDecision** (via `poll`, the authoritative,
    poll-only read), and
 4. executes or refuses based on the broker's own rules.
 
@@ -32,13 +32,13 @@ compromised or buggy surface from being able to authorize an action.
 
 ## The interface
 
-Implement three operations. Resolution is **poll-only** — there is no inbound
+Implement three operations. Resolution is **poll-only**; there is no inbound
 callback (see `deliver` below for why).
 
 ### `open(card: OperationCard) -> SurfaceRef`
 
 Publish a prompt for a human. Return an **opaque handle** the broker stores. Must
-be **idempotent** on `card.idempotency_key` — the broker may retry `open` after a
+be **idempotent** on `card.idempotency_key`; the broker may retry `open` after a
 network blip, and that must not create a second prompt. The broker enforces the
 approval timeout itself, so the surface is not handed an expiry.
 
@@ -64,12 +64,12 @@ Withdraw a still-pending prompt. The broker calls this when its own timeout fire
 or the caller's token is revoked. Cancelling an already-resolved request is a
 no-op, not an error.
 
-### `deliver(decision)` — rejected (poll-only)
+### `deliver(decision)`: rejected (poll-only)
 
 A push/callback fast-path is **deliberately not implemented and not planned.**
 There is no broker callback route. The reason is security, not effort: nod posts
 its callbacks **unauthenticated** (a plain `POST callback_url` with the decision
-JSON — no signature, no shared secret). A broker endpoint that trusted such a
+JSON: no signature, no shared secret). A broker endpoint that trusted such a
 callback would let anyone who can reach it forge an "approved" decision for a
 pending request and bypass the human approval gate. So resolution is poll-only,
 and `poll` is the sole source of approval truth.
@@ -90,13 +90,13 @@ from the previous build's principles).
 | `title` | yes | The decision in one sentence: "Approve `media.skip` for caller `hermes`". |
 | `caller` | yes | Which agent/client is asking. |
 | `tool`, `operation` | yes | What would run. |
-| `target` | no | What it acts on (mailbox, repo, host…). |
+| `target` | no | What it acts on (mailbox, repo, host...). |
 | `data_class` | no | Sensitivity of data touched. |
 | `risk` | yes | Risk treatment from the policy decision. |
 | `policy_reason` | yes | Why policy routed this to review. |
 | `blast_radius` | no | One line on what would change. |
 | `links` | no | Audit record, runbook, dashboard. |
-| `allowed_actions` | yes | Which outcomes the human may choose (approve / reject / …). |
+| `allowed_actions` | yes | Which outcomes the human may choose (approve / reject / ...). |
 | `expires_at` | yes | When the prompt goes stale. |
 
 **Forbidden in an OperationCard:** raw arguments, secrets, tokens, credentials.
@@ -106,8 +106,8 @@ Redaction happens in the broker *before* `open` is called.
 nod adapter populate `request_id` (the idempotency key), `title`, `caller`, `tool`,
 `op`, `risk`, the policy `reason`, and the agent's `justification`. The richer fields
 above (`target`, `data_class`, `blast_radius`, `links`, `allowed_actions`,
-`expires_at`) are part of the contract's *intent* but are **not yet populated** —
-treat them as optional/forward-looking. The broker owns the approval timeout, so
+`expires_at`) are part of the contract's *intent* but are **not yet populated**.
+Treat them as optional/forward-looking. The broker owns the approval timeout, so
 `expires_at` is not sent to the surface.
 
 ### SurfaceDecision (surface → broker)
@@ -172,7 +172,7 @@ An adapter is only safe if all of these hold:
 | `open(card)` | `POST /api/v1/requests` (strict; returns `request_id`, `deduped`) |
 | `poll(ref)` | `GET /api/v1/requests/{request_id}/decision` |
 | `cancel(ref)` | nod issuer cancel |
-| `deliver(decision)` | *not implemented* — no broker callback route (poll-only by design) |
+| `deliver(decision)` | *not implemented*: no broker callback route (poll-only by design) |
 
 **OperationCard → nod `CreateDecisionRequest`:**
 
@@ -182,8 +182,8 @@ An adapter is only safe if all of these hold:
 | `caller` / `tool` / `operation` / `target` / `data_class` / `risk` / `policy_reason` | `fields[]` (`{label, value, style}`) |
 | `blast_radius` | `body_markdown` |
 | `links` | `links[]` (`{label, url}`) |
-| `allowed_actions` | `options[]` — `approve`, `approve_with_text`, `reject_with_text` (mark destructive) |
-| *(timeout)* | broker-internal — the broker enforces the deadline; `expires_at` is not currently sent to nod |
+| `allowed_actions` | `options[]`: `approve`, `approve_with_text`, `reject_with_text` (mark destructive) |
+| *(timeout)* | broker-internal: the broker enforces the deadline; `expires_at` is not currently sent to nod |
 | `idempotency_key` | `dedupe_key` |
 | (push safety) | `notification.redact: true` |
 
@@ -194,7 +194,7 @@ this from the decision-read response only. (nod can also POST the same `decision
 object to a `callback_url`, but the broker has no callback route, so that payload
 is unused.)
 
-`deduped` (in the create response) is **informational** — the broker does not act on
+`deduped` (in the create response) is **informational**; the broker does not act on
 it. `open()` is idempotent because the OperationCard's `request_id` is sent as nod's
 `dedupe_key`, so a retried `open` returns the same request instead of a duplicate;
 the broker needs no extra handling for the deduped case.

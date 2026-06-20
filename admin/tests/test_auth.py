@@ -1,4 +1,4 @@
-"""admin.auth: password hashing, signed sessions, and CSRF tokens — all stdlib.
+"""admin.auth: password hashing, signed sessions, and CSRF tokens, all stdlib.
 Round-trips succeed; wrong secrets, tampering, and expiry all fail closed."""
 
 import unittest

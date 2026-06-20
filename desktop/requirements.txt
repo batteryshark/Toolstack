@@ -1,5 +1,5 @@
 # The desktop shell's only extra dependency: a native OS-webview wrapper (uses the system
-# WebKit on macOS / WebKit2GTK on Linux / WebView2 on Windows — NOT a bundled Chromium).
+# WebKit on macOS / WebKit2GTK on Linux / WebView2 on Windows; NOT a bundled Chromium).
 # Install into the SAME venv that has the stack + the admin's deps (it launches the admin):
 #   pip install -e '.[vault]' -r admin/requirements.txt -r desktop/requirements.txt
 pywebview

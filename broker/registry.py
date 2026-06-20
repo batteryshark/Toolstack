@@ -2,7 +2,7 @@
 
 Builds the tool catalog from ``toolyard.toml`` files under a tools root. It reads
 ONLY the non-secret fields (id, type, operations + their descriptions/args/risk,
-entrypoint port) and never looks at a file's ``[[secrets]]`` block — so the broker
+entrypoint port) and never looks at a file's ``[[secrets]]`` block, so the broker
 stays physically secret-unaware.
 
 `lookup` resolves an op for execution; `describe` / `list_ops` feed agent-facing
@@ -23,12 +23,12 @@ from pathlib import Path
 TOOL_TYPES = ("api", "mcp", "rest")
 
 # For a "rest" tool the risk is DEFINED by the verb, not the manifest, so the broker derives
-# it here — the approval card and discovery then show the right risk even for a hand-written
+# it here; the approval card and discovery then show the right risk even for a hand-written
 # toolyard.toml. Mirrors admin/tool_authoring.REST_VERB_RISK (independent package, duplicated).
 REST_VERB_RISK = {"GET": "read", "POST": "write", "PUT": "write",
                   "PATCH": "write", "DELETE": "destructive"}
 
-# A tool id is the routing key and a directory name; it must match this charset — and crucially
+# A tool id is the routing key and a directory name; it must match this charset, and crucially
 # must NOT contain a dot. A policy spec is split on the FIRST dot into (tool, op) (see
 # broker/operations.build_policy), so a dotted id like "my.tool" mis-parses and silently
 # misroutes its policy. Mirrors admin/tool_authoring._ID_RE (independent packages, duplicated).
@@ -55,18 +55,18 @@ class Registry:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
         tool_id = data.get("id")
-        # Fail closed at load — naming the file + id — on a missing/invalid id, like the port
+        # Fail closed at load (naming the file + id) on a missing/invalid id, like the port
         # check below. The admin panel enforces this charset; a hand-written toolyard.toml is
         # the unchecked path, where a dotted id would become a catalog key and break tool.op
         # policy routing only later.
         if not (isinstance(tool_id, str) and _ID_RE.match(tool_id)):
             raise ValueError(
                 f"{toml_path}: invalid tool id {tool_id!r} (letters, digits, _ or - only; "
-                f"no dots — a dot breaks tool.op policy routing)"
+                f"no dots: a dot breaks tool.op policy routing)"
             )
         entry = data.get("entrypoint", {})
         tool_type = data.get("type", "api")
-        # Reject an unknown/typo'd type at load — never register it silently (it would
+        # Reject an unknown/typo'd type at load; never register it silently (it would
         # otherwise resolve to a ToolOp and only mis-dispatch at call time).
         if tool_type not in TOOL_TYPES:
             raise ValueError(
@@ -76,7 +76,7 @@ class Registry:
         port = entry.get("port")
         # Every tool type is invoked at 127.0.0.1:<port> (an api tool at /v1/actions/<op>, an
         # mcp tool over streamable-HTTP MCP at /mcp). A missing/invalid port used to register
-        # silently as None and only surface as a 502 at call time — fail closed at load
+        # silently as None and only surface as a 502 at call time; fail closed at load
         # instead, naming the offending file and tool. (bool is an int subclass in Python, so
         # exclude it: `port = true` is not a port.)
         if not (isinstance(port, int) and not isinstance(port, bool) and 1 <= port <= 65535):
@@ -88,7 +88,7 @@ class Registry:
         for o in data.get("operations", []):
             risk = o.get("risk", "unknown")
             if tool_type == "rest":
-                # the verb defines the risk — override the manifest (case-insensitively) so a
+                # the verb defines the risk; override the manifest (case-insensitively) so a
                 # mislabelled or hand-written rest op can't misrepresent risk on the approval card
                 risk = REST_VERB_RISK.get(o["name"].upper(), risk)
             ops[o["name"]] = {

@@ -1,4 +1,4 @@
-"""NodSurface — the reference approval-surface adapter, talking to nod over HTTP.
+"""NodSurface: the reference approval-surface adapter, talking to nod over HTTP.
 
     open   -> POST {base}/api/v1/requests              (issuer token, requests:write)
     poll   -> GET  {base}/api/v1/requests/{id}/decision (issuer token, requests:read)
@@ -6,12 +6,12 @@
 
 It maps an OperationCard to nod's CreateDecisionRequest (no raw args/secrets;
 push text redacted) and nod's decision back to a normalized SurfaceState. The
-broker owns approval truth — `poll` is authoritative; nod is the messenger.
+broker owns approval truth: `poll` is authoritative; nod is the messenger.
 
 Contract pinned against nod v1.0.1 (github.com/batteryshark/nod @ 01d535d),
 verified endpoint-by-endpoint against that source and live-probed against a
 running instance. Do not change a request field or response key below without
-re-checking it against nod's `nod-proto` crate — the request body is strict.
+re-checking it against nod's `nod-proto` crate; the request body is strict.
 
   open  request body  -> nod CreateDecisionRequest (`#[serde(deny_unknown_fields)]`,
       so an unknown/typo'd field is rejected, not dropped). Fields used here:
@@ -65,7 +65,7 @@ class NodSurface:
     def from_env(cls) -> "NodSurface | None":
         """Build from TOOLSTACK_NOD_URL / _TOKEN / _CHANNEL, or None if URL+token
         aren't both set. Lets the broker, brokerctl, and the admin app construct the
-        same surface client — the latter two revoke out of the broker process and
+        same surface client; the latter two revoke out of the broker process and
         build their own to withdraw cancelled approvals from nod."""
         url = os.environ.get("TOOLSTACK_NOD_URL")
         token = os.environ.get("TOOLSTACK_NOD_TOKEN")

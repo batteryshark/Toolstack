@@ -1,4 +1,4 @@
-"""Live nod integration test — opt-in, skipped by default.
+"""Live nod integration test: opt-in, skipped by default.
 
 Unlike test_surface_nod.py (which runs against a wire-faithful fake), this drives
 a REAL nod server through a full open -> poll -> cancel -> poll cycle, to pin the
@@ -11,7 +11,7 @@ It is skipped unless BOTH env vars are set:
                           https://host.example.ts.net/boop
     TOOLSTACK_NOD_TOKEN   issuer token. Needs requests:write, requests:read AND
                           requests:cancel (or simply requests:*). nod's DEFAULT
-                          issuer token is write+read only — and nod has no
+                          issuer token is write+read only, and nod has no
                           write→cancel fallback (auth.rs has_request_scope), so a
                           write+read token gets 403 on cancel and this test would
                           leave a dangling pending request. Mint the token with
@@ -21,7 +21,7 @@ Optional:
     TOOLSTACK_NOD_CHANNEL channel id (default "default")
 
 ⚠️  Side effect: opening a request notifies the issuer's enrolled nod devices.
-The test immediately cancels the request it creates, so nothing stays pending —
+The test immediately cancels the request it creates, so nothing stays pending,
 but a card may briefly appear. If cleanup can't cancel (wrong scope), the test
 prints a loud warning naming the request id so you can dismiss it by hand. Run
 it knowingly:
@@ -75,7 +75,7 @@ class NodSurfaceLive(unittest.TestCase):
         if leftover not in (approval.CANCELLED, approval.EXPIRED):
             sys.stderr.write(
                 f"\n⚠️  live nod request {self.ref} is still {leftover!r} after "
-                "cancel — your issuer token likely lacks the requests:cancel "
+                "cancel. Your issuer token likely lacks the requests:cancel "
                 "scope. Dismiss it by hand and re-run with a requests:* token.\n"
             )
 

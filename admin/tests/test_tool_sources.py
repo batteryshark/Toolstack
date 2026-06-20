@@ -105,7 +105,7 @@ class AddFromPath(unittest.TestCase):
 
     def test_symlink_copied_verbatim_not_dereferenced(self):
         # A symlink in the source must NOT have its target's CONTENT materialized into the managed
-        # (possibly synced) tools dir — it's recreated as a link instead.
+        # (possibly synced) tools dir; it's recreated as a link instead.
         secret = self.tmp / "secret.txt"
         secret.write_text("TOPSECRET", encoding="utf-8")
         (self.src / "link").symlink_to(secret)
@@ -135,7 +135,7 @@ class AddFromGithub(unittest.TestCase):
     def _fake_clone(self, *, with_subdir: bool):
         """Return a subprocess.run stand-in that 'clones' by populating the dest dir."""
         def run(cmd, *a, **k):
-            dest = Path(cmd[-1])                       # `git clone … -- <url> <dest>`
+            dest = Path(cmd[-1])                       # `git clone ... -- <url> <dest>`
             target = dest / "sub" if with_subdir else dest
             target.mkdir(parents=True)
             (target / "toolyard.toml").write_text(MANIFEST, encoding="utf-8")
@@ -163,7 +163,7 @@ class AddFromGithub(unittest.TestCase):
         self.assertEqual(tool_sources.read_source(self.root / "weather")["subdir"], "sub")
 
     def test_rejects_dangerous_or_nongit_urls(self):
-        # file://, ext::/fd:: (run commands), a flag-looking URL, a bare path, ftp:// — all rejected
+        # file://, ext::/fd:: (run commands), a flag-looking URL, a bare path, ftp://; all rejected
         for bad in ("file:///etc/passwd", "ext::sh -c whoami", "--upload-pack=evil",
                     "/local/repo", "ftp://host/x", ""):
             with self.assertRaises(ValueError, msg=bad):

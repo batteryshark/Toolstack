@@ -247,7 +247,7 @@ class JsonApi(unittest.TestCase):
 
     def test_edit_tool_ignores_entrypoint_and_ops_in_body(self):
         # Security-critical: the endpoint edits ONLY description + secrets. command/image/port/
-        # operations come from disk and must NOT be overridable via the request body — otherwise a
+        # operations come from disk and must NOT be overridable via the request body; otherwise a
         # caller could repoint a tool at arbitrary code.
         r = self.client.post("/api/tools/echo", headers=self._auth(), json={
             "description": "x", "command": "rm -rf /", "image": "evil:latest",
@@ -310,7 +310,7 @@ class JsonApi(unittest.TestCase):
 
     def test_add_tool_from_github(self):
         def fake_clone(cmd, *a, **k):
-            dest = Path(cmd[-1])           # `git clone … -- <url> <dest>`
+            dest = Path(cmd[-1])           # `git clone ... -- <url> <dest>`
             dest.mkdir(parents=True)
             (dest / "toolyard.toml").write_text(
                 'id = "gh_tool"\ntype = "api"\n[entrypoint]\ncommand = "python3 app.py"\nport = 4900\n\n'
@@ -357,7 +357,7 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(r.json()["id"], "wtool")
 
     def test_update_non_tsr_tool_400(self):
-        # echo (from setUp) was hand-authored — no .tsr-source.json, so it can't be updated
+        # echo (from setUp) was hand-authored: no .tsr-source.json, so it can't be updated
         r = self.client.post("/api/tools/echo/update", headers=self._auth())
         self.assertEqual(r.status_code, 400)
 

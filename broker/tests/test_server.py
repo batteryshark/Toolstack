@@ -27,7 +27,7 @@ class BindHost(unittest.TestCase):
     def test_nonloopback_fails_closed(self):
         with mock.patch.dict(os.environ, {"TOOLSTACK_BROKER_HOST": "0.0.0.0"}):
             os.environ.pop("TOOLSTACK_BROKER_ALLOW_NONLOOPBACK", None)
-            with self.assertRaises(SystemExit):  # exposes the broker — refuse without the opt-in
+            with self.assertRaises(SystemExit):  # exposes the broker; refuse without the opt-in
                 _configured_host()
 
     def test_nonloopback_allowed_with_optin(self):
@@ -182,7 +182,7 @@ class ServerIntegration(unittest.TestCase):
 
 class NodSurfaceFromEnv(unittest.TestCase):
     """When TOOLSTACK_NOD_URL/TOKEN are set, build_server wires a NodSurface from
-    the environment. The channel must be configurable — a token scoped to one nod
+    the environment. The channel must be configurable; a token scoped to one nod
     channel 403s on another, so the broker has to be able to target the right one."""
 
     _NOD_KEYS = ("TOOLSTACK_NOD_URL", "TOOLSTACK_NOD_TOKEN", "TOOLSTACK_NOD_CHANNEL")

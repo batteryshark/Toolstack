@@ -1,11 +1,11 @@
-"""REST-KV tool — a small REST-compliant key-value store (the template for a
+"""REST-KV tool: a small REST-compliant key-value store (the template for a
 ``type = "rest"`` passthrough tool).
 
 A rest tool is just an ordinary HTTP service. The broker does NOT terminate a custom
 protocol for it: the agent calls ``kv.GET`` / ``kv.POST`` / ``kv.PUT`` / ``kv.PATCH`` /
 ``kv.DELETE`` with ``{path, body, query}``, and the broker forwards the raw
 ``<verb> 127.0.0.1:<port><path>`` request straight through, returning this service's
-status + body. So everything below is plain REST — the same code would work behind any
+status + body. So everything below is plain REST; the same code would work behind any
 reverse proxy. Resources:
 
     GET    /items            list all keys
@@ -15,7 +15,7 @@ reverse proxy. Resources:
     PATCH  /items/<key>      update {value}          (404 if absent)
     DELETE /items/<key>      remove                  (404 if absent)
 
-The store is in-memory (resets on restart) — it's a demo. Broker request context arrives
+The store is in-memory (resets on restart); it's a demo. Broker request context arrives
 in headers (``X-Toolstack-Request-Id`` / ``X-Toolstack-Caller``), and the same optional
 ``broker_secret`` defense-in-depth check as the other templates applies. Stdlib only.
 """

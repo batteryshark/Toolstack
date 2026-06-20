@@ -21,10 +21,10 @@ matched is denied.
 Specificity is measured by literal length, so a ``deny`` does NOT automatically win: a
 longer-literal-prefix ``allow`` (e.g. ``/reports/quarterly/**``) can out-rank a shorter
 ``deny`` (e.g. ``/reports/**/secret``). For a guaranteed block, make the deny at least as
-literal-heavy as any overlapping allow — an exact key is the surest.
+literal-heavy as any overlapping allow: an exact key is the surest.
 
 An explicit ``"deny"`` is meaningful for rest (carve a hole inside a broader allow);
-for api / mcp, leaving an op unlisted denies it just as before. Pure logic — no I/O.
+for api / mcp, leaving an op unlisted denies it just as before. Pure logic, no I/O.
 """
 
 from __future__ import annotations
@@ -44,8 +44,8 @@ def decide(policy: dict, tool: str, op: str, path: str | None = None) -> str:
 
     ``path`` is supplied only for a rest call (the request path). With it, the op's
     path-scoped rules are matched and the most-specific wins. Without it (api / mcp, or
-    a discovery / preview listing) the op is permitted if ANY of its rules permits it —
-    the least-restrictive effect — so a path-scoped verb still lists as usable.
+    a discovery / preview listing) the op is permitted if ANY of its rules permits it
+    (the least-restrictive effect), so a path-scoped verb still lists as usable.
 
     Missing tool / op, no matching rule, or an unrecognized effect -> DENY (fail closed).
     """
@@ -75,7 +75,7 @@ def _norm(effect) -> str:
 
 def _specificity(pattern: str) -> tuple:
     """Higher == more specific. More literal (non-``*``) characters first, then fewer
-    wildcards, then a longer pattern — so ``/items/secret`` beats ``/items/*`` beats
+    wildcards, then a longer pattern: so ``/items/secret`` beats ``/items/*`` beats
     ``/items/**`` beats ``**``."""
     literal = sum(1 for c in pattern if c != "*")
     return (literal, -pattern.count("*"), len(pattern))
@@ -88,7 +88,7 @@ def _match(pattern: str, path: str) -> bool:
 @lru_cache(maxsize=512)
 def _compile(pattern: str):
     # \Z (not $) so a trailing newline in the path can't match a rule whose literal ends
-    # the string — the whole path must match, exactly.
+    # the string; the whole path must match, exactly.
     return re.compile("^" + _to_regex(pattern) + r"\Z")
 
 

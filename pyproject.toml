@@ -1,12 +1,12 @@
 # Packaging for Toolstack's stdlib components (broker, toolyard, client), so their
-# CLIs install as real commands — `toolstack`, `brokerctl`, `toolyard` — instead of
+# CLIs install as real commands (`toolstack`, `brokerctl`, `toolyard`) instead of
 # only `python3 -m <pkg>`. The agent skill and the docs use the bare commands.
 #
 #   pip install -e .        # editable: the commands track your checkout
 #   toolstack --help
 #
 # Runtime stays ZERO-dependency (these are stdlib-only); setuptools is a build-time
-# dep only. The admin web app is intentionally NOT packaged here — it carries the
+# dep only. The admin web app is intentionally NOT packaged here; it carries the
 # project's only runtime deps (FastAPI/uvicorn), in admin/requirements.txt + its own venv.
 
 [build-system]
@@ -16,7 +16,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "toolstack"
 version = "0.1.0"
-description = "Toolstack (TSR) — a brokered, action-without-access tool layer for agents"
+description = "Toolstack (TSR): a brokered, action-without-access tool layer for agents"
 requires-python = ">=3.11"   # tomllib (broker.registry / toolyard.config) is 3.11+
 dependencies = []            # stdlib only
 classifiers = [
@@ -25,7 +25,7 @@ classifiers = [
 
 [project.optional-dependencies]
 # The local encrypted-vault secret backend (toolyard.secrets.VaultBackend) is the only
-# part that needs a crypto library — stdlib has KDFs (scrypt) but no AEAD. It's imported
+# part that needs a crypto library; stdlib has KDFs (scrypt) but no AEAD. It's imported
 # lazily, so the toolyard stays zero-dependency unless you opt in:  pip install '.[vault]'
 # Upper bound caps the major so a future cryptography release can't silently break a
 # deploy; widen it deliberately after testing the vault backend against the new major.
@@ -35,7 +35,7 @@ vault = ["cryptography>=42,<46"]
 toolstack = "client.toolstack:main"        # the agent's generic tool client (CLI)
 toolstack-mcp = "client.mcp_server:main"   # the same client as an MCP stdio server
 brokerctl = "broker.brokerctl:main"        # operator CLI (callers/policies/tokens/sweep)
-toolyard = "toolyard.cli:main"             # tool runner (up/run/…)
+toolyard = "toolyard.cli:main"             # tool runner (up/run/...)
 
 [tool.setuptools]
 # Explicit list (not auto-discovery) so the board dirs (.ordna/, tasks/) and the

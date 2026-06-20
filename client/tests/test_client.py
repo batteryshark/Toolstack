@@ -150,7 +150,7 @@ class ClientIntegration(unittest.TestCase):
 
     def test_terminal_request_event_emitted_once_across_repolls(self):
         # the gateway emits a single terminal request.* event on the transition to
-        # terminal — a re-poll of an already-resolved request must not re-emit it.
+        # terminal: a re-poll of an already-resolved request must not re-emit it.
         self.surface.set(approval.APPROVED, approver="alice")
         _, resp = toolstack._request("POST", "/v1/actions/echo.skip", {"arguments": {}})
         rid = resp["request_id"]

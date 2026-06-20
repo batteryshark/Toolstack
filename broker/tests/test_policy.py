@@ -29,7 +29,7 @@ class Decide(unittest.TestCase):
 
 class PathScoped(unittest.TestCase):
     """Rest tools: keys may scope by path glob; most-specific wins, ties most-restrictive,
-    default-deny. (api/mcp keys, having no path part, are unaffected — see Decide.)"""
+    default-deny. (api/mcp keys, having no path part, are unaffected; see Decide.)"""
 
     P = {"tools": {"kv": {
         "GET /items/**": "allow",

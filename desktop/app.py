@@ -1,13 +1,13 @@
-"""Toolstack desktop — a thin native window around the admin control panel.
+"""Toolstack desktop: a thin native window around the admin control panel.
 
 It reuses everything; it does not reimplement the admin, it *launches* it. If the admin
 isn't already serving, it starts ``python -m admin serve`` (which supervises the broker and
 runs tools), waits for it to be healthy, and opens a native OS-WebKit window onto it via
-pywebview — the operating system's own webview, not a bundled browser. Close the window and
+pywebview, the operating system's own webview, not a bundled browser. Close the window and
 the admin THIS app started is stopped; an admin you already had running is left untouched.
 
 The lifecycle (health / start / stop) is stdlib and unit-tested. pywebview is imported
-LAZILY — only when actually opening the window — so this module imports (and its tests run)
+LAZILY (only when actually opening the window), so this module imports (and its tests run)
 without the GUI dependency installed.
 
 Run:   python3 -m desktop
@@ -67,11 +67,11 @@ class Stack:
 
     def ensure_up(self, tries: int = 120, delay: float = 0.25) -> None:
         """No-op if the admin is already serving; otherwise start it and wait for health.
-        Raises RuntimeError if it exits early (most often no password set — the admin fails
-        closed there) or never becomes healthy.
+        Raises RuntimeError if it exits early (most often no password set, where the admin fails
+        closed) or never becomes healthy.
 
         The admin inherits our stdout/stderr (its logs go to the console, like the broker
-        supervisor's log) — deliberately NOT a pipe, which would fill and block a long-running
+        supervisor's log); deliberately NOT a pipe, which would fill and block a long-running
         admin we never drain. So on early exit we point at running it directly to see why."""
         if admin_healthy(self.url):
             return
@@ -81,7 +81,7 @@ class Stack:
                 self._proc = None
                 raise RuntimeError(
                     "the admin exited before it became healthy. Run `python3 -m admin serve` "
-                    "to see why — most often no password is set yet "
+                    "to see why; most often no password is set yet "
                     "(`python3 -m admin set-password`)."
                 )
             if admin_healthy(self.url):
@@ -100,7 +100,7 @@ class Stack:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.wait(timeout=5)  # reap it — don't leave a zombie
+            proc.wait(timeout=5)  # reap it, don't leave a zombie
 
 
 def main() -> None:
@@ -109,14 +109,14 @@ def main() -> None:
         stack.ensure_up()
     except RuntimeError as exc:
         # A double-clicked app has no terminal, but still print for the CLI case. The usual
-        # cause is "no admin password set" — that message says exactly what to run.
+        # cause is "no admin password set"; that message says exactly what to run.
         print(f"toolstack-desktop: {exc}", file=sys.stderr)
         raise SystemExit(1)
     try:
         import webview  # lazy: the one place the GUI dependency is needed
     except ModuleNotFoundError:
         stack.stop()
-        raise SystemExit("desktop shell needs pywebview — pip install -r desktop/requirements.txt")
+        raise SystemExit("desktop shell needs pywebview: pip install -r desktop/requirements.txt")
     # create_window is inside the finally too: if opening the window fails (e.g. no GUI
     # session), still stop the admin we started rather than orphaning it.
     try:

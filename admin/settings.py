@@ -2,7 +2,7 @@
 
 Login credentials (the scrypt password hash and the HMAC session secret) live
 under the XDG config dir; supervisor state and the broker log live under the XDG
-state dir — mirroring how the rest of Toolstack is laid out. Secret files are
+state dir, mirroring how the rest of Toolstack is laid out. Secret files are
 written ``0600``. None of this is the broker's data (that is the SQLite file the
 ``BrokerRunConfig`` points at).
 """
@@ -56,7 +56,7 @@ def allow_nonloopback() -> bool:
 
 
 def admin_host() -> str:
-    """The admin's bind host — 127.0.0.1 by default. `TOOLSTACK_ADMIN_HOST` overrides it (only
+    """The admin's bind host: 127.0.0.1 by default. `TOOLSTACK_ADMIN_HOST` overrides it (only
     sensible inside a container, which must bind 0.0.0.0 and relies on Docker's
     publish-to-127.0.0.1 mapping as its boundary). A non-loopback host **fails closed** unless
     `TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK=1` is also set. Mirrors the broker's `TOOLSTACK_BROKER_HOST`."""
@@ -64,14 +64,14 @@ def admin_host() -> str:
     if not _is_loopback(host) and not allow_nonloopback():
         raise SystemExit(
             f"refusing to bind the admin to non-loopback host {host!r} without "
-            "TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK=1 — binding off 127.0.0.1 exposes the "
+            "TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK=1; binding off 127.0.0.1 exposes the "
             "unauthenticated-by-network panel; set it only behind a tunnel/proxy you trust "
             "(and set TOOLSTACK_ADMIN_SECURE_COOKIE=1 there).")
     return host
 
 
 def cookie_secure() -> bool:
-    """Mark the session cookie Secure (the browser sends it only over https). Off by default —
+    """Mark the session cookie Secure (the browser sends it only over https). Off by default:
     loopback and the container's http-behind-publish both serve plain http. Set
     ``TOOLSTACK_ADMIN_SECURE_COOKIE=1`` when the panel is reached over TLS (the recommended
     remote setup) so the session cookie can't leak over a plaintext hop."""
@@ -83,7 +83,7 @@ def session_ttl_seconds() -> int:
 
 
 def tool_secrets_file() -> str:
-    """The dev secrets file the toolyard resolves tool secrets from — the same
+    """The dev secrets file the toolyard resolves tool secrets from: the same
     ``TOOLSTACK_SECRETS_FILE`` default the ``toolyard`` CLI uses."""
     return os.environ.get("TOOLSTACK_SECRETS_FILE", "secrets.toml")
 
