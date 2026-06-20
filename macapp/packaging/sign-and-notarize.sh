@@ -1,6 +1,6 @@
 #!/bin/bash
-# Build → code-sign (Hardened Runtime) → notarize → staple build/ToolstackApp.app for distribution
-# outside the App Store. One command, no account/password step:
+# Build → code-sign (Hardened Runtime) → notarize → staple "build/Toolstack Operator.app" for
+# distribution outside the App Store. One command, no account/password step:
 #
 #   ./packaging/sign-and-notarize.sh
 #
@@ -16,9 +16,9 @@ cd "$(dirname "$0")/.."
 [ -f packaging/signing.env ] && . packaging/signing.env
 [ -f secrets/secrets.env ] && . secrets/secrets.env
 
-APP="build/ToolstackApp.app"
-SUBMIT_ZIP="build/ToolstackApp-submit.zip"   # what notarytool ingests (pre-staple)
-ZIP="build/ToolstackApp.zip"                 # the distributable (the STAPLED .app, zipped)
+APP="build/Toolstack Operator.app"
+SUBMIT_ZIP="build/ToolstackOperator-submit.zip"   # what notarytool ingests (pre-staple)
+ZIP="build/ToolstackOperator.zip"                 # the distributable (the STAPLED .app, zipped)
 : "${DEVELOPER_ID_APP:?set it in packaging/signing.env to your 'Developer ID Application: …' identity}"
 : "${APP_STORE_CONNECT_API_ISSUER_ID:?set it in secrets/secrets.env (App Store Connect API issuer id)}"
 : "${APP_STORE_CONNECT_API_KEY_PATH:?set it in secrets/secrets.env (path to your AuthKey_*.p8)}"

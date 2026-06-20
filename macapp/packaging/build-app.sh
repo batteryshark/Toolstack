@@ -1,27 +1,28 @@
 #!/bin/bash
-# Build ToolstackApp.app — a proper .app bundle from the SwiftPM release binary, so the operator
-# app is a double-clickable, signable, first-class macOS app (not just `swift run`).
+# Build "Toolstack Operator.app" — a proper .app bundle from the SwiftPM release binary, so the
+# operator app is a double-clickable, signable, first-class macOS app (not just `swift run`).
 #
-#   ./packaging/build-app.sh            # -> build/ToolstackApp.app (unsigned)
+#   ./packaging/build-app.sh            # -> "build/Toolstack Operator.app" (unsigned)
 #
 # Then sign + notarize with ./packaging/sign-and-notarize.sh (needs your Developer ID).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_NAME="ToolstackApp"
-OUT="build/${APP_NAME}.app"
+BUNDLE_NAME="Toolstack Operator"   # the user-facing app (its .app bundle + display name)
+BIN_NAME="ToolstackApp"            # the SwiftPM product / executable inside (CFBundleExecutable)
+OUT="build/${BUNDLE_NAME}.app"
 CONTENTS="${OUT}/Contents"
 
 echo "› swift build -c release"
 swift build -c release
 BINDIR="$(swift build -c release --show-bin-path)"
-BIN="$BINDIR/${APP_NAME}"
+BIN="$BINDIR/${BIN_NAME}"
 [ -x "$BIN" ] || { echo "error: built binary not found at $BIN" >&2; exit 1; }
 
 echo "› assembling ${OUT}"
 rm -rf "$OUT"
 mkdir -p "${CONTENTS}/MacOS" "${CONTENTS}/Resources"
-cp "$BIN" "${CONTENTS}/MacOS/${APP_NAME}"
+cp "$BIN" "${CONTENTS}/MacOS/${BIN_NAME}"
 cp packaging/Info.plist "${CONTENTS}/Info.plist"
 
 # App icon: generate AppIcon.icns from the source logo (Info.plist points at CFBundleIconFile=AppIcon).
