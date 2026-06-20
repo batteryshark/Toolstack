@@ -1,10 +1,10 @@
-# Toolstack TSR admin panel — systemd unit TEMPLATE.
+# Toolstack admin panel — systemd unit TEMPLATE.
 #
 # This file ships with placeholders, not working values. To deploy:
 #   1. cp deploy/toolstack-admin.service /etc/systemd/system/toolstack-admin.service
 #   2. Edit every line marked "EDIT:" — the service account and the install root
 #      (the root path repeats in WorkingDirectory + the three Exec lines). The
-#      defaults assume the checkout lives at /opt/toolstack/TSR owned by a
+#      defaults assume the checkout lives at /opt/toolstack owned by a
 #      `toolstack` user; change to taste.
 #   3. cp deploy/toolstack-admin.env.example /etc/toolstack/admin.env, then
 #      `chmod 600` it and fill it in — that is where the secret backend, the
@@ -27,25 +27,25 @@
 #   the same EnvironmentFile) and drop the ExecStartPost/ExecStopPost lines here.
 
 [Unit]
-Description=Toolstack TSR admin panel
+Description=Toolstack admin panel
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-# EDIT: the service account that owns the TSR checkout.
+# EDIT: the service account that owns the Toolstack checkout.
 User=toolstack
 Group=toolstack
-# EDIT: absolute path to the TSR checkout (same root as the Exec lines below).
-WorkingDirectory=/opt/toolstack/TSR
+# EDIT: absolute path to the Toolstack checkout (same root as the Exec lines below).
+WorkingDirectory=/opt/toolstack
 # Site config + secrets: secret backend, Infisical host/vault, toolyard runner,
 # admin knobs. Optional (the leading '-'): without it the panel uses its built-in
 # defaults (process runner, file secret backend). See toolstack-admin.env.example.
 EnvironmentFile=-/etc/toolstack/admin.env
 # EDIT: absolute path to the admin venv's python — repeated in all three lines.
-ExecStart=/opt/toolstack/TSR/admin/.venv/bin/python -m admin serve --port 8780
-ExecStartPost=/opt/toolstack/TSR/admin/.venv/bin/python -c "from admin import broker_config, supervisor; supervisor.start(broker_config.load())"
-ExecStopPost=/opt/toolstack/TSR/admin/.venv/bin/python -c "from admin import supervisor; supervisor.stop()"
+ExecStart=/opt/toolstack/admin/.venv/bin/python -m admin serve --port 8780
+ExecStartPost=/opt/toolstack/admin/.venv/bin/python -c "from admin import broker_config, supervisor; supervisor.start(broker_config.load())"
+ExecStopPost=/opt/toolstack/admin/.venv/bin/python -c "from admin import supervisor; supervisor.stop()"
 Restart=on-failure
 RestartSec=3
 
@@ -80,7 +80,7 @@ LockPersonality=true
 # The admin git-clones imported tools into the tools dir under the checkout, and the
 # venv is read from there, so the install root must stay readable + writable.
 # EDIT: point this at your install root (the same root as the Exec lines above).
-ReadWritePaths=/opt/toolstack/TSR
+ReadWritePaths=/opt/toolstack
 
 [Install]
 WantedBy=multi-user.target

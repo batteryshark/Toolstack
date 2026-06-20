@@ -2,22 +2,16 @@
   <img src="macapp/packaging/AppIcon-source.png" alt="Toolstack logo" width="150" height="150">
 </p>
 
-# Toolstack Rebuild
+# Toolstack
 
-A brokered, action-without-access tool layer for agents: the agent can *ask*, the
-broker *decides*, tools *execute*, and secrets stay with the tools.
+**Trust agents with action, not access.** An agent can *ask*; the broker *decides*; tools
+*execute*; secrets stay with the tools. The agent can reach the broker — and nothing else.
 
-(**Toolstack** is the product — the package, the `toolstack` / `brokerctl` / `toolyard` CLIs,
-and the `TOOLSTACK_*` env vars. Some docs still carry the old **TSR** / "Toolstack Rebuild"
-working name from the from-scratch rebuild.)
+The security comes from physical boundaries — a single ingress, loopback binding, and
+secrets resolved at the workload — not from rules on paper. The agent carries only a
+low-power token to the broker; everything sensitive lives behind it.
 
-Start with **[docs/walkthrough.md](docs/walkthrough.md)** — the review walkthrough
-(what it is, how it runs, the security properties). [plan.md](plan.md) is the
-component-by-component build plan, [PROJECT.md](PROJECT.md) is the nerve center, and
-[docs/component-decomposition.md](docs/component-decomposition.md) has the diagrams and
-trust boundaries.
-
-## What you build
+## Components
 
 - **Broker** — the authority boundary and the only address the agent has: auth,
   policy, request lifecycle, approval orchestration, and audit. One process, one
@@ -35,7 +29,7 @@ trust boundaries.
 - **Operator apps** — a cross-platform desktop shell ([desktop/](desktop/), an OS-WebKit window
   around the admin) and a native macOS app ([macapp/](macapp/), SwiftUI over the JSON API).
 
-## What you deploy
+## You also run
 
 - **nod** — self-hosted approval surface for human-in-the-loop decisions.
 - **Secret backend** — Infisical or SOPS.
@@ -61,19 +55,17 @@ For a real (systemd) install — the admin panel supervising the broker, with an
 `EnvironmentFile`, the supervision model, and verification steps — see
 [deploy/README.md](deploy/README.md).
 
-## Status
+## Maturity
 
-The planned build order (Phases 0–4) is **complete and tested**, with an operator
-**admin web app**, a desktop shell, and a native macOS app on top — 513 tests across
-[broker/](broker/), [toolyard/](toolyard/), [client/](client/), [admin/](admin/), and
-[desktop/](desktop/), plus 32 `swift test` tests for the native app ([macapp/](macapp/)).
-The full vertical slice runs end to end:
-agent → broker (auth, policy, request lifecycle) → human approval in nod → tool
-execution with workload secrets, and the broker never sees a secret. Operators manage
-callers/policies/tokens with `brokerctl` or the [admin panel](admin/README.md). It is
-**hardened for a real (single-host) install** — systemd state-dir + sandbox, admin login
-throttle + bind/SSRF guards, runtime timeouts + partial-failure cleanup, pinned deps, and
-DB backups (see [deploy/README.md](deploy/README.md)). A few **narrower items stay deferred**
-— container tmpfs secret injection, JIT/temporary grants, a background approval-expiry sweeper
-(see [docs/walkthrough.md](docs/walkthrough.md)). See [plan.md](plan.md) for the build order and
-[PROJECT.md](PROJECT.md) for what's next.
+The full path runs end to end — agent → broker → human approval → tool execution, with the
+broker never holding a secret — and it's hardened for a single-host deployment: a systemd
+state directory and sandbox, login throttling, bind and SSRF guards, runtime timeouts with
+partial-failure cleanup, pinned dependencies, and database backups. It binds loopback by
+default; reach it over a tunnel that terminates TLS. A few things are deliberately deferred:
+tmpfs secret injection, just-in-time grants, and a background approval-expiry sweeper.
+
+## Docs
+
+- [docs/walkthrough.md](docs/walkthrough.md) — the system end to end: how it runs, the security properties, and the evidence.
+- [docs/component-decomposition.md](docs/component-decomposition.md) — architecture, broker internals, and trust boundaries.
+- [admin/README.md](admin/README.md) · [broker/README.md](broker/README.md) · [toolyard/README.md](toolyard/README.md) — per-component detail.

@@ -28,7 +28,7 @@ virtualenv. See [admin/README.md](../admin/README.md) for what the panel does.
 
 ## Install
 
-1. **Lay down the code** at your install root (the examples assume `/opt/toolstack/TSR`, owned by a `toolstack` user — change to taste) and build the admin venv (above).
+1. **Lay down the code** at your install root (the examples assume `/opt/toolstack`, owned by a `toolstack` user — change to taste) and build the admin venv (above).
 2. **Create the state dir and set the admin password** (the panel fails closed — it refuses to start without one). The service keeps everything it writes under `/var/lib/toolstack` (the unit's `StateDirectory` owns it); create it now so the password lands where the service will read it:
    ```bash
    sudo install -d -o toolstack -g toolstack -m700 /var/lib/toolstack

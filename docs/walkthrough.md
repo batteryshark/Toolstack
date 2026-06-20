@@ -1,19 +1,18 @@
-# Toolstack — Walkthrough & Review
+# Toolstack — Walkthrough
 
-A self-contained review of where the project stands after Phases 0–4, the agent
-client, and the admin web app. Read this to re-orient, verify the work is sound, and
-decide what's next. Companion docs: [PROJECT.md](../PROJECT.md) (nerve center),
-[plan.md](../plan.md) (build plan), [component-decomposition.md](component-decomposition.md)
-(architecture), [admin/README.md](../admin/README.md) (the control panel).
+How Toolstack works end to end — the architecture, the request lifecycle, and the security
+properties with the evidence behind them. Companion docs: [PROJECT.md](../PROJECT.md)
+(design notes), [plan.md](../plan.md) (component design),
+[component-decomposition.md](component-decomposition.md) (diagrams), and
+[admin/README.md](../admin/README.md) (the control panel).
 
 ## TL;DR
 
-The planned build order (Phases 0–4) is **complete and tested**, the agent-side
-client (the `toolstack` CLI + MCP adapter + skill) is built on top, and an operator
-**admin web app** now runs and manages the whole stack (with a native desktop shell and a
-native macOS app on top) — 513 tests pass (219 broker + 78 toolyard + 23 client + 184 admin
-+ 9 desktop), plus 32 `swift test` tests for the native app; incl. opt-in Docker runner tests
-and an opt-in live-nod test, with live walkthroughs end to end. The full vertical slice runs:
+Toolstack is a brokered tool layer for agents: the agent reaches one broker, which
+authenticates it, checks policy, gates sensitive operations on human approval, and forwards
+approved calls to tools that hold their own secrets. The agent-side `toolstack` CLI (with an
+MCP adapter and a skill) sits on top, and an operator runs the whole stack from a loopback
+admin app — web, plus a native macOS app and a desktop shell. The full vertical slice runs:
 
 > **agent → broker (auth + policy) → human approval in nod → tool execution with
 > its own workload secrets — and the broker never sees a secret.**
@@ -38,7 +37,6 @@ are in [Deferred & caveats](#deferred--caveats).
 8. [Design decisions to confirm](#design-decisions-to-confirm)
 9. [Deferred & caveats](#deferred--caveats)
 10. [File map](#file-map)
-11. [Review checklist](#review-checklist)
 
 ---
 
@@ -187,7 +185,7 @@ Each invariant, how it's enforced, and the test that proves it.
 |---|---|---|
 | Agent reaches only the broker | binds `127.0.0.1` (not configurable); tailnet is the sole ingress | `test_server.test_bound_to_localhost_only`; live demos |
 | Fail closed | no caller → `401`; no policy grant → `403` (default-deny); no surface → `503`; timeout → `expired`; tool down → `502` | `test_gateway`, `test_policy`, `test_lifecycle`, `test_approval`, `test_runtime` |
-| Secrets never on the control plane | broker holds no backend credential; registry ignores `[[secrets]]`; toolyard injects secrets to the tool | `test_registry.test_registry_is_secret_unaware`; `toolyard…test_runner` (tool reads secret, value not returned); Phase 2/3/4 demos show **0** occurrences in audit |
+| Secrets never on the control plane | broker holds no backend credential; registry ignores `[[secrets]]`; toolyard injects secrets to the tool | `test_registry.test_registry_is_secret_unaware`; `toolyard…test_runner` (tool reads secret, value not returned); the demos show **0** occurrences in audit |
 | Tokens hashed; revocation immediate | only SHA-256 stored; per-request token+caller check | `test_identity` (revoked token/caller denied); `test_brokerctl` (revoke → next auth denied) |
 | Redaction | args/results never audited; `reason` redacted; tokens never logged | `test_lifecycle.test_arguments_never_appear_in_audit`, `test_gateway.test_reason_is_redacted_in_audit` |
 | Broker owns approval truth; timer wins | poll is authoritative; broker timeout ignores a late approval | `test_approval.test_timeout_fails_closed_even_if_surface_says_approved`, `…gates_execution`, `…rejection_denies` |
@@ -367,8 +365,8 @@ before a real deployment:
 ## File map
 
 ```
-PROJECT.md            nerve center / restart point
-plan.md               component-by-component build plan (+ build-order status)
+PROJECT.md            design notes (mission, architecture, principles)
+plan.md               component-by-component design + invariants
 README.md             front door
 secrets.example.toml  dev secret backend template (copy to secrets.toml)
 docs/
@@ -386,36 +384,3 @@ admin/                control panel (FastAPI): server · views · auth · superv
 deploy/               systemd unit template · env example · redeploy script · README (real install)
 pyproject.toml        packages the stdlib CLIs (toolstack/brokerctl/toolyard) for `pip install -e .`
 ```
-
----
-
-## Review checklist
-
-Tick these tomorrow to confirm we're in a good place:
-
-- [ ] **Tests green:** run all four suites (broker / toolyard / client, plus the
-      admin venv suite), and the docker e2e if Docker is up.
-- [ ] **It runs:** do the [Run it](#run-it) quickstart; see `echo.say` return a result.
-- [ ] **Admin panel:** `admin/.venv/bin/python -m admin serve`, log in, **Start** the
-      broker, create a caller, **Add** a tool — confirm the broker registers it after a
-      restart and the client can call it.
-- [ ] **Agent path:** with a broker running, `python3 -m client.toolstack tools` then
-      `call` a tool; confirm an approver's note comes back on a reviewed op.
-- [ ] **Approval works:** wire a nod (or the fake-nod approach) and watch a
-      `review` op gate on approve / reject / timeout.
-- [ ] **Security invariants:** skim [Security properties & evidence](#security-properties--evidence)
-      and spot-check one or two tests.
-- [ ] **Boundaries hold:** skim each broker module's "owns / must not" in
-      [plan.md](../plan.md) and confirm the code matches.
-- [ ] **Decisions:** confirm the nine [design decisions](#design-decisions-to-confirm)
-      — especially TOML, no-profiles, poll-only approval, and the deps-carrying admin app.
-- [ ] **Deferred list acceptable:** agree the [caveats](#deferred--caveats) are OK to
-      defer for now, and flag any that must move up before deployment.
-- [ ] **nod reality check:** verify `surface_nod.py`'s endpoints/shapes against the
-      real nod API before any deployment.
-- [ ] **Decide next:** the build is committed and pushed (branch `admin-web-app`, PR
-      open); pick a hardening item or wire a real deployment (nod + secret backend + tailnet).
-
-If those pass, we're in a good place: a working, tested, honestly-scoped vertical
-slice with an operator control plane, and the security properties enforced where it
-counts.
