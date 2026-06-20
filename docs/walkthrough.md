@@ -21,8 +21,10 @@ and an opt-in live-nod test, with live walkthroughs end to end. The full vertica
 The broker, toolyard, and client are **zero-dependency stdlib Python** (Docker only
 for the production tool runner), runnable with `python3`. The admin app is the one
 component that carries runtime deps (FastAPI + uvicorn, in its own venv). It is
-**not yet deployment-hardened** — see [Deferred & caveats](#deferred--caveats)
-before running it anywhere real.
+**hardened for a real single-host install** (systemd state-dir + sandbox, admin login
+throttle + bind/SSRF guards, runtime timeouts + partial-failure cleanup, pinned deps,
+DB backups — see [deploy/README.md](../deploy/README.md)); the narrower remaining items
+are in [Deferred & caveats](#deferred--caveats).
 
 ## Contents
 

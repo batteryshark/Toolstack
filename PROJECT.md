@@ -70,9 +70,11 @@ JSON operator API (`/api/*`) for native clients, consumed by a native SwiftUI ma
 
 ## Suggested next step
 
-Harden for real deployment:
+The single-host deployment hardening is **done** — systemd state-dir + sandbox, admin
+login throttle + bind/SSRF guards, runtime timeouts + partial-failure cleanup, pinned
+deps, and DB backups (see [deploy/README.md](deploy/README.md)). What's left:
 
-- The deferred items — container **tmpfs** secret injection (no host disk),
+- The narrower deferred items — container **tmpfs** secret injection (no host disk),
   temporary grants/JIT elevation, and a background approval-expiry sweeper.
 - Wire a real nod + secret backend (Infisical/SOPS) + tailnet per
   [broker/README.md](broker/README.md) and [toolyard/README.md](toolyard/README.md).
