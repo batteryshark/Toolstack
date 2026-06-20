@@ -86,8 +86,8 @@ def create_app() -> FastAPI:
         with open_store(config) as store:
             callers = store.list_callers(include_revoked=True)
             tokens = store.list_tokens(include_revoked=False)  # active only; log shows revocations
-            requests = store.list_requests(limit=25)
-            audit = store.recent_audit(limit=25)
+            requests = store.list_requests(limit=50)   # a wider window so the row filter has substance
+            audit = store.recent_audit(limit=50)
             caller_names = {c["id"]: c["name"] for c in callers}
         return HTMLResponse(views.dashboard_view(
             user=user, csrf=csrf_for(request),
@@ -563,19 +563,27 @@ def create_app() -> FastAPI:
         tools = {t["id"]: t for t in tools_list}
         if tool_id not in tools:
             return render_dashboard(request, user, error=f"no such tool: {tool_id}")
-        toolyard_ops.stop(tool_id)  # stop it if running (no-op otherwise)
         path = str(Path(tools[tool_id]["path"]))
-        if path not in {str(Path(p)) for p in config.tool_dirs}:
-            return render_dashboard(request, user, error=(
-                f"{tool_id} lives in the tools root — remove its folder from "
-                f"{config.tools_root} to delete it."))
-        config.tool_dirs = [p for p in config.tool_dirs if str(Path(p)) != path]
-        broker_config.save(config)
+        is_external = path in {str(Path(p)) for p in config.tool_dirs}
+        try:
+            if is_external:
+                # An operator-owned folder registered via tool_dirs: unregister it, leave the files.
+                toolyard_ops.stop(tool_id)  # stop if running (no-op otherwise)
+                config.tool_dirs = [p for p in config.tool_dirs if str(Path(p)) != path]
+                broker_config.save(config)
+                banner = (f"Unregistered tool <code>{views.esc(tool_id)}</code> (its files were "
+                          "left on disk). Restart the broker to apply.")
+            else:
+                # A TSR-managed tool under the tools root: stop it and delete its folder.
+                toolyard_ops.remove(tool_id, config.tools_root, config.tool_dirs)
+                banner = (f"Removed tool <code>{views.esc(tool_id)}</code> (deleted its folder). "
+                          "Restart the broker to apply.")
+        except (LookupError, ValueError) as exc:
+            return render_dashboard(request, user, error=str(exc))
         with open_store(config) as store:
-            operations.record_admin_event(store, user, "tool_removed", {"tool": tool_id, "dir": path})
-        return render_dashboard(request, user, banner=(
-            f"Unregistered tool {views.esc(tool_id)} (its files were left on disk). "
-            "Restart the broker to apply."))
+            operations.record_admin_event(store, user, "tool_removed",
+                                          {"tool": tool_id, "dir": path, "deleted": not is_external})
+        return render_dashboard(request, user, banner=banner)
 
     # --- add / update a tool from its source (folder or git) ------------------
     @app.get("/tools/add")

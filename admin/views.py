@@ -68,6 +68,9 @@ nav.appnav a.active{background:rgba(255,255,255,.16);color:#fff;}
 .tab-button:hover{color:var(--ink);}
 .tab-button.active{background:var(--panel);border-color:var(--line);color:var(--ink);margin-bottom:-1px;}
 .tab-panel.hidden{display:none;}
+.filterbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.filterbar input[type=search]{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}
+.filterbar select{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}
 """
 
 _JS = """
@@ -88,6 +91,26 @@ document.addEventListener('DOMContentLoaded', function(){
   if(!want || !document.querySelector('[data-tab-panel="'+want+'"]'))
     want=tabs[0].getAttribute('data-tab');
   showTab(want);
+});
+
+// Client-side row filter for the Requests + Audit tables: a text box (matches the row text —
+// caller, tool.op, event, details) AND an optional outcome/status dropdown (matches data-key).
+function filterTable(tableId){
+  var box = document.querySelector('[data-filter-for="'+tableId+'"]');
+  var sel = document.querySelector('[data-filter-sel="'+tableId+'"]');
+  var q = (box ? box.value : '').toLowerCase();
+  var key = sel ? sel.value : '';
+  document.querySelectorAll('#'+tableId+' tbody tr[data-row]').forEach(function(tr){
+    var textOk = tr.textContent.toLowerCase().indexOf(q) >= 0;
+    var keyOk = !key || tr.getAttribute('data-key') === key;
+    tr.style.display = (textOk && keyOk) ? '' : 'none';
+  });
+}
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('[data-filter-for]').forEach(function(el){
+    el.addEventListener('input', function(){filterTable(el.getAttribute('data-filter-for'));});});
+  document.querySelectorAll('[data-filter-sel]').forEach(function(el){
+    el.addEventListener('change', function(){filterTable(el.getAttribute('data-filter-sel'));});});
 });
 """
 
@@ -397,9 +420,19 @@ def _tokens_section(tokens, csrf: str) -> str:
             f"<tbody>{rows}</tbody></table></section>")
 
 
+def _filterbar(table_id: str, placeholder: str, key_label: str, keys) -> str:
+    """A text filter (matches the row text) + an optional dropdown (matches each row's data-key),
+    wired to filterTable() in the page JS. ``keys`` are the distinct outcomes/statuses present."""
+    options = "".join(f"<option value='{esc(k)}'>{esc(k)}</option>" for k in keys)
+    return ("<div class='filterbar'>"
+            f"<input type='search' data-filter-for='{table_id}' placeholder='{esc(placeholder)}'>"
+            f"<select data-filter-sel='{table_id}'><option value=''>{esc(key_label)}</option>"
+            f"{options}</select></div>")
+
+
 def _requests_section(requests, caller_names) -> str:
     rows = "".join(
-        "<tr>"
+        f"<tr data-row data-key=\"{esc(r['status'])}\">"
         f"<td>{esc(r['id'])}</td>"
         f"<td>{esc(caller_names.get(r['caller_id'], r['caller_id']))}</td>"
         f"<td>{esc(r['tool'])}.{esc(r['op'])}</td>"
@@ -407,14 +440,16 @@ def _requests_section(requests, caller_names) -> str:
         "</tr>"
         for r in requests
     ) or "<tr><td colspan='4' class='muted'>No requests yet.</td></tr>"
-    return ("<section><h2>Recent requests</h2>"
-            "<table><thead><tr><th>#</th><th>Caller</th><th>Operation</th><th>Status</th></tr></thead>"
+    bar = _filterbar("requests-table", "Filter by caller / tool…", "All statuses",
+                     sorted({r["status"] for r in requests}))
+    return ("<section><h2>Recent requests</h2>" + bar +
+            "<table id='requests-table'><thead><tr><th>#</th><th>Caller</th><th>Operation</th><th>Status</th></tr></thead>"
             f"<tbody>{rows}</tbody></table></section>")
 
 
 def _audit_section(events) -> str:
     rows = "".join(
-        "<tr>"
+        f"<tr data-row data-key=\"{esc(e['outcome'])}\">"
         f"<td>{esc(e['component'])}.{esc(e['event_type'])}</td>"
         f"<td>{esc(e['outcome'])}</td>"
         f"<td>{esc(e['request_id'] if e['request_id'] is not None else '')}</td>"
@@ -422,8 +457,10 @@ def _audit_section(events) -> str:
         "</tr>"
         for e in events
     ) or "<tr><td colspan='4' class='muted'>No audit events yet.</td></tr>"
-    return ("<section><h2>Audit</h2>"
-            "<table><thead><tr><th>Event</th><th>Outcome</th><th>Req</th><th>Details</th></tr></thead>"
+    bar = _filterbar("audit-table", "Filter by caller / tool / event…", "All outcomes",
+                     sorted({e["outcome"] for e in events}))
+    return ("<section><h2>Audit</h2>" + bar +
+            "<table id='audit-table'><thead><tr><th>Event</th><th>Outcome</th><th>Req</th><th>Details</th></tr></thead>"
             f"<tbody>{rows}</tbody></table></section>")
 
 
@@ -506,13 +543,17 @@ def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str
                 "secret declarations are kept.')\">"
                 f"{_csrf_field(csrf)}<button type='submit' title='source: {origin}'>Update</button></form>"
             )
-        remove = ""
+        # An external (tool_dirs) tool is unregistered (files left on disk); a managed tool under
+        # the tools root is deleted. Show the action for both, with the matching verb + warning.
         if t.get("removable"):
-            remove = (
-                f"<form method='post' action='/tools/{esc(t['id'])}/remove' class='inline-form' "
-                "onsubmit=\"return confirm('Unregister this tool? Its files stay on disk.')\">"
-                f"{_csrf_field(csrf)}<button type='submit'>Remove</button></form>"
-            )
+            confirm, label = "Unregister this tool? Its files stay on disk.", "Unregister"
+        else:
+            confirm, label = "Remove this tool? This deletes its folder and cannot be undone.", "Remove"
+        remove = (
+            f"<form method='post' action='/tools/{esc(t['id'])}/remove' class='inline-form' "
+            f"onsubmit=\"return confirm('{confirm}')\">"
+            f"{_csrf_field(csrf)}<button type='submit'>{label}</button></form>"
+        )
         rows += (
             "<tr>"
             f"<td><strong>{esc(t['id'])}</strong></td>"
