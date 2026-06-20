@@ -22,6 +22,8 @@ from toolyard.config import load as load_tool
 from toolyard.runner import RunningTool, get_runner
 from toolyard.secrets import get_backend
 
+from . import settings
+
 
 def _all_defs(tools_root: str, tool_dirs=()) -> dict:
     """Every ToolDef keyed by id, from the tools root plus each explicit tool dir
@@ -68,10 +70,12 @@ def start(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend: 
     if tool_id in state:
         return  # already running
     secrets = get_backend(secrets_file=secrets_file).resolve(defs[tool_id])
-    # secret_backend=None -> the runner's write proxy reads $TOOLSTACK_SECRET_BACKEND,
-    # the same selector get_backend() just used.
+    # Pass the configured backend name to the runner's write proxy explicitly, rather than
+    # leaving it to re-read $TOOLSTACK_SECRET_BACKEND in the child — same selector get_backend()
+    # just used, but no reliance on the env being set in the spawned process.
     running = get_runner(backend).start(
-        defs[tool_id], secrets, secret_backend=None, secrets_file=secrets_file)
+        defs[tool_id], secrets,
+        secret_backend=settings.secret_backend(), secrets_file=secrets_file)
     state[tool_id] = asdict(running)
     _save_state(state)
 

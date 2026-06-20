@@ -24,8 +24,15 @@ class BindHost(unittest.TestCase):
             os.environ.pop("TOOLSTACK_BROKER_HOST", None)
             self.assertEqual(_configured_host(), "127.0.0.1")
 
-    def test_env_override(self):
+    def test_nonloopback_fails_closed(self):
         with mock.patch.dict(os.environ, {"TOOLSTACK_BROKER_HOST": "0.0.0.0"}):
+            os.environ.pop("TOOLSTACK_BROKER_ALLOW_NONLOOPBACK", None)
+            with self.assertRaises(SystemExit):  # exposes the broker — refuse without the opt-in
+                _configured_host()
+
+    def test_nonloopback_allowed_with_optin(self):
+        with mock.patch.dict(os.environ, {"TOOLSTACK_BROKER_HOST": "0.0.0.0",
+                                          "TOOLSTACK_BROKER_ALLOW_NONLOOPBACK": "1"}):
             self.assertEqual(_configured_host(), "0.0.0.0")
 
     def test_build_server_honors_explicit_host(self):

@@ -9,6 +9,7 @@ written ``0600``. None of this is the broker's data (that is the SQLite file the
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import secrets
 from pathlib import Path
@@ -38,12 +39,43 @@ def admin_username() -> str:
     return os.environ.get("TOOLSTACK_ADMIN_USERNAME", "admin")
 
 
+def _is_loopback(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def allow_nonloopback() -> bool:
+    """Opt-in (``TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK=1``) required to bind the admin off loopback:
+    binding 0.0.0.0 / a LAN IP on a bare host exposes the panel to the network. The container
+    sets it, because there the boundary is Docker's publish-to-127.0.0.1 mapping instead."""
+    return os.environ.get("TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK", "").lower() in ("1", "true", "yes")
+
+
 def admin_host() -> str:
-    """The admin's bind host — 127.0.0.1 by default. Override with `TOOLSTACK_ADMIN_HOST`
-    ONLY inside a container (must bind 0.0.0.0 to be reachable), where the boundary moves
-    to Docker's publish mapping (publish to 127.0.0.1:<port> on the host only). Never set
-    it to 0.0.0.0 on a bare host. Mirrors the broker's `TOOLSTACK_BROKER_HOST`."""
-    return os.environ.get("TOOLSTACK_ADMIN_HOST") or "127.0.0.1"
+    """The admin's bind host — 127.0.0.1 by default. `TOOLSTACK_ADMIN_HOST` overrides it (only
+    sensible inside a container, which must bind 0.0.0.0 and relies on Docker's
+    publish-to-127.0.0.1 mapping as its boundary). A non-loopback host **fails closed** unless
+    `TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK=1` is also set. Mirrors the broker's `TOOLSTACK_BROKER_HOST`."""
+    host = os.environ.get("TOOLSTACK_ADMIN_HOST") or "127.0.0.1"
+    if not _is_loopback(host) and not allow_nonloopback():
+        raise SystemExit(
+            f"refusing to bind the admin to non-loopback host {host!r} without "
+            "TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK=1 — binding off 127.0.0.1 exposes the "
+            "unauthenticated-by-network panel; set it only behind a tunnel/proxy you trust "
+            "(and set TOOLSTACK_ADMIN_SECURE_COOKIE=1 there).")
+    return host
+
+
+def cookie_secure() -> bool:
+    """Mark the session cookie Secure (the browser sends it only over https). Off by default —
+    loopback and the container's http-behind-publish both serve plain http. Set
+    ``TOOLSTACK_ADMIN_SECURE_COOKIE=1`` when the panel is reached over TLS (the recommended
+    remote setup) so the session cookie can't leak over a plaintext hop."""
+    return os.environ.get("TOOLSTACK_ADMIN_SECURE_COOKIE", "").lower() in ("1", "true", "yes")
 
 
 def session_ttl_seconds() -> int:

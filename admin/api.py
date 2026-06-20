@@ -31,6 +31,25 @@ _BROKER_EVENTS = {"start": "broker_started", "stop": "broker_stopped", "restart"
 
 log = logging.getLogger(__name__)
 
+
+def client_ip(request: Request) -> str:
+    return request.client.host if request.client else "?"
+
+
+def audit_login_failure(ip: str, username: str) -> None:
+    """Record a denied ``admin.login_failed`` audit event — IP + attempted username, NEVER the
+    submitted password. Best-effort (auditing must not change the login response); the login
+    throttle bounds how many of these an attacker can drive. Shared by /login and /api/login."""
+    try:
+        with open_store(broker_config.load()) as store:
+            # Cap the attacker-controlled username: the login surface is unauthenticated and the
+            # request body is uncapped, so an unbounded username would be a disk-write amplifier.
+            operations.record_admin_denied(store, "login_failed",
+                                           {"ip": ip, "username": username[:256]})
+    except Exception as exc:
+        log.warning("could not audit login failure from %s: %s", ip, exc)
+
+
 def _rows(rows) -> list[dict]:
     """sqlite3.Row list -> JSON-serializable dicts."""
     return [dict(r) for r in rows]
@@ -55,9 +74,10 @@ async def _json_object(request: Request) -> dict:
     return body
 
 
-def add_api_routes(app: FastAPI, secret: str) -> None:
+def add_api_routes(app: FastAPI, secret: str, guard) -> None:
     """Register the ``/api/*`` JSON routes on the admin app. ``secret`` is the session-signing
-    secret (same one the cookie uses), so a token minted here is interchangeable with the panel's."""
+    secret (same one the cookie uses), so a token minted here is interchangeable with the panel's.
+    ``guard`` is the shared :class:`loginguard.LoginGuard` so /api/login and /login throttle as one."""
 
     def require_user(request: Request) -> str:
         authz = request.headers.get("authorization", "")
@@ -69,13 +89,21 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
 
     @app.post("/api/login")
     async def api_login(request: Request):
+        ip = client_ip(request)
+        wait = guard.retry_after(ip)
+        if wait > 0:  # locked out — reject before checking the password
+            raise HTTPException(status_code=429, detail="too many failed attempts",
+                                headers={"Retry-After": str(int(wait) + 1)})
         data = await _json_object(request)
         username = data.get("username") or settings.admin_username()
         password = data.get("password", "")
         stored = settings.read_password_hash()
         if username != settings.admin_username() or not stored or not auth.verify_password(password, stored):
+            guard.record_failure(ip)
+            audit_login_failure(ip, username)
             # same fail-closed message for bad user OR bad password — don't reveal which
             raise HTTPException(status_code=401, detail="invalid credentials")
+        guard.record_success(ip)
         token = auth.sign_session(username, secret, settings.session_ttl_seconds())
         return {"token": token, "username": username}
 
@@ -89,11 +117,13 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
             raise HTTPException(status_code=400, detail=f"unknown broker action: {action}")
         config = broker_config.load()
         try:
-            supervisor.stop() if action == "stop" else getattr(supervisor, action)(config)
+            result = supervisor.stop() if action == "stop" else getattr(supervisor, action)(config)
         except Exception as exc:  # a failed spawn is a 502, not a 500
             raise HTTPException(status_code=502, detail=f"broker {action} failed: {exc}")
         with open_store(config) as store:
             operations.record_admin_event(store, user, _BROKER_EVENTS[action], {})
+        if isinstance(result, dict) and result.get("error"):  # started but never went healthy
+            raise HTTPException(status_code=502, detail=f"broker {action}: {result['error']}")
         return supervisor.status()
 
     # --- callers / policy / tokens -------------------------------------------
@@ -470,6 +500,10 @@ def add_api_routes(app: FastAPI, secret: str) -> None:
             rate_limit=rate_limit,
             tool_dirs=current.tool_dirs,
         )
+        try:
+            broker_config.validate_nod_url(updated.nod_url)  # SSRF guard (carries the nod token)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         broker_config.save(updated)  # the operator restarts the broker to apply (like the HTML panel)
         return updated.masked()
 

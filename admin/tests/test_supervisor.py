@@ -74,3 +74,16 @@ class Supervisor(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IsBrokerIdentity(unittest.TestCase):
+    """_is_broker gates the kill path: only a process whose argv names broker.server is ours."""
+
+    def test_non_broker_pid_is_rejected(self):
+        from admin import supervisor
+        # the test runner is `python -m unittest …`, not `-m broker.server`
+        self.assertFalse(supervisor._is_broker(os.getpid()))
+
+    def test_nonexistent_pid_is_rejected(self):
+        from admin import supervisor
+        self.assertFalse(supervisor._is_broker(2_000_000_000))
