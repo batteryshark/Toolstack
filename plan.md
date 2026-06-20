@@ -1,8 +1,8 @@
-# Toolstack — Project Plan
+# Toolstack — Component design
 
 The component-by-component architecture reference for the system — the module
 seams, the security invariants, and the per-component design. Read
-[PROJECT.md](PROJECT.md) for the nerve-center summary.
+[PROJECT.md](PROJECT.md) for the design notes and principles.
 
 **Architecture direction:** collapse the logical decomposition to
 *deployment reality*. The fine-grained ownership rules from the earlier 9-service
@@ -193,9 +193,6 @@ GET  /v1/requests/<id>                  # poll a request (owner only): status + 
 `caller_policies`, `action_requests`, `approvals`, `audit_events`. One file at
 `${XDG_STATE_HOME:-~/.local/state}/toolstack/broker/broker.sqlite3`.
 
-**Build checklist:** Phase-1 core → Phase-2 registry-read + forwarding → Phase-3
-approval modules → Phase-4 admin/CLI.
-
 **Tests (boundaries, not trivia):** unknown/expired/revoked token; default-deny;
 allow path; review path; tool-unreachable → 502; redaction of args in audit;
 registry never carries secret descriptors.
@@ -237,7 +234,7 @@ field = "API_KEY"
 ```
 
 **Secret resolution:** at start, the toolyard resolves each declared secret from a
-pluggable backend (Phase 2 ships a dev TOML `FileBackend`; SOPS/Infisical plug in
+pluggable backend (a dev TOML `FileBackend`; SOPS/Infisical plug in
 behind the same `resolve()` interface) and places the values where the tool reads
 them. Two runners: **process** (zero-infra; secrets in a private `0700` dir via
 `$TOOLSTACK_SECRETS_DIR`) and **docker** (secrets at `/run/secrets`, host port
@@ -251,7 +248,7 @@ the secret never appears in the broker); docker-runner e2e (opt-in).
 
 **Sound when:** a tool starts, reads its secret from its secrets dir, the broker
 forwards an approved call to it on `127.0.0.1:port`, and the broker never sees the
-secret. ✅ Done (process + docker backends).
+secret.
 
 ---
 
@@ -370,7 +367,7 @@ Deferred, not forgotten. Don't build these until a component actually needs them
 
 ## Related docs
 
-- [PROJECT.md](PROJECT.md) — nerve center and restart point.
+- [PROJECT.md](PROJECT.md) — design notes and principles.
 - [docs/component-decomposition.md](docs/component-decomposition.md) — physical
   diagram, broker internals, and trust boundaries.
 - [docs/message-contracts.md](docs/message-contracts.md) — boundary wire contracts,
