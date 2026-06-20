@@ -69,7 +69,7 @@ def _send(method: str, path: str, body=None):
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(_base() + path, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=_timeout()) as resp:
             return resp.status, json.loads(resp.read() or b"{}")
     except urllib.error.HTTPError as exc:
         try:
@@ -78,11 +78,23 @@ def _send(method: str, path: str, body=None):
             exc.close()
 
 
+def _timeout() -> float:
+    """Per-call broker timeout in seconds (default 30). Override with TOOLSTACK_CLIENT_TIMEOUT
+    for slow tools or links."""
+    try:
+        return float(os.environ.get("TOOLSTACK_CLIENT_TIMEOUT", "30"))
+    except ValueError:
+        return 30.0
+
+
 def _request(method: str, path: str, body=None):
     try:
         return _send(method, path, body)
     except urllib.error.URLError as exc:
-        print(f"cannot reach broker at {_base()}: {exc.reason}", file=sys.stderr)
+        # Name the error class too — a timeout vs a refused connection vs DNS failure all arrive
+        # as URLError subclasses, and the distinction matters when diagnosing.
+        print(f"cannot reach broker at {_base()}: {type(exc).__name__}: {exc.reason}",
+              file=sys.stderr)
         raise SystemExit(2)
 
 

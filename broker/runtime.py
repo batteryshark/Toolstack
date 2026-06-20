@@ -118,7 +118,16 @@ class HttpRuntime:
     streamable-HTTP mcp, rest passthrough); the constructor and ``execute`` signature are
     shared, dispatched on ``ToolOp.type``."""
 
-    def __init__(self, timeout: float = 30.0, tool_secret=_env_tool_secret) -> None:
+    def __init__(self, timeout: float | None = None, tool_secret=_env_tool_secret) -> None:
+        # Per-call cap on a tool forward (default 30s, override TOOLSTACK_TOOL_TIMEOUT). The
+        # broker serves requests serially (single-threaded HTTPServer — see broker/server.py),
+        # so one slow tool ties up the whole broker for this window; tune it down for a fleet of
+        # fast tools, or up for a deliberately slow one.
+        if timeout is None:
+            try:
+                timeout = float(os.environ.get("TOOLSTACK_TOOL_TIMEOUT", "30"))
+            except ValueError:
+                timeout = 30.0
         self._timeout = timeout
         self._tool_secret = tool_secret
 

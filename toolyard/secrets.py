@@ -469,6 +469,8 @@ class InfisicalBackend:
     def _post(self, path: str, headers: dict[str, str], body: dict) -> dict:
         return self._request("POST", f"{self.host}{path}", headers, body)
 
+    _RETRIES = 3  # total attempts for a transient (429 / 5xx / network) Infisical failure
+
     def _request(self, method: str, url: str, headers: dict[str, str], body: dict | None) -> dict:
         data = None
         headers = dict(headers)
@@ -476,14 +478,26 @@ class InfisicalBackend:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            code = exc.code
-            exc.close()  # release the response; otherwise it leaks (ResourceWarning)
-            raise RuntimeError(
-                f"Infisical {method} {urllib.parse.urlparse(url).path}: HTTP {code}") from exc
+        path = urllib.parse.urlparse(url).path
+        transient: RuntimeError | None = None
+        for attempt in range(self._RETRIES):
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:  # a subclass of URLError — catch it first
+                code = exc.code
+                exc.close()  # release the response; otherwise it leaks (ResourceWarning)
+                if code in (401, 403):
+                    raise RuntimeError(f"Infisical {method} {path}: HTTP {code} — auth failed "
+                                       "(check the machine-identity credentials)") from exc
+                if code != 429 and code < 500:
+                    raise RuntimeError(f"Infisical {method} {path}: HTTP {code}") from exc
+                transient = RuntimeError(f"Infisical {method} {path}: HTTP {code} (transient)")
+            except urllib.error.URLError as exc:  # network/timeout — also transient
+                transient = RuntimeError(f"Infisical {method} {path}: {exc.reason} (network)")
+            if attempt < self._RETRIES - 1:
+                time.sleep(0.25 * (2 ** attempt))  # 0.25s, 0.5s backoff before the retry
+        raise transient  # exhausted retries on a transient error
 
 
 def get_backend(name: str | None = None, *, secrets_file: str | Path | None = None):

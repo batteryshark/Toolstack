@@ -147,6 +147,12 @@ def build_server(
         approval_ttl=approval_ttl,
         rate_limiter=RateLimiter(rate_limit),
     )
+    # Single-threaded HTTPServer: the broker serves one request at a time. That is intentional
+    # for 1.0 — it keeps the SQLite store, rate limiter, and audit trail free of cross-request
+    # races without locking, and the workload (one operator's agents, human-gated approvals) is
+    # low-QPS. The cost is that a slow tool forward blocks the next request for up to the
+    # per-call timeout (TOOLSTACK_TOOL_TIMEOUT; see broker/runtime.py). Revisit with a
+    # ThreadingHTTPServer + per-connection store handles if real concurrency is ever needed.
     server = HTTPServer((bind_host, bind_port), _Handler)
     server.ctx = ctx  # type: ignore[attr-defined]
     return server

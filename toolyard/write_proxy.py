@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import socketserver
 from pathlib import Path
@@ -31,6 +32,8 @@ from .config import ToolDef, load
 from .secrets import get_backend, writable_spec
 
 _PREFIX = "/v1/secrets/"
+
+log = logging.getLogger(__name__)
 
 
 def _handler(tool_def: ToolDef, backend):
@@ -71,13 +74,19 @@ def _handler(tool_def: ToolDef, backend):
             try:
                 writable_spec(tool_def, name)  # allowlist check (raises if not allowed)
             except PermissionError:
+                log.warning("write denied for %s.%s: secret is not writable", tool_def.id, name)
                 return self._reply(403, {"error": "not_writable"})
             except KeyError:
+                log.warning("write rejected for %s: unknown secret %r", tool_def.id, name)
                 return self._reply(404, {"error": "unknown_secret"})
             try:
                 backend.update(tool_def, name, value)
             except Exception as exc:
+                # The secret VALUE is never logged — only the failure reason.
+                log.error("write failed for %s.%s: %s: %s", tool_def.id, name,
+                          type(exc).__name__, exc)
                 return self._reply(502, {"error": f"backend_update_failed: {exc}"})
+            log.info("wrote secret %s.%s via the write-proxy", tool_def.id, name)
             self._reply(200, {"ok": True, "name": name})
 
         def _reply(self, status: int, obj: dict) -> None:
@@ -102,7 +111,12 @@ def serve(socket_path: str | Path, tool_def: ToolDef, backend) -> socketserver.U
     if path.exists():
         path.unlink()
     server = socketserver.ThreadingUnixStreamServer(str(path), _handler(tool_def, backend))
-    os.chmod(path, 0o666)  # the container user (non-root) must be able to connect
+    # 0666 so the bind-mounted container user (a different uid than this proxy) can connect.
+    # This is a LOCAL-TRUST boundary, deliberately: the socket sits in a private 0711 dir under
+    # the runner's temp tree (not world-listable), and the whole host is operator-trusted. The
+    # most a local user who already knew the path could do is set THIS tool's own writable
+    # secret via its declared allowlist — never read a secret, never reach another tool.
+    os.chmod(path, 0o666)
     return server
 
 

@@ -14,6 +14,7 @@ never rendered back to the browser (see :meth:`masked`).
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 import socket
 import tomllib
@@ -24,6 +25,8 @@ from urllib.parse import urlparse
 from broker.store import default_db_path
 
 from . import settings
+
+log = logging.getLogger(__name__)
 
 
 def validate_nod_url(url: str) -> None:
@@ -134,7 +137,24 @@ def load() -> BrokerRunConfig:
         fields = BrokerRunConfig.__dataclass_fields__
         cfg = BrokerRunConfig(**{k: v for k, v in data.items() if k in fields})
     cfg.db_path = os.path.abspath(os.path.expanduser(cfg.db_path))
+    _warn_if_suspect(cfg)
     return cfg
+
+
+def _warn_if_suspect(cfg: BrokerRunConfig) -> None:
+    """Log (don't raise) on a hand-edited broker.toml that bypassed the save-path validation —
+    surfaces a misconfig without bricking load() (every code path calls it, incl. the page that
+    would let the operator fix it)."""
+    if not 1 <= cfg.port <= 65535:
+        log.warning("broker config: port %r is out of range 1..65535", cfg.port)
+    if cfg.approval_ttl < 1:
+        log.warning("broker config: approval_ttl %r is < 1", cfg.approval_ttl)
+    if cfg.rate_limit < 0:
+        log.warning("broker config: rate_limit %r is < 0", cfg.rate_limit)
+    try:
+        validate_nod_url(cfg.nod_url)
+    except ValueError as exc:
+        log.warning("broker config: nod_url is invalid (%s)", exc)
 
 
 def save(config: BrokerRunConfig) -> None:

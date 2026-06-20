@@ -303,10 +303,15 @@ class DockerRunner:
 
     def stop(self, running: RunningTool) -> None:
         try:
-            subprocess.run(["docker", "rm", "-f", running.handle],
-                           capture_output=True, timeout=_DOCKER_RM_TIMEOUT)
+            r = subprocess.run(["docker", "rm", "-f", running.handle],
+                               capture_output=True, text=True, timeout=_DOCKER_RM_TIMEOUT)
+            if r.returncode != 0:
+                # The caller clears the state record after stop(); surface the leftover so an
+                # operator can `docker rm` it (the next start's `rm -f` also clears it by name).
+                log.warning("docker rm %s failed on stop (rc=%s): %s — container may still exist",
+                            running.handle, r.returncode, (r.stderr or "").strip())
         except subprocess.TimeoutExpired:
-            log.warning("docker rm %s timed out on stop", running.handle)
+            log.warning("docker rm %s timed out on stop — container may still exist", running.handle)
         _stop_proxy(running)
         shutil.rmtree(running.workdir, ignore_errors=True)
         log.info("stopped tool %s (container %s)", running.tool_id, running.handle)
