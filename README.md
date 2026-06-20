@@ -7,8 +7,9 @@
 A brokered, action-without-access tool layer for agents: the agent can *ask*, the
 broker *decides*, tools *execute*, and secrets stay with the tools.
 
-(`tsr` is the repository name; **Toolstack** is the product — the package, the `toolstack` /
-`brokerctl` / `toolyard` CLIs, and the `TOOLSTACK_*` env vars.)
+(**Toolstack** is the product — the package, the `toolstack` / `brokerctl` / `toolyard` CLIs,
+and the `TOOLSTACK_*` env vars. Some docs still carry the old **TSR** / "Toolstack Rebuild"
+working name from the from-scratch rebuild.)
 
 Start with **[docs/walkthrough.md](docs/walkthrough.md)** — the review walkthrough
 (what it is, how it runs, the security properties). [plan.md](plan.md) is the
