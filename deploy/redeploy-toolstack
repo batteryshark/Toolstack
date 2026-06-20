@@ -62,7 +62,7 @@ fi
 # Resolve the broker's DB path + port from the saved run-config (using the XDG paths
 # loaded above), so the pre-restart snapshot and the post-restart health-gate target
 # the right SQLite file and ports. Best-effort: a fresh box may have no config yet.
-# Admin panel port: parse it from the unit's ExecStart (--port N), default 8780 — the same
+# Admin panel port: parse it from the unit's ExecStart (--port N), default 8780; the same
 # "repo template tracks the installed unit" assumption as the Environment= parse above (the
 # admin's `serve` reads the port only from --port, so this is the single source of truth).
 ADMIN_PORT=8780
@@ -91,7 +91,7 @@ http_gate() {
     if [[ "$code" =~ ^[23] ]]; then echo "  ✓ $name ($code)"; return 0; fi
     sleep 1
   done
-  echo "  ✗ $name did not come up (last: ${code:-no response} — $url)" >&2
+  echo "  ✗ $name did not come up (last: ${code:-no response} at $url)" >&2
   return 1
 }
 
@@ -123,7 +123,7 @@ src = sqlite3.connect(str(db))
 try:
     dst = sqlite3.connect(str(dest))
     try:
-        src.backup(dst)   # online, consistent copy — safe while the broker is running
+        src.backup(dst)   # online, consistent copy, safe while the broker is running
     finally:
         dst.close()
 finally:
@@ -152,7 +152,7 @@ PY
   fi
   http_gate "http://127.0.0.1:$ADMIN_PORT/login" "admin panel" || gate_ok=0
   if [[ "$gate_ok" -ne 1 ]]; then
-    echo "Stack is not healthy after restart — NOT restarting tools." >&2
+    echo "Stack is not healthy after restart: NOT restarting tools." >&2
     echo "Inspect: journalctl -u $SERVICE_NAME -n 50 --no-pager" >&2
     exit 1
   fi

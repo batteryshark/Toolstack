@@ -2,7 +2,7 @@
 import PackageDescription
 
 // Toolstack native operator app (macOS). `ToolstackKit` is the testable core (API client +
-// models — Foundation only, no SwiftUI), so `swift test` runs headlessly. `ToolstackApp` is the
+// models, Foundation only, no SwiftUI), so `swift test` runs headlessly. `ToolstackApp` is the
 // SwiftUI window. Open this package in Xcode (File ▸ Open ▸ macapp/Package.swift) and run the
 // "ToolstackApp" target, or `swift run ToolstackApp`. See README.md.
 let package = Package(

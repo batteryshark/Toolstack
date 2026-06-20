@@ -1,13 +1,13 @@
 """Author and edit a tool's ``toolyard.toml`` from the panel.
 
-Per the chosen scope this writes the **manifest only** — the operator supplies the
+Per the chosen scope this writes the **manifest only**: the operator supplies the
 tool's code (a process ``command`` / ``app.py``) or a Docker ``image``. The form
 sends a normalized tool definition (assembled by the editor's JS into one JSON
 field, so there is no hand-typed TOML and no quoting risk); this module validates
 it, serializes idiomatic TOML, and reads it back for editing.
 
 Secret **declarations** (name + backend field) are authored here; secret **values**
-are not — those stay in the on-disk secrets file, off the control plane.
+are not; those stay in the on-disk secrets file, off the control plane.
 """
 
 from __future__ import annotations
@@ -17,13 +17,13 @@ import re
 import tomllib
 from pathlib import Path
 
-# The risk taxonomy: read / write / destructive. (One vocabulary — no low/medium/high.)
+# The risk taxonomy: read / write / destructive. (One vocabulary, no low/medium/high.)
 RISK_CHOICES = ("read", "write", "destructive")
 RISKS = RISK_CHOICES
 ARG_TYPES = ("string", "number", "integer", "boolean", "object", "array")
 # Tool transports the panel can author. "api" POSTs /v1/actions/<op>; "mcp" is a
 # streamable-HTTP MCP server the broker calls via tools/call; "rest" is a verb-as-op
-# passthrough. All are served on a port, so the entrypoint form is identical — only the
+# passthrough. All are served on a port, so the entrypoint form is identical; only the
 # `type` (and, for rest, the op shape) differs.
 TOOL_TYPES = ("api", "mcp", "rest")
 
@@ -141,7 +141,7 @@ def validate(data: dict) -> list[str]:
         errors.append("id must be at most 64 characters")
     if data["type"] not in TOOL_TYPES:
         errors.append(f'type must be one of {", ".join(TOOL_TYPES)}')
-    # An entrypoint may be a process command, a docker image, or neither — a docker tool
+    # An entrypoint may be a process command, a docker image, or neither: a docker tool
     # that builds the Dockerfile in its own directory. Since that last case depends on the
     # directory (which validate can't see), write() enforces the "must have *some*
     # entrypoint" rule where it has the path.
@@ -158,7 +158,7 @@ def validate(data: dict) -> list[str]:
             errors.append(f"duplicate operation '{o['name']}'")
         seen.add(o["name"])
         # For a rest tool the op must be one of the HTTP verbs (normalize uppercases it and
-        # derives the risk, so risk is always valid here — only the verb itself can be wrong).
+        # derives the risk, so risk is always valid here; only the verb itself can be wrong).
         if is_rest and o["name"] not in REST_VERBS:
             errors.append(f"rest op '{o['name']}' must be an HTTP verb ({', '.join(REST_VERBS)})")
         if o["risk"] not in RISKS:
@@ -196,7 +196,7 @@ def _arg_inline(arg: dict) -> str:
 
 
 def entrypoint_error(data: dict, dir_path: str | Path, runner: str | None = None) -> str | None:
-    """Whether the tool has a usable entrypoint for the active toolyard runner — the one
+    """Whether the tool has a usable entrypoint for the active toolyard runner: the one
     validity rule that depends on the directory (and on which runner will start the tool).
     Returns an error string or None.
 

@@ -1,4 +1,4 @@
-# Single source of truth for the echo-mcp tool — a streamable-HTTP MCP server.
+# Single source of truth for the echo-mcp tool: a streamable-HTTP MCP server.
 # The broker reads only the non-secret fields (id, type, operations, port) and calls
 # this tool over MCP (initialize + tools/call) instead of POST /v1/actions/<op>.
 # The toolyard additionally reads [entrypoint] and [[secrets]].
@@ -13,7 +13,7 @@ port = 4611
 # production (docker runner): build the Dockerfile here, or set an image:
 # image = "toolstack-echo-mcp"
 
-# Operations are declared exactly like an api tool — they ARE the policy/approval unit.
+# Operations are declared exactly like an api tool; they ARE the policy/approval unit.
 # For an mcp tool each op name is also the MCP tool name the broker invokes via tools/call.
 # 'risk' is descriptive discovery metadata; the per-caller POLICY decides approval.
 

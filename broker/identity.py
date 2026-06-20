@@ -41,7 +41,7 @@ def hash_token(token: str) -> str:
 
 def token_fingerprint(authorization_header: str | None) -> str | None:
     """A short, non-reversible fingerprint of the presented bearer (first 12 hex of its
-    SHA-256), or None if no bearer is present. For audit only — it lets repeated use of
+    SHA-256), or None if no bearer is present. For audit only; it lets repeated use of
     the same credential (valid or not) be correlated without ever logging the token."""
     token = bearer_token(authorization_header)
     return hash_token(token)[:12] if token else None

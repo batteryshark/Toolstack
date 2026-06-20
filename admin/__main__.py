@@ -1,9 +1,9 @@
-"""``python3 -m admin`` — run the admin web app or set its login password.
+"""``python3 -m admin``: run the admin web app or set its login password.
 
     python3 -m admin set-password         # set/replace the admin login password
     python3 -m admin serve [--port 8780]  # serve on 127.0.0.1 (loopback only)
 
-The server refuses to start until a password has been set (fail closed — there
+The server refuses to start until a password has been set (fail closed: there
 are no default credentials). ``serve`` imports FastAPI/uvicorn lazily, so
 ``set-password`` works on a plain stdlib Python before the deps are installed.
 """
@@ -34,7 +34,7 @@ def _set_password(args) -> None:
 
 def _serve(args) -> None:
     if settings.read_password_hash() is None:
-        raise SystemExit("no admin password set — run: python3 -m admin set-password")
+        raise SystemExit("no admin password set; run: python3 -m admin set-password")
     from .server import create_app  # lazy: pulls in FastAPI/uvicorn
     import uvicorn
 

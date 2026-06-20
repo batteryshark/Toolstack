@@ -1,9 +1,9 @@
-"""Writable-secret proxy — the toolyard side of message-contracts §4.
+"""Writable-secret proxy: the toolyard side of message-contracts §4.
 
 A tool that refreshes a credential (e.g. an OAuth token) cannot reach the secret
 backend itself. Instead it `POST`s the new value to a Unix socket the toolyard
-mounts into the container at `/run/toolyard/secrets.sock`; this proxy — which runs
-on the host, holds the backend, and is never inside the container — enforces the
+mounts into the container at `/run/toolyard/secrets.sock`; this proxy (which runs
+on the host, holds the backend, and is never inside the container) enforces the
 tool's writable allowlist and patches exactly the declared `(vault, item, field)`.
 
 Wire shape (what the tool sends):
@@ -82,7 +82,7 @@ def _handler(tool_def: ToolDef, backend):
             try:
                 backend.update(tool_def, name, value)
             except Exception as exc:
-                # The secret VALUE is never logged — only the failure reason.
+                # The secret VALUE is never logged; only the failure reason.
                 log.error("write failed for %s.%s: %s: %s", tool_def.id, name,
                           type(exc).__name__, exc)
                 return self._reply(502, {"error": f"backend_update_failed: {exc}"})
@@ -115,7 +115,7 @@ def serve(socket_path: str | Path, tool_def: ToolDef, backend) -> socketserver.U
     # This is a LOCAL-TRUST boundary, deliberately: the socket sits in a private 0711 dir under
     # the runner's temp tree (not world-listable), and the whole host is operator-trusted. The
     # most a local user who already knew the path could do is set THIS tool's own writable
-    # secret via its declared allowlist — never read a secret, never reach another tool.
+    # secret via its declared allowlist; never read a secret, never reach another tool.
     os.chmod(path, 0o666)
     return server
 

@@ -5,11 +5,11 @@ same tools, over the same trust boundary, WITHOUT the client-side stdio adapter
 (`client/mcp_server.py`): it terminates JSON-RPC (MCP) frames at `POST /mcp`, applies
 the SAME policy / approval / audit as the REST `/v1/actions` path (it calls the same
 `request_lifecycle.submit` and emits the same terminal `request.*` event), and executes
-through the same REST runtime. Tools speak REST, so frames are *translated* here — not
+through the same REST runtime. Tools speak REST, so frames are *translated* here, not
 blindly forwarded to a tool. The agent's token authenticates the call exactly as for REST
 (the gateway authenticates before routing here).
 
-**Stateless and non-blocking, by design.** Each POST is one independent JSON-RPC call —
+**Stateless and non-blocking, by design.** Each POST is one independent JSON-RPC call:
 there is no MCP session id and no batching. A `tools/call` on a review op returns
 `pending_approval` + a request id immediately rather than holding the connection open:
 identical to the REST 202, and necessary because the broker is single-threaded (one
@@ -34,7 +34,7 @@ PROTOCOL_VERSION = "2024-11-05"
 _JSON_TYPES = {"string", "integer", "number", "boolean", "object", "array"}
 
 # Outcome statuses that make an MCP tools/call an error result. `pending_approval` is NOT
-# one of them — it is in-progress, not failed (mirrors the REST 202).
+# one of them; it is in-progress, not failed (mirrors the REST 202).
 _MCP_FAIL = {lifecycle.DENIED, lifecycle.FAILED, lifecycle.UNAVAILABLE, lifecycle.EXPIRED}
 
 
@@ -48,7 +48,7 @@ class _InvalidParams(Exception):
 
 class _RateLimited(Exception):
     """A tools/call over the per-caller limit. Surfaced as HTTP 429 (like the REST path),
-    so it is audited via the gateway's response_returned outcome map — not a JSON-RPC
+    so it is audited via the gateway's response_returned outcome map, not a JSON-RPC
     method error."""
 
 
@@ -70,13 +70,13 @@ def _input_schema(args: list) -> dict:
 
 
 def _with_reason(schema: dict) -> dict:
-    """Advertise the optional `_reason` justification on a review tool's input schema —
+    """Advertise the optional `_reason` justification on a review tool's input schema,
     the MCP analogue of the CLI's --reason. Stripped before the tool runs; shown to the
     human approver and audited (redacted)."""
     props = dict(schema.get("properties", {}))
     props["_reason"] = {
         "type": "string",
-        "description": ("Why you need this — shown to the human approver and recorded in "
+        "description": ("Why you need this, shown to the human approver and recorded in "
                         "the audit log. Recommended on review ops; not passed to the tool."),
     }
     return {**schema, "type": "object", "properties": props}
@@ -88,7 +88,7 @@ def _result(text: str, is_error: bool = False) -> dict:
 
 def _allowed(ctx, caller):
     """Yield (tool, op, effect) for every op this caller may use (allow/review); denied
-    ops are omitted — least privilege, identical to REST discovery."""
+    ops are omitted: least privilege, identical to REST discovery."""
     policy = ctx.store.policy_for(caller.id)
     for op in ctx.registry.list_ops():
         effect = policy_rules.decide(policy, op["tool"], op["op"])
@@ -116,7 +116,7 @@ def _registered_ops(ctx):
 def _resolve_name(ctx, name: str):
     """MCP tool name (``tool__op``) -> (tool, op). An exact match against the *registry*
     (not the caller's policy) disambiguates a ``__`` inside a tool/op name AND lets a
-    policy-denied op still resolve — so the call reaches ``submit``, which audits the denial.
+    policy-denied op still resolve, so the call reaches ``submit``, which audits the denial.
     A name with no registry match falls back to a best-effort split, so a genuinely unknown
     op is still submitted (and audited as ``registry.tool_lookup_failed``). An unparseable
     name (no ``__``) -> (None, None)."""
@@ -143,16 +143,16 @@ def _call_tool(ctx, caller, correlation_id, params) -> dict:
     name = params.get("name", "")
 
     # Rate-limit every tools/call attempt up front, exactly as REST does for POST
-    # /v1/actions — before name resolution, so a flood of unknown names is throttled too.
+    # /v1/actions, before name resolution, so a flood of unknown names is throttled too.
     if ctx.rate_limiter is not None and not ctx.rate_limiter.allow(caller.id):
         raise _RateLimited()
 
     tool, op = _resolve_name(ctx, name)
-    if tool is None:  # unparseable name — there is no tool.op to submit/audit
+    if tool is None:  # unparseable name: there is no tool.op to submit/audit
         return _result(f'unknown tool "{name}"', is_error=True)
 
     # `_reason` is adapter metadata, not a tool argument: pull it out (never forwarded to
-    # the tool) and pass it as the broker's justification — rides to the approver, audited.
+    # the tool) and pass it as the broker's justification; rides to the approver, audited.
     args = dict(arguments)
     reason = args.pop("_reason", None)
     reason = reason if isinstance(reason, str) and reason.strip() else None
@@ -163,7 +163,7 @@ def _call_tool(ctx, caller, correlation_id, params) -> dict:
     _audit_request_terminal(ctx, outcome, correlation_id, tool, op)
 
     # Least privilege at the RESULT layer only: a denied or unknown op reads as "unknown
-    # tool" to the caller (never reveal an op they may not use) — but submit() already wrote
+    # tool" to the caller (never reveal an op they may not use), but submit() already wrote
     # the same denial/lookup audit REST does, so the probe stays queryable.
     if outcome.status in (lifecycle.DENIED, lifecycle.NOT_FOUND):
         return _result(f'unknown tool "{name}"', is_error=True)
@@ -192,7 +192,7 @@ def _error(mid, code: int, message: str) -> dict:
 
 
 def handle(body, ctx, caller, correlation_id) -> tuple[int, dict]:
-    """Handle one MCP JSON-RPC message posted to /mcp. Returns ``(http_status, body)`` —
+    """Handle one MCP JSON-RPC message posted to /mcp. Returns ``(http_status, body)``:
     the gateway uses the status for the response AND for the audit outcome word. Almost
     everything is HTTP 200 with a JSON-RPC envelope (results and JSON-RPC method errors
     alike, per the JSON-RPC-over-HTTP convention); the exception is a per-caller throttle,

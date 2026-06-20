@@ -1,11 +1,11 @@
 ---
 name: toolstack
-description: Call tools through the Toolstack broker. Use whenever you need to take an action that runs behind the broker (anything reachable as a <tool>.<op>) — discover what you can call, call it, and handle approval-gated operations. One generic client for all tools; tool schemas are fetched on demand to stay token-light.
+description: Call tools through the Toolstack broker. Use whenever you need to take an action that runs behind the broker (anything reachable as a <tool>.<op>): discover what you can call, call it, and handle approval-gated operations. One generic client for all tools; tool schemas are fetched on demand to stay token-light.
 ---
 
 # toolstack
 
-You reach tools only through the broker — never the tools directly. One CLI covers
+You reach tools only through the broker, never the tools directly. One CLI covers
 every tool. Schemas are fetched on demand, so don't pre-load tool docs.
 
 Config (already set in the environment): `TOOLSTACK_URL`, and `TOOLSTACK_TOKEN` or
@@ -19,13 +19,13 @@ Config (already set in the environment): `TOOLSTACK_URL`, and `TOOLSTACK_TOKEN` 
    toolstack tools                 # the ops you're allowed to call: tool.op  effect  risk  description
    toolstack describe media.skip   # that op's args, on demand
    ```
-2. **Call** it. Pass the JSON arguments object **shell-safely** — via a quoted
+2. **Call** it. Pass the JSON arguments object **shell-safely**: via a quoted
    heredoc (handles quotes, newlines, `$`, backticks with no escaping) or
    `--args-file`. Use inline JSON only for trivial args.
    ```bash
    toolstack call media.play <<'JSON'
    {"note": "any 'quotes', \"quotes\", $vars, and
-   multi-line text — passed literally, no escaping"}
+   multi-line text, passed literally, no escaping"}
    JSON
 
    toolstack call media.play --args-file args.json   # large/awkward data (write the file first)
@@ -39,32 +39,32 @@ Config (already set in the environment): `TOOLSTACK_URL`, and `TOOLSTACK_TOKEN` 
    toolstack wait N
    ```
    Resolves to `ok` (with `result`), `denied`, or `expired`. On a decision it includes
-   the human's `approver` and `note` — read the note.
+   the human's `approver` and `note`, read the note.
 
-## Comments / reasons — be sparse and reactive
+## Comments / reasons: be sparse and reactive
 
 A `--reason` is shown to the human who approves; it is NOT for routine calls.
 
-- **Allowed ops:** never pass `--reason` (no human is reading it — wasted tokens).
+- **Allowed ops:** never pass `--reason` (no human is reading it: wasted tokens).
 - **Review ops:** pass one short `--reason` explaining the intent.
 - **After a rejection:** read the approver's `note`. If you retry, pass a `--reason`
   that *responds to that note*. Retry at most once; if denied again, stop and report
   the note to the user. Do not resubmit repeatedly with new comments.
 
 Using the **MCP server** (`python3 -m client.mcp_server`) instead of the CLI? Supply the
-justification as a `_reason` string in a review op's call `arguments` — it's advertised in
+justification as a `_reason` string in a review op's call `arguments`; it's advertised in
 that op's input schema, shown to the approver, and stripped before the tool runs (it's not
-a tool argument). Same guidance: review ops only. (`_reason` is a reserved argument name —
+a tool argument). Same guidance: review ops only. (`_reason` is a reserved argument name:
 a tool must not declare an arg called that.)
 
 ## Rules
 
 - Don't call raw broker endpoints; use this CLI.
 - For any argument value with quotes, newlines, or special characters, use the
-  heredoc or `--args-file` — never hand-build a quoted JSON string on the command line.
-- Don't guess args — `describe` first if unsure.
+  heredoc or `--args-file`, never hand-build a quoted JSON string on the command line.
+- Don't guess args; `describe` first if unsure.
 - A non-zero exit means denied/expired/failed/unavailable; read the JSON for why.
-- `429` means you're calling too fast — slow down, don't loop.
+- `429` means you're calling too fast; slow down, don't loop.
 
 ## Per-domain skills (optional)
 

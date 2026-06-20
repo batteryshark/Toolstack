@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// Run as a bare SwiftPM executable (`swift run`), the process starts as a non-activating
 /// (accessory) app, so its window can't take focus or come to the front. Force it to be a
-/// normal foreground app on launch — Dock icon, focusable, ⌘-Tab. (A real `.app` bundle in
+/// normal foreground app on launch: Dock icon, focusable, ⌘-Tab. (A real `.app` bundle in
 /// T-031 makes this implicit; this keeps `swift run` usable now.)
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
-    // Keep running when the window closes — the app lives on in the menu bar (systray) and is
+    // Keep running when the window closes; the app lives on in the menu bar (systray) and is
     // reopened from there ("Open Toolstack Operator"). Quit explicitly from the menu bar or ⌘Q.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
@@ -77,8 +77,8 @@ struct MenuBarMenu: View {
 
     // Plain String (not a localized Text literal), so the port renders without a thousands separator.
     private var statusLine: String {
-        guard model.authenticated else { return "Toolstack Operator — not signed in" }
-        guard let broker = model.broker else { return "Broker: —" }
+        guard model.authenticated else { return "Toolstack Operator, not signed in" }
+        guard let broker = model.broker else { return "Broker: -" }
         return broker.running ? "Broker: running" + (broker.port.map { " :\($0)" } ?? "") : "Broker: stopped"
     }
 }
@@ -89,7 +89,7 @@ struct ContentView: View {
     var body: some View {
         Group {
             if model.restoring {
-                ProgressView("Connecting…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView("Connecting...").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.authenticated {
                 OperatorView()
             } else {
@@ -226,8 +226,8 @@ struct CallersPane: View {
                 TableColumn("") { caller in
                     if caller.isActive {
                         Menu {
-                            Button("Enabled tools…") { enablingTools = caller }
-                            Button("Edit policy…") { editing = caller }
+                            Button("Enabled tools...") { enablingTools = caller }
+                            Button("Edit policy...") { editing = caller }
                             Button("Rotate token") { Task { await model.rotateToken(caller: caller.name) } }
                             Divider()
                             Button("Revoke caller", role: .destructive) { revoking = caller }
@@ -260,8 +260,8 @@ struct CallersPane: View {
     }
 }
 
-/// A colored capsule for an operation's risk — read (blue) / write (orange) / destructive (red),
-/// matching the web admin's risk pills — so the level is skimmable at a glance in the tool list
+/// A colored capsule for an operation's risk: read (blue) / write (orange) / destructive (red),
+/// matching the web admin's risk pills, so the level is skimmable at a glance in the tool list
 /// and the policy editor.
 func riskBadge(_ risk: String) -> some View {
     let color: Color
@@ -305,14 +305,14 @@ struct ToolsPane: View {
                                 Text(tool.description).font(.callout)
                             }
                             Spacer()
-                            Button("Edit…") { editing = tool }.font(.caption)
+                            Button("Edit...") { editing = tool }.font(.caption)
                             Menu {
                                 if let source = tool.source {
                                     Button("Update from \(sourceKind(source))") {
                                         Task { await model.resyncTool(id: tool.id) }
                                     }
                                 }
-                                Button("Remove tool…", role: .destructive) { removingTool = tool }
+                                Button("Remove tool...", role: .destructive) { removingTool = tool }
                             } label: { Image(systemName: "ellipsis.circle") }
                                 .menuStyle(.borderlessButton).fixedSize()
                                 .help("Manage this tool")
@@ -331,7 +331,7 @@ struct ToolsPane: View {
                             Text("Secrets").font(.caption.bold()).foregroundStyle(.secondary)
                             Spacer()
                             if model.secretBackend?.name == "vault" && !tool.secrets.isEmpty {
-                                Button("Set values…") { managingSecrets = tool }.font(.caption)
+                                Button("Set values...") { managingSecrets = tool }.font(.caption)
                             }
                         }
                         if tool.secrets.isEmpty {
@@ -454,7 +454,7 @@ struct EditableRule: Identifiable {
 }
 
 /// Per-caller policy editor. For api/mcp tools it's an allow / review / deny picker per op.
-/// For a rest tool it edits PATH RULES: (verb, path-glob, effect) rows — most-specific wins,
+/// For a rest tool it edits PATH RULES: (verb, path-glob, effect) rows; most-specific wins,
 /// an unmatched path is denied, and an explicit deny carves a hole inside a broader allow.
 struct PolicyEditor: View {
     @EnvironmentObject var model: AppModel
@@ -470,7 +470,7 @@ struct PolicyEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Policy — \(caller)").font(.title2.bold())
+                Text("Policy: \(caller)").font(.title2.bold())
                 Spacer()
                 Button("Allow all") { setAll(.allow) }.disabled(!loaded || effects.isEmpty)
                 Button("Deny all") { setAll(.deny) }.disabled(!loaded || effects.isEmpty)
@@ -525,7 +525,7 @@ struct PolicyEditor: View {
     @ViewBuilder
     private func restEditor(_ tool: ToolInfo) -> some View {
         let verbs = tool.ops.map(\.op)   // the verbs this tool exposes
-        Text("Path rules — most specific wins; a path matching no rule is denied.")
+        Text("Path rules: most specific wins; a path matching no rule is denied.")
             .font(.caption).foregroundStyle(.secondary)
         ForEach(rulesBinding(tool.id)) { $rule in
             HStack(spacing: 6) {
@@ -620,7 +620,7 @@ struct EnabledToolsEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Enabled tools — \(caller)").font(.title2.bold())
+            Text("Enabled tools: \(caller)").font(.title2.bold())
             Text("Which tools this caller may use. The policy editor shows ops for these.")
                 .font(.caption).foregroundStyle(.secondary)
             if !loaded {
@@ -667,7 +667,7 @@ struct EnabledToolsEditor: View {
     }
 }
 
-/// Edit a tool's description and its secret DECLARATIONS (not values, and not its ops/entrypoint —
+/// Edit a tool's description and its secret DECLARATIONS (not values, and not its ops/entrypoint;
 /// those are authored on the filesystem and preserved server-side). Maps to `POST /api/tools/{id}`.
 struct ToolEditor: View {
     let tool: ToolInfo
@@ -685,7 +685,7 @@ struct ToolEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Edit tool — \(tool.id)").font(.title2.bold())
+            Text("Edit tool: \(tool.id)").font(.title2.bold())
             Form {
                 Section("Description") {
                     TextField("What this tool does", text: $description, axis: .vertical)
@@ -704,7 +704,7 @@ struct ToolEditor: View {
                 } header: {
                     Text("Secret declarations")
                 } footer: {
-                    Text("Declarations only — the file the tool reads (name) and the backend key (field). "
+                    Text("Declarations only: the file the tool reads (name) and the backend key (field). "
                          + "Values stay in the \(model.secretBackend?.name ?? "secret") backend. "
                          + "Saving rewrites toolyard.toml (operations are kept; comments are not).")
                         .font(.caption)
@@ -767,7 +767,7 @@ struct ToolEditor: View {
                               item: item.isEmpty ? nil : item)
         }
         await model.updateTool(id: tool.id, description: description, secrets: decls)
-        // Keep the sheet (and edits) open if the server rejected it, surfacing why inline — the
+        // Keep the sheet (and edits) open if the server rejected it, surfacing why inline; the
         // dashboard banner would be hidden behind this sheet.
         if model.error == nil { dismiss() } else { saveError = model.error }
     }
@@ -790,7 +790,7 @@ struct EditableSecret: Identifiable {
     init() { name = ""; field = ""; writable = false; vault = ""; item = "" }
 }
 
-/// Provision a tool's secret VALUES into the local vault. Values are write-only — typed into a
+/// Provision a tool's secret VALUES into the local vault. Values are write-only: typed into a
 /// SecureField, sent, and never shown back; the sheet only knows set/unset status per field.
 struct SecretValuesSheet: View {
     let tool: ToolInfo
@@ -803,8 +803,8 @@ struct SecretValuesSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Secret values — \(tool.id)").font(.title2.bold())
-            Text("Stored in the local encrypted vault. Values are write-only — they're saved, never "
+            Text("Secret values: \(tool.id)").font(.title2.bold())
+            Text("Stored in the local encrypted vault. Values are write-only: they're saved, never "
                  + "shown back. Restart the tool to pick up a change.")
                 .font(.caption).foregroundStyle(.secondary)
             if status == nil {
@@ -839,7 +839,7 @@ struct SecretValuesSheet: View {
                     .onSubmit { Task { await save(secret.field) } }
             }
             Spacer()
-            Button(saving == secret.field ? "Saving…" : "Save") { Task { await save(secret.field) } }
+            Button(saving == secret.field ? "Saving..." : "Save") { Task { await save(secret.field) } }
                 .disabled((entries[secret.field] ?? "").isEmpty || saving != nil)
         }.padding(.vertical, 3)
     }
@@ -865,7 +865,7 @@ struct SecretValuesSheet: View {
 }
 
 /// Add a tool by pointing at a folder that contains a toolyard.toml. The path is on the ADMIN's
-/// machine: for a local admin that's this Mac (use "Choose…"); for a remote/Docker admin, type a
+/// machine: for a local admin that's this Mac (use "Choose..."); for a remote/Docker admin, type a
 /// path it can see. The folder is copied into the broker's managed tools dir.
 struct AddToolSheet: View {
     enum Mode: String, CaseIterable, Identifiable {
@@ -886,7 +886,7 @@ struct AddToolSheet: View {
 
     var body: some View {
         if let source = authoringFor {
-            // The folder is code with no manifest — author one in place (the "Either" other half).
+            // The folder is code with no manifest; author one in place (the "Either" other half).
             ToolAuthoringForm(source: source, onCreated: { dismiss() }, onBack: { authoringFor = nil })
                 .environmentObject(model)
         } else {
@@ -922,18 +922,18 @@ struct AddToolSheet: View {
     }
 
     @ViewBuilder private var folderFields: some View {
-        Text("Point at a folder containing a toolyard.toml. The path is on the admin's machine — "
+        Text("Point at a folder containing a toolyard.toml. The path is on the admin's machine: "
              + "for a local admin that's this Mac; for a remote or Docker admin, a path it can see.")
             .font(.caption).foregroundStyle(.secondary)
         HStack {
             TextField("/path/to/tool-folder", text: $path).textFieldStyle(.roundedBorder)
-            Button("Choose…") { picking = true }
+            Button("Choose...") { picking = true }
         }
     }
 
     @ViewBuilder private var githubFields: some View {
         Label("Cloning runs third-party code when you later start the tool. Review it and grant "
-              + "callers access deliberately — nothing runs just from adding it.",
+              + "callers access deliberately; nothing runs just from adding it.",
               systemImage: "exclamationmark.shield")
             .font(.caption).foregroundStyle(.secondary)
         TextField("https://github.com/owner/repo", text: $repo).textFieldStyle(.roundedBorder)
@@ -983,9 +983,9 @@ struct EditableArg: Identifiable {
     var required = false
 }
 
-/// Author a tool's manifest for a folder of code that has no toolyard.toml — id, entrypoint,
+/// Author a tool's manifest for a folder of code that has no toolyard.toml: id, entrypoint,
 /// operations (+ args), and secret declarations. The server normalizes + validates, so it reports
-/// precise errors (bad id, port range, missing op, …) inline.
+/// precise errors (bad id, port range, missing op, ...) inline.
 struct ToolAuthoringForm: View {
     let source: String
     let onCreated: () -> Void
@@ -1014,7 +1014,7 @@ struct ToolAuthoringForm: View {
                 Spacer()
             }
             Text("Author a tool").font(.title2.bold())
-            Text("No toolyard.toml in \(source) — describe the tool. The folder is copied into the "
+            Text("No toolyard.toml in \(source). Describe the tool. The folder is copied into the "
                  + "broker's tools dir with the manifest you write here.")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(2)
             Form {
@@ -1026,7 +1026,7 @@ struct ToolAuthoringForm: View {
                     TextField("description (optional)", text: $description, axis: .vertical).lineLimit(1...3)
                 }
                 Section {
-                    TextField("command — e.g. python3 app.py", text: $command)
+                    TextField("command, e.g. python3 app.py", text: $command)
                     TextField("image (docker, optional)", text: $image)
                     TextField("port", text: $port)
                 } header: { Text("Entrypoint") } footer: {
@@ -1080,7 +1080,7 @@ struct ToolAuthoringForm: View {
                 if type == "rest" {
                     // op IS an HTTP verb; risk + args are derived server-side, so no risk/args UI
                     Picker("", selection: b.name) {
-                        Text("verb…").tag("")
+                        Text("verb...").tag("")
                         ForEach(restVerbs, id: \.self) { Text($0).tag($0) }
                     }.labelsHidden().frame(width: 120)
                     Spacer()
@@ -1229,7 +1229,7 @@ struct ActivityPane: View {
                 TableColumn("When") { Text(Self.when($0.at)) }.width(150)
                 TableColumn("Event") { Text(verbatim: "\($0.component).\($0.eventType)") }
                 TableColumn("Outcome") { e in Text(e.outcome).foregroundStyle(color(e.outcome)) }
-                TableColumn("Req") { Text(verbatim: $0.requestId.map { "\($0)" } ?? "—") }.width(50)
+                TableColumn("Req") { Text(verbatim: $0.requestId.map { "\($0)" } ?? "-") }.width(50)
                 TableColumn("Details") {
                     Text($0.details?.compact ?? "").font(.caption.monospaced()).foregroundStyle(.secondary)
                 }
@@ -1249,7 +1249,7 @@ struct ActivityPane: View {
         model.callers.first { $0.id == id }?.name ?? "#\(id)"
     }
 
-    // green = allowed/done, red = denied/failed, orange = pending — others neutral.
+    // green = allowed/done, red = denied/failed, orange = pending; others neutral.
     private func color(_ word: String) -> Color {
         switch word {
         case "completed", "allowed", "ok", "success": return .green
@@ -1267,7 +1267,7 @@ struct ActivityPane: View {
     }
 }
 
-/// Editable broker settings (broker.toml). The nod token is write-only — blank keeps the stored
+/// Editable broker settings (broker.toml). The nod token is write-only: blank keeps the stored
 /// one. Changes need a broker restart to take effect.
 struct ConfigPane: View {
     @EnvironmentObject var model: AppModel
@@ -1287,7 +1287,7 @@ struct ConfigPane: View {
             Section("Approval surface (nod)") {
                 TextField("nod URL", text: $nodURL).autocorrectionDisabled()
                 TextField("nod channel", text: $nodChannel).autocorrectionDisabled()
-                SecureField(nodTokenIsSet ? "nod token — set (blank keeps it)" : "nod token", text: $nodToken)
+                SecureField(nodTokenIsSet ? "nod token, set (blank keeps it)" : "nod token", text: $nodToken)
             }
             Section("Limits") {
                 TextField("Approval TTL (seconds)", text: $approvalTTL)

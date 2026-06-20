@@ -20,5 +20,5 @@ def redact(text, limit: int = _MAX) -> str | None:
         return None
     text = _SECRETISH.sub("[redacted]", str(text))
     if len(text) > limit:
-        text = text[:limit] + "…"
+        text = text[:limit] + "..."
     return text

@@ -1,11 +1,11 @@
-"""Drive the toolyard from the admin panel — list tools and start/stop/restart them.
+"""Drive the toolyard from the admin panel: list tools and start/stop/restart them.
 
 This reuses toolyard's own modules (``discover`` / ``load`` / ``get_runner`` /
 ``get_backend``) and, crucially, its **state file**, so the panel and
 ``python -m toolyard.cli`` stay in agreement about what is running. Tools come from
 two places: the tools root (``<root>/*/toolyard.toml``) and an explicit list of tool
 directories (``tool_dirs``) that the panel's tool editor can add anywhere on the
-server. Secret *values* come from the on-disk secrets file — the panel never handles
+server. Secret *values* come from the on-disk secrets file; the panel never handles
 them, keeping secrets off the control plane.
 """
 
@@ -72,7 +72,7 @@ def start(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend: 
         return  # already running
     secrets = get_backend(secrets_file=secrets_file).resolve(defs[tool_id])
     # Pass the configured backend name to the runner's write proxy explicitly, rather than
-    # leaving it to re-read $TOOLSTACK_SECRET_BACKEND in the child — same selector get_backend()
+    # leaving it to re-read $TOOLSTACK_SECRET_BACKEND in the child: same selector get_backend()
     # just used, but no reliance on the env being set in the spawned process.
     running = get_runner(backend).start(
         defs[tool_id], secrets,
@@ -100,7 +100,7 @@ def restart(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend
 def remove(tool_id: str, tools_root: str, tool_dirs=()) -> None:
     """Stop a tool if running, then delete its managed folder under ``tools_root``.
 
-    Only TSR-managed tools (those that live UNDER ``tools_root`` — the copy-into-managed-dir
+    Only TSR-managed tools (those that live UNDER ``tools_root``, the copy-into-managed-dir
     model) are deletable here. A tool referenced via an external ``tool_dirs`` entry is the
     operator's own folder, so it is left on disk (unregister it by editing ``tool_dirs``). The
     path comes from discovery (its id is validated at ingest), and the under-root check is a
@@ -112,7 +112,7 @@ def remove(tool_id: str, tools_root: str, tool_dirs=()) -> None:
     root = Path(tools_root).resolve() if tools_root else None
     if root is None or tool_path == root or not tool_path.is_relative_to(root):
         raise ValueError(
-            f"tool {tool_id!r} is not managed under the tools root — it was registered from an "
+            f"tool {tool_id!r} is not managed under the tools root; it was registered from an "
             "external directory; unregister it by removing that path from tool_dirs")
     stop(tool_id)  # kill any running process + drop its state record before deleting the code
     try:

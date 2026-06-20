@@ -1,4 +1,4 @@
-"""brokerctl — the operator CLI for the broker.
+"""brokerctl: the operator CLI for the broker.
 
 Manage callers, policies, and tokens; inspect requests and audit. The mutations
 themselves live in :mod:`broker.operations` (shared with the admin web app), so
@@ -42,7 +42,7 @@ def create_caller(args) -> None:
     finally:
         store.close()
     print(f"caller '{args.name}' created.")
-    print("token (shown once — store it now):")
+    print("token (shown once, store it now):")
     print(token)
 
 
@@ -99,7 +99,7 @@ def issue_token(args) -> None:
         raise SystemExit(str(exc))
     finally:
         store.close()
-    print("token (shown once — store it now):")
+    print("token (shown once, store it now):")
     print(token)
 
 
@@ -107,7 +107,7 @@ def list_tokens(args) -> None:
     store = _store(args)
     try:
         for t in store.list_tokens(include_revoked=args.include_revoked):
-            print(f"{t['token_hash'][:12]}…\t{t['caller']}\t{'revoked' if t['revoked_at'] else 'active'}")
+            print(f"{t['token_hash'][:12]}...\t{t['caller']}\t{'revoked' if t['revoked_at'] else 'active'}")
     finally:
         store.close()
 

@@ -9,7 +9,7 @@ import FoundationNetworking
 /// token is held here and (in the app) persisted to the Keychain via `TokenStore`.
 ///
 /// Injectable `baseURL` + `URLSession` so tests drive it through a stubbed `URLProtocol`
-/// (no real server, no real admin) — see ToolstackKitTests.
+/// (no real server, no real admin). See ToolstackKitTests.
 public actor ApiClient {
     private let baseURL: URL
     private let session: URLSession
@@ -78,7 +78,7 @@ public actor ApiClient {
         try await send("GET", "/api/config")
     }
 
-    /// Save broker settings. `nodToken` is sent only when non-nil/non-empty (write-only — an
+    /// Save broker settings. `nodToken` is sent only when non-nil/non-empty (write-only, an
     /// omitted token keeps the stored one).
     @discardableResult
     public func saveConfig(port: Int, toolsRoot: String, nodURL: String, nodChannel: String,
@@ -112,7 +112,7 @@ public actor ApiClient {
     }
 
     /// Edit a tool's description and secret DECLARATIONS (its ops/entrypoint are preserved
-    /// server-side). Secret *values* are never sent — these are declarations (name/field/…).
+    /// server-side). Secret *values* are never sent; these are declarations (name/field/...).
     @discardableResult
     public func updateTool(id: String, description: String,
                            secrets: [SecretDecl]) async throws -> ToolEdit {
@@ -134,7 +134,7 @@ public actor ApiClient {
     }
 
     /// Add a tool by cloning a git repo (optionally a `subdir` within it, at branch/tag `ref`) into
-    /// the managed tools dir. The clone is third-party code — copied in, not started. 422 if no manifest.
+    /// the managed tools dir. The clone is third-party code; copied in, not started. 422 if no manifest.
     @discardableResult
     public func addToolFromGitHub(repo: String, subdir: String = "",
                                   ref: String = "") async throws -> CreatedTool {
@@ -145,7 +145,7 @@ public actor ApiClient {
     }
 
     /// Add a tool by copying a folder of CODE (no toolyard.toml needed) and writing the authored
-    /// `manifest` (id/entrypoint/operations/secrets) into the copy — the "author it in-app" flow.
+    /// `manifest` (id/entrypoint/operations/secrets) into the copy: the "author it in-app" flow.
     @discardableResult
     public func addToolWithManifest(source: String, manifest: [String: Any]) async throws -> CreatedTool {
         try await send("POST", "/api/tools", body: ["source": source, "manifest": manifest])

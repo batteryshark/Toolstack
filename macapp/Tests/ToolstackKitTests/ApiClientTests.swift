@@ -277,7 +277,7 @@ final class ApiClientTests: XCTestCase {
 
     func testAddToolNoManifestMapsTo422() async throws {
         StubURLProtocol.handler = { _ in
-            (422, [:], Data(#"{"detail":"folder has no toolyard.toml — author one to add it"}"#.utf8))
+            (422, [:], Data(#"{"detail":"folder has no toolyard.toml. Author one to add it"}"#.utf8))
         }
         do {
             _ = try await makeClient(token: "t").addTool(source: "/src/codeonly")
@@ -344,7 +344,7 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testListToolsToleratesNullSource() async throws {
-        // a hand-authored tool has source:null (and an older admin omits it) — both decode to nil
+        // a hand-authored tool has source:null (and an older admin omits it); both decode to nil
         let json = #"{"tools":[{"id":"echo","type":"api","ops":[],"secrets":[],"source":null}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let tools = try await makeClient(token: "t").listTools()
@@ -404,7 +404,7 @@ final class ApiClientTests: XCTestCase {
 
     func testListCallersDecodesSnakeCase() async throws {
         // `created_at` on the caller is an EXTRA column (list_callers does SELECT *) that the
-        // Caller model omits — it must decode anyway (unknown keys ignored), so keep it here.
+        // Caller model omits; it must decode anyway (unknown keys ignored), so keep it here.
         let json = #"{"callers":[{"id":1,"name":"hermes","created_at":2.0,"revoked_at":null}],"#
                  + #""tokens":[{"token_hash":"abcd","caller":"hermes","created_at":1.0,"revoked_at":null}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }

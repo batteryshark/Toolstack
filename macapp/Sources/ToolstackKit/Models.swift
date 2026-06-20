@@ -63,7 +63,7 @@ public struct SecretDecl: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
-/// Where a managed tool came from (the `.tsr-source.json` sidecar) — present only for tools added
+/// Where a managed tool came from (the `.tsr-source.json` sidecar), present only for tools added
 /// through TSR, enabling "Update". `source` is set for a local-path tool; `url`/`subdir`/`ref` for
 /// a github one.
 public struct ToolSource: Codable, Sendable, Equatable {
@@ -101,7 +101,7 @@ public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
-/// The echo returned by `POST /api/tools/{id}` — the edited fields only (ops/entrypoint are
+/// The echo returned by `POST /api/tools/{id}`: the edited fields only (ops/entrypoint are
 /// preserved server-side and re-fetched via `listTools`).
 public struct ToolEdit: Codable, Sendable {
     public let id: String
@@ -164,7 +164,7 @@ public struct EnabledTools: Codable, Sendable {
     public let enabled: [String]
 }
 
-/// The broker run-config (GET /api/config — masked). `nodToken` is "set" / "not set", never the
+/// The broker run-config (GET /api/config, masked). `nodToken` is "set" / "not set", never the
 /// real token. (db_path / tool_dirs are also returned but ignored here.)
 public struct BrokerConfigInfo: Codable, Sendable {
     public let port: Int
@@ -177,7 +177,7 @@ public struct BrokerConfigInfo: Codable, Sendable {
     public var nodTokenSet: Bool { nodToken == "set" }
 }
 
-/// A decoded arbitrary JSON value — audit `details` can be any shape. Rendered compactly for a cell.
+/// A decoded arbitrary JSON value: audit `details` can be any shape. Rendered compactly for a cell.
 public indirect enum AnyJSON: Decodable, Sendable, Equatable {
     case string(String), number(Double), bool(Bool), object([String: AnyJSON]), array([AnyJSON]), null
 
@@ -192,7 +192,7 @@ public indirect enum AnyJSON: Decodable, Sendable, Equatable {
         else { throw DecodingError.dataCorruptedError(in: c, debugDescription: "unsupported JSON value") }
     }
 
-    /// Compact one-line rendering for a table cell (not strict JSON — readability over fidelity).
+    /// Compact one-line rendering for a table cell (not strict JSON; readability over fidelity).
     public var compact: String {
         switch self {
         case .string(let s): return s

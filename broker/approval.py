@@ -1,6 +1,6 @@
 """Approval contract types (the broker side of the approval-surface adapter).
 
-`OperationCard` is the redacted prompt the broker hands a surface — it describes
+`OperationCard` is the redacted prompt the broker hands a surface; it describes
 the operation, never raw arguments or secrets. `SurfaceState` is the normalized
 answer the broker reads back. See docs/approval-surface-adapter.md.
 """
@@ -40,7 +40,7 @@ class SurfaceState:
 def build_card(request_id: int, caller: str, tool: str, op: str, risk: str,
                reason: str, justification: str | None = None,
                target: str | None = None) -> OperationCard:
-    # For a rest call the path is part of what's being approved — show it so the human sees
+    # For a rest call the path is part of what's being approved; show it so the human sees
     # "Approve kv.DELETE /items/42", not a blank verb. (A path is a resource locator, not a
     # secret argument, so it belongs on the card.)
     label = f"{tool}.{op}" + (f" {target}" if target else "")

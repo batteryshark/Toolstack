@@ -5,7 +5,7 @@ broker through a tailnet (e.g. Tailscale Serve) that terminates TLS and proxies 
 localhost. The default is deliberately loopback so a bare run cannot expose the broker.
 
 `TOOLSTACK_BROKER_HOST` overrides the bind host. The ONLY supported reason to set it is
-running the broker inside a container, where it must bind `0.0.0.0` to be reachable —
+running the broker inside a container, where it must bind `0.0.0.0` to be reachable,
 and there the boundary moves to Docker's publish mapping (publish to `127.0.0.1:<port>`
 on the host ONLY), exactly as tool containers already do via `TOOLSTACK_BIND`. Do not set
 it to `0.0.0.0` on a bare host.
@@ -30,7 +30,7 @@ from .runtime import HttpRuntime
 from .store import Store
 from .surface_nod import NodSurface
 
-DEFAULT_HOST = "127.0.0.1"  # loopback by default — see the module docstring
+DEFAULT_HOST = "127.0.0.1"  # loopback by default, see the module docstring
 DEFAULT_PORT = 8765
 MAX_BODY_BYTES = 64 * 1024  # cap request bodies to bound memory use
 
@@ -47,13 +47,13 @@ def _is_loopback(host: str) -> bool:
 def _configured_host() -> str:
     # 127.0.0.1 unless explicitly overridden. A non-loopback bind exposes the broker to the
     # network, so it fails closed unless TOOLSTACK_BROKER_ALLOW_NONLOOPBACK=1 is also set (the
-    # container sets it — there the boundary is Docker's publish-to-127.0.0.1 mapping).
+    # container sets it; there the boundary is Docker's publish-to-127.0.0.1 mapping).
     host = os.environ.get("TOOLSTACK_BROKER_HOST") or DEFAULT_HOST
     allow = os.environ.get("TOOLSTACK_BROKER_ALLOW_NONLOOPBACK", "").lower() in ("1", "true", "yes")
     if not _is_loopback(host) and not allow:
         raise SystemExit(
             f"refusing to bind the broker to non-loopback host {host!r} without "
-            "TOOLSTACK_BROKER_ALLOW_NONLOOPBACK=1 — binding off 127.0.0.1 exposes the broker to "
+            "TOOLSTACK_BROKER_ALLOW_NONLOOPBACK=1. Binding off 127.0.0.1 exposes the broker to "
             "the network; set it only behind a boundary you trust (e.g. Docker's publish mapping).")
     return host
 
@@ -148,7 +148,7 @@ def build_server(
         rate_limiter=RateLimiter(rate_limit),
     )
     # Single-threaded HTTPServer: the broker serves one request at a time. That is intentional
-    # for 1.0 — it keeps the SQLite store, rate limiter, and audit trail free of cross-request
+    # for 1.0; it keeps the SQLite store, rate limiter, and audit trail free of cross-request
     # races without locking, and the workload (one operator's agents, human-gated approvals) is
     # low-QPS. The cost is that a slow tool forward blocks the next request for up to the
     # per-call timeout (TOOLSTACK_TOOL_TIMEOUT; see broker/runtime.py). Revisit with a

@@ -200,7 +200,7 @@ class ReadWrite(unittest.TestCase):
         no_entry = tool_authoring.normalize({**FULL, "command": "", "image": ""})
         with self.assertRaises(ValueError):
             tool_authoring.write(self.tmp, no_entry, runner="docker")
-        # Add a Dockerfile and it writes — this is the real docker tools' shape (e.g. sandals).
+        # Add a Dockerfile and it writes. This is the real docker tools' shape (e.g. sandals).
         Path(self.tmp, "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         tool_authoring.write(self.tmp, no_entry, runner="docker")
         self.assertEqual(tool_authoring.read(self.tmp)["id"], "weather")
@@ -222,7 +222,7 @@ class ReadWrite(unittest.TestCase):
 
     def test_read_write_destructive_risks_are_valid(self):
         # The taxonomy the real tools use must survive validate (the bug: only low/medium/high
-        # were accepted, so editing sandals — all 'read' ops — 400'd).
+        # were accepted, so editing sandals (all 'read' ops) 400'd).
         ops = [{"name": "a", "risk": "read", "args": []},
                {"name": "b", "risk": "write", "args": []},
                {"name": "c", "risk": "destructive", "args": []}]

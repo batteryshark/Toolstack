@@ -5,8 +5,8 @@
 #   ./packaging/sign-and-notarize.sh
 #
 # Reads two gitignored files:
-#   packaging/signing.env  — DEVELOPER_ID_APP (the "Developer ID Application: …" identity)
-#   secrets/secrets.env    — APP_STORE_CONNECT_API_ISSUER_ID + APP_STORE_CONNECT_API_KEY_PATH
+#   packaging/signing.env: DEVELOPER_ID_APP (the "Developer ID Application: ..." identity)
+#   secrets/secrets.env: APP_STORE_CONNECT_API_ISSUER_ID + APP_STORE_CONNECT_API_KEY_PATH
 #                            (.p8 path; the key-id is read from the AuthKey_<KEYID>.p8 filename)
 # The App Store Connect API key notarizes WITHOUT an Apple ID / app-specific password, so it can't
 # trip the account lock that password auth does.
@@ -19,7 +19,7 @@ cd "$(dirname "$0")/.."
 APP="build/Toolstack Operator.app"
 SUBMIT_ZIP="build/ToolstackOperator-submit.zip"   # what notarytool ingests (pre-staple)
 ZIP="build/ToolstackOperator.zip"                 # the distributable (the STAPLED .app, zipped)
-: "${DEVELOPER_ID_APP:?set it in packaging/signing.env to your 'Developer ID Application: …' identity}"
+: "${DEVELOPER_ID_APP:?set it in packaging/signing.env to your 'Developer ID Application: ...' identity}"
 : "${APP_STORE_CONNECT_API_ISSUER_ID:?set it in secrets/secrets.env (App Store Connect API issuer id)}"
 : "${APP_STORE_CONNECT_API_KEY_PATH:?set it in secrets/secrets.env (path to your AuthKey_*.p8)}"
 [ -f "$APP_STORE_CONNECT_API_KEY_PATH" ] || { echo "error: API key not found at $APP_STORE_CONNECT_API_KEY_PATH" >&2; exit 1; }
@@ -59,4 +59,4 @@ rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
 echo "✓ signed + notarized + stapled: $APP"
-echo "  distribute: $ZIP — a signed, notarized .app zipped up (unzip → drag to /Applications)."
+echo "  distribute: $ZIP, a signed, notarized .app zipped up (unzip → drag to /Applications)."

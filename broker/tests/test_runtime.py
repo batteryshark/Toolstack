@@ -359,7 +359,7 @@ class RestForward(unittest.TestCase):
                                   {"path": "/x"}, 1, "hermes")
 
     def test_does_not_follow_tool_redirects(self):
-        # a tool-issued 3xx must NOT be auto-followed (SSRF guard) — it returns as data, and
+        # a tool-issued 3xx must NOT be auto-followed (SSRF guard); it returns as data, and
         # the broker never re-requests the Location target.
         _FakeRestTool.status = 302
         _FakeRestTool.resp_location = "/elsewhere"
@@ -400,7 +400,7 @@ class RestForward(unittest.TestCase):
                 HttpRuntime().execute(self._op("GET"), {"path": "/x", "headers": {"X-H": bad}}, 1, "hermes")
 
     def test_trailing_newline_header_name_raises(self):
-        with self.assertRaises(RuntimeError):  # \Z anchor, not $ — a terminal \n must not pass
+        with self.assertRaises(RuntimeError):  # \Z anchor, not $; a terminal \n must not pass
             HttpRuntime().execute(self._op("GET"), {"path": "/x", "headers": {"X-Inject\n": "v"}}, 1, "hermes")
 
     def test_returns_response_headers(self):

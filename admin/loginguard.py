@@ -6,7 +6,7 @@ land within the window, plus a global ceiling so a spread-out (many-IP) attack c
 slip under the per-IP limit. A blocked attempt is rejected *before* the password is
 checked, so it neither leaks timing nor extends the lockout.
 
-State is process-local and lost on restart — acceptable, since a restart is not
+State is process-local and lost on restart, which is acceptable since a restart is not
 something the unauthenticated login surface can trigger. Shared by the HTML ``/login``
 and the JSON ``/api/login`` so the two can't be played off against each other.
 

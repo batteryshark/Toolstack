@@ -1,5 +1,5 @@
 """Desktop shell lifecycle (stdlib, hermetic). Exercises the start / health / stop logic
-with a fake admin (and a fake serve command), never the real admin or pywebview — the GUI
+with a fake admin (and a fake serve command), never the real admin or pywebview; the GUI
 window is verified out of band (a screenshot). pywebview is not imported here."""
 
 import os
@@ -36,7 +36,7 @@ def _start_fake_admin():
     return server, f"http://127.0.0.1:{server.server_address[1]}"
 
 
-# A serve command that starts a /login-serving HTTP server on the given port, then idles —
+# A serve command that starts a /login-serving HTTP server on the given port, then idles;
 # stands in for `python -m admin serve` without needing FastAPI.
 def _fake_serve_cmd(port: int) -> list[str]:
     code = (
@@ -66,7 +66,7 @@ class Lifecycle(unittest.TestCase):
         server, url = _start_fake_admin()
         self.addCleanup(server.server_close)  # LIFO: runs after shutdown -> closes the socket
         self.addCleanup(server.shutdown)
-        # serve_cmd would fail loudly if run — proves ensure_up did NOT start its own admin
+        # serve_cmd would fail loudly if run; proves ensure_up did NOT start its own admin
         stack = Stack(url, serve_cmd=[sys.executable, "-c", "raise SystemExit('must not run')"])
         stack.ensure_up()
         self.assertFalse(stack.started_admin())
@@ -93,7 +93,7 @@ class Lifecycle(unittest.TestCase):
 
     def test_stop_is_idempotent_and_safe_when_never_started(self):
         stack = Stack("http://127.0.0.1:1")
-        stack.stop()  # never started anything — must not raise
+        stack.stop()  # never started anything, must not raise
         self.assertFalse(stack.started_admin())
 
 

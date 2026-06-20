@@ -35,7 +35,7 @@ SESSION_COOKIE = "toolstack_admin_session"
 def create_app() -> FastAPI:
     # Fail closed: no admin login configured means no app (no default credentials).
     if settings.read_password_hash() is None:
-        raise RuntimeError("no admin password set — run: python3 -m admin set-password")
+        raise RuntimeError("no admin password set; run: python3 -m admin set-password")
     secret = settings.load_or_create_session_secret()
     guard = loginguard.LoginGuard()  # shared by /login and /api/login
     app = FastAPI(title="Toolstack Admin", docs_url=None, redoc_url=None, openapi_url=None)
@@ -43,12 +43,12 @@ def create_app() -> FastAPI:
     @app.exception_handler(sqlite3.OperationalError)
     async def _operational_error(request: Request, exc: sqlite3.OperationalError):
         # The admin opens short-lived connections; under sustained write contention with the
-        # broker one can still exceed the store's busy_timeout. Answer "busy, retry" — a 503,
-        # not an opaque 500 — so the operator (or the API client) knows it's transient. A
+        # broker one can still exceed the store's busy_timeout. Answer "busy, retry" (a 503,
+        # not an opaque 500) so the operator (or the API client) knows it's transient. A
         # NON-lock OperationalError (a schema/SQL bug) is a real 500: don't mask it as "busy".
         text = str(exc).lower()
         busy = "lock" in text or "busy" in text
-        status, msg = (503, "Database is busy — please retry in a moment.") if busy \
+        status, msg = (503, "Database is busy; please retry in a moment.") if busy \
             else (500, "Internal database error.")
         log.warning("sqlite OperationalError on %s (%s): %s", request.url.path,
                     "busy" if busy else "fatal", exc)
@@ -108,7 +108,7 @@ def create_app() -> FastAPI:
         return grouped
 
     def safe_list_tools(config):
-        """``(tools, error)`` — list the tools, or ``([], "Could not read tools: …")`` if
+        """``(tools, error)``: list the tools, or ``([], "Could not read tools: ...")`` if
         any toolyard.toml fails to load (e.g. a hand-edited tool with a bad/missing port,
         which `toolyard.config.load` now rejects). Every tool route goes through this so a
         single bad tool degrades to an error banner instead of a 500."""
@@ -128,7 +128,7 @@ def create_app() -> FastAPI:
     async def login(request: Request):
         ip = api.client_ip(request)
         wait = guard.retry_after(ip)
-        if wait > 0:  # locked out — reject before touching the password (no timing leak)
+        if wait > 0:  # locked out: reject before touching the password (no timing leak)
             resp = HTMLResponse(views.login_view(
                 error="Too many failed attempts. Try again later."), status_code=429)
             resp.headers["Retry-After"] = str(int(wait) + 1)
@@ -240,7 +240,7 @@ def create_app() -> FastAPI:
         except Exception as exc:
             return render_dashboard(request, user, error=f"Could not create caller: {exc}")
         banner = views.token_reveal_banner(
-            f"Created caller <code>{views.esc(name)}</code>. Save this token now — "
+            f"Created caller <code>{views.esc(name)}</code>. Save this token now; "
             "it is shown once and cannot be retrieved later:", token)
         return render_dashboard(request, user, banner=banner)
 
@@ -261,7 +261,7 @@ def create_app() -> FastAPI:
             return render_dashboard(request, user, error=str(exc))
         banner = views.token_reveal_banner(
             f"Rotated token for <code>{views.esc(name)}</code>. Its previous token is now "
-            "revoked. New token — shown once and cannot be retrieved later:", token)
+            "revoked. New token, shown once and cannot be retrieved later:", token)
         return render_dashboard(request, user, banner=banner)
 
     @app.post("/callers/revoke")
@@ -618,7 +618,7 @@ def create_app() -> FastAPI:
             else:
                 tool = tool_sources.add_from_path(src_val, config.tools_root, existing_ids)
         except tool_sources.NoManifest:
-            return again("No toolyard.toml at that location — use “Author a tool” to create one.")
+            return again("No toolyard.toml at that location; use “Author a tool” to create one.")
         except ValueError as exc:
             return again(str(exc))
         with open_store(config) as store:
@@ -654,7 +654,7 @@ def create_app() -> FastAPI:
             f"Updated tool {views.esc(tool_id)} from its source. Restart the broker if its entrypoint "
             "or operations changed."))
 
-    # JSON operator API (bearer-token auth) for native / automation clients — same ops,
+    # JSON operator API (bearer-token auth) for native / automation clients: same ops,
     # JSON face. See admin/api.py (T-029).
     api.add_api_routes(app, secret, guard)
     return app

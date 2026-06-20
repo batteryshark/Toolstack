@@ -1,4 +1,4 @@
-"""``python3 -m desktop`` — open the Toolstack desktop window."""
+"""``python3 -m desktop``: open the Toolstack desktop window."""
 
 from .app import main
 

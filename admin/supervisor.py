@@ -1,4 +1,4 @@
-"""Supervise the broker process — start, stop, restart, and report its status.
+"""Supervise the broker process: start, stop, restart, and report its status.
 
 This mirrors ``toolyard/runner.py``'s ``ProcessRunner``: ``os.posix_spawn`` with
 ``setpgroup=0`` so the broker gets its own process group, then ``os.killpg`` to
@@ -7,7 +7,7 @@ stop the whole group. The broker's stdout/stderr are captured to a log file so
 actually serving (not merely a live PID). State (the PID and port) lives in a
 small JSON file under the admin state dir.
 
-There is one supervised broker per machine, identified by the state file — the
+There is one supervised broker per machine, identified by the state file; the
 admin app does not track multiple brokers.
 """
 
@@ -34,15 +34,15 @@ log = logging.getLogger(__name__)
 def _is_broker(pid: int) -> bool:
     """Confirm ``pid`` is actually our broker before signalling its process group. The broker is
     supervised out of band, so after the admin app itself restarts it is no longer our child to
-    reap — and a bare PID can be reused by an unrelated process. Killing that recycled PID's group
+    reap, and a bare PID can be reused by an unrelated process. Killing that recycled PID's group
     would be a serious bug, so verify the command line names ``broker.server`` first."""
     try:
         out = subprocess.run(["ps", "-p", str(pid), "-o", "args="],
                              capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
         return False  # can't confirm -> treat as 'not the broker' and refuse to signal
-    # Match the exact invocation (`… -m broker.server`) as whole argv tokens, not a loose
-    # substring — `tail -f broker.server.log` or `-m pkg.broker.server_x` must NOT count.
+    # Match the exact invocation (`... -m broker.server`) as whole argv tokens, not a loose
+    # substring: `tail -f broker.server.log` or `-m pkg.broker.server_x` must NOT count.
     try:
         args = shlex.split(out.stdout)
     except ValueError:
@@ -124,7 +124,7 @@ def status() -> dict:
             _clear_state()
             return _stopped()
     except ChildProcessError:
-        pass  # not our child (e.g. admin app restarted) — fall through to signal check
+        pass  # not our child (e.g. admin app restarted); fall through to signal check
     except ProcessLookupError:
         _clear_state()
         return _stopped()
@@ -163,19 +163,19 @@ def start(config: BrokerRunConfig) -> dict:
     healthy = _await_health(config.port)
     result = status()
     if not healthy and not result.get("healthy"):
-        # The process spawned but never answered /v1/health — don't let the caller report a
+        # The process spawned but never answered /v1/health; don't let the caller report a
         # bare success. Surface it (the dashboard/API turn this into an error, not a redirect).
         log.warning("broker pid %s did not become healthy on :%s", pid, config.port)
         result = {**result, "error": (f"broker started (pid {pid}) but did not become healthy "
-                                      f"on port {config.port} — check the broker log")}
+                                      f"on port {config.port}; check the broker log")}
     return result
 
 
 def _terminate(pid: int) -> None:
     if not _is_broker(pid):
         # PID reuse after an admin restart: the recorded pid is now some other process. Never
-        # signal it — just let the caller clear the stale state.
-        log.warning("not terminating pid %s — it is not the broker (stale state / PID reuse)", pid)
+        # signal it; just let the caller clear the stale state.
+        log.warning("not terminating pid %s; it is not the broker (stale state / PID reuse)", pid)
         return
     try:
         os.killpg(pid, signal.SIGTERM)

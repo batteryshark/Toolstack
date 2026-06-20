@@ -4,7 +4,7 @@ token, no raw args, redacted push) and maps nod's decision back to a SurfaceStat
 The fake below is wire-faithful to nod v1.0.1 (nod-proto @ 01d535d): it enforces
 the real create-body contract (`deny_unknown_fields`, required `title`) and
 returns the real response shapes. So if the adapter starts sending a field nod
-would reject — or stops reading one nod actually returns — these tests fail.
+would reject, or stops reading one nod actually returns, these tests fail.
 For a check against a *real* nod server, see test_surface_nod_live.py."""
 
 import json
@@ -140,7 +140,7 @@ class NodSurfaceHTTP(unittest.TestCase):
 
     def test_open_payload_obeys_nod_create_contract(self):
         """Every field the adapter sends is one nod actually accepts, and every
-        option kind is a real OptionKind — the doc-vs-code drift this task closed."""
+        option kind is a real OptionKind, the doc-vs-code drift this task closed."""
         self.surface.open(CARD)
         body = _FakeNod.created["body"]
         self.assertEqual(set(body) - NOD_CREATE_FIELDS, set())
@@ -150,7 +150,7 @@ class NodSurfaceHTTP(unittest.TestCase):
     def test_open_never_sends_callback_url(self):
         # Resolution is poll-only by design: nod posts callbacks unauthenticated,
         # so a broker receiver would let anyone forge an approval. The adapter must
-        # never register a callback_url. (nod still *accepts* the field — this is a
+        # never register a callback_url. (nod still *accepts* the field; this is a
         # deliberate choice on our side, not a contract limit.)
         self.surface.open(CARD)
         self.assertNotIn("callback_url", _FakeNod.created["body"])

@@ -1,14 +1,14 @@
-"""Echo tool — a tiny standalone api tool for Toolstack (the tool template).
+"""Echo tool: a tiny standalone api tool for Toolstack (the tool template).
 
 A tool is its own program. It binds the port the toolyard gives it, serves
 ``POST /v1/actions/<op>``, and reads its secrets from files under
 ``$TOOLSTACK_SECRETS_DIR`` (default ``/run/secrets``). It never receives or needs a
-broker token or a secret-backend credential — the broker forwards the call; the
+broker token or a secret-backend credential. The broker forwards the call; the
 toolyard already placed this tool's secrets where it can read them.
 
 Optional defense in depth (off by default): if a ``broker_secret`` is provisioned
 alongside the tool's other secrets, the tool requires the broker's
-``X-Toolstack-Secret`` header to match it — so a stray loopback process can't call
+``X-Toolstack-Secret`` header to match it, so a stray loopback process can't call
 this tool directly and bypass the broker's policy/approval. With no ``broker_secret``
 file present the check is skipped, so the demo runs unauthenticated as before. See
 ``verify_broker`` and ``docs/message-contracts.md``.

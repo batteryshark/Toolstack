@@ -10,7 +10,7 @@ services:
     env_file: .env
     init: true                            # reap the broker/tool subprocesses on stop
     ports:
-      # Publish to 127.0.0.1 ONLY — this mapping IS the trust boundary (the processes
+      # Publish to 127.0.0.1 ONLY: this mapping IS the trust boundary (the processes
       # bind 0.0.0.0 inside the container). Do NOT change the host side to 0.0.0.0.
       - "127.0.0.1:8780:8780"             # admin UI  -> http://127.0.0.1:8780
       - "127.0.0.1:8765:8765"             # broker    -> point your agent here

@@ -220,7 +220,7 @@ class McpOverHttpE2E(unittest.TestCase):
 class McpProcessRunnerE2E(unittest.TestCase):
     """The mcp transport end-to-end: the runner starts the real echo-mcp process (a
     streamable-HTTP MCP server) and the broker's MCP client reaches it via the same
-    HttpRuntime.execute path the api tools use — proving type='mcp' works tool-to-broker
+    HttpRuntime.execute path the api tools use, proving type='mcp' works tool-to-broker
     with no Docker."""
 
     def setUp(self):
@@ -245,7 +245,7 @@ class McpProcessRunnerE2E(unittest.TestCase):
 
 class RestProcessRunnerE2E(unittest.TestCase):
     """The rest transport end-to-end: the runner starts the real kv tool and the broker's
-    verb-as-op passthrough drives a full CRUD cycle through HttpRuntime.execute — including a
+    verb-as-op passthrough drives a full CRUD cycle through HttpRuntime.execute, including a
     404 that passes through as data rather than raising. No Docker."""
 
     def setUp(self):

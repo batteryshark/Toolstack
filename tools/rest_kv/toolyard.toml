@@ -1,4 +1,4 @@
-# Single source of truth for the kv tool — a REST-compliant key-value store exposed as a
+# Single source of truth for the kv tool: a REST-compliant key-value store exposed as a
 # verb-as-op passthrough. The broker reads only the non-secret fields (id, type, operations,
 # port) and forwards the caller's <verb> <path> straight through to this service.
 
@@ -15,7 +15,7 @@ port = 4621
 # A rest tool's operations ARE the HTTP verbs. risk is DERIVED from the verb (GET=read,
 # POST/PUT/PATCH=write, DELETE=destructive) so a DELETE can't be mislabelled, and every verb
 # takes the same {path, body, query} passthrough shape. Declare only the verbs you want to
-# expose — an undeclared verb has no op, so policy can't allow it. The agent calls e.g.
+# expose; an undeclared verb has no op, so policy can't allow it. The agent calls e.g.
 #   kv.GET    {path = "/items/foo"}
 #   kv.POST   {path = "/items", body = {key = "foo", value = 1}}
 #   kv.PUT    {path = "/items/foo", body = {value = 2}}

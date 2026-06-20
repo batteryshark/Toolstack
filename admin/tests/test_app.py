@@ -1,5 +1,5 @@
 """admin.server end-to-end via FastAPI's TestClient: the login + session/CSRF gate,
-creating a caller (one-time token), and saving a policy — verified against a real
+creating a caller (one-time token), and saving a policy, verified against a real
 broker Store. No broker process is started (the supervisor reports 'stopped').
 
 Requires the admin venv (FastAPI + httpx):

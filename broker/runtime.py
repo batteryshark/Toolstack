@@ -3,32 +3,32 @@ container on ``127.0.0.1:<port>``.
 
 Three tool transports share this seam, dispatched on ``ToolOp.type``:
 
-* **api** — the broker POSTs ``/v1/actions/<op>`` with the arguments + broker
+* **api**: the broker POSTs ``/v1/actions/<op>`` with the arguments + broker
   context and returns the tool's JSON (the original toolyard contract).
-* **mcp** — the tool is a **streamable-HTTP MCP server** listening at
+* **mcp**: the tool is a **streamable-HTTP MCP server** listening at
   ``127.0.0.1:<port>/mcp``. The broker is the MCP *client*: it runs the
   ``initialize`` handshake, then issues ``tools/call`` with ``name = <op>``.
   The op is still the unit of policy/approval, so an mcp tool declares its ops
   in ``toolyard.toml`` exactly like an api tool; the runtime maps op -> MCP tool
   name. The MCP ``result`` (content blocks + optional ``structuredContent``) is
   returned to the caller unchanged.
-* **rest** — a **verb-as-op passthrough**: the op IS an HTTP verb (GET/POST/PUT/
+* **rest**: a **verb-as-op passthrough**: the op IS an HTTP verb (GET/POST/PUT/
   PATCH/DELETE). The caller passes ``{path, body, query, headers}``; the broker forwards
-  the raw ``<verb> 127.0.0.1:<port><path>`` request — caller headers included, minus the
-  broker-reserved namespace (see ``_RESERVED_REQ_HEADERS``) — and returns the tool's
+  the raw ``<verb> 127.0.0.1:<port><path>`` request, caller headers included, minus the
+  broker-reserved namespace (see ``_RESERVED_REQ_HEADERS``), and returns the tool's
   ``{status, headers, body}``. Policy/approval still key on ``(tool, <verb>)``. A 4xx/5xx
-  from the tool is a legitimate REST response and passes through as data — only a
+  from the tool is a legitimate REST response and passes through as data; only a
   transport failure raises. The path is validated to stay on the tool's loopback
   origin (no scheme/host injection).
 
-The broker attaches NO workload secrets — the tool already has its own, resolved
+The broker attaches NO workload secrets; the tool already has its own, resolved
 by the toolyard at container start. The broker adds ``broker_request_id`` and the
 caller name so the tool has request context (in the api body; in MCP under the
 call's ``_meta``).
 
 As optional defense in depth, the broker may present a per-tool **shared secret**
 (the ``X-Toolstack-Secret`` header) so the tool can prove the call came from the
-broker — not from another loopback process that merely guessed the tool's port and
+broker, not from another loopback process that merely guessed the tool's port and
 called it directly, bypassing policy and approval. The secret is the broker's own
 *channel* credential for this hop; it is NOT a workload secret (the broker still
 never reads the secret backend). It is opt-in per tool: with none configured the
@@ -36,9 +36,9 @@ header is absent and the tool-side check stays off, so existing tools are
 unaffected. The same header rides every MCP request. See ``_env_tool_secret`` and
 ``docs/message-contracts.md``.
 
-Unreachable or non-2xx tools, and JSON-RPC protocol errors, raise — which the
+Unreachable or non-2xx tools, and JSON-RPC protocol errors, raise, which the
 request lifecycle maps to 502. (A *handled* tool error rides back in-band: a 2xx
-body for an api tool, an ``isError`` result for an mcp tool — neither raises, both
+body for an api tool, an ``isError`` result for an mcp tool; neither raises, both
 reach the caller, mirroring the api path's "tool returns 200 + error body".)
 """
 
@@ -61,13 +61,13 @@ MCP_PROTOCOL_VERSION = "2025-06-18"
 # also guards against using an arbitrary op string as an HTTP method (method injection).
 REST_VERBS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 
-# Request headers the broker OWNS on a rest passthrough — a caller can't set or override
+# Request headers the broker OWNS on a rest passthrough: a caller can't set or override
 # these. The X-Toolstack-* namespace carries the broker's caller-identity assertion + the
 # opt-in shared secret (forwarding a caller's copy would let an agent impersonate another
 # caller); Host/Content-Length are computed for the loopback hop; Content-Type matches the
 # broker's JSON body; the hop-by-hop headers are per-connection. Everything ELSE the caller
 # puts in `arguments.headers` is forwarded, so the passthrough is faithful for app headers
-# (Accept, an upstream Authorization, custom X-* …) without ceding the broker's identity.
+# (Accept, an upstream Authorization, custom X-* ...) without ceding the broker's identity.
 _RESERVED_REQ_HEADERS = frozenset({
     "host", "content-length", "content-type",
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
@@ -79,7 +79,7 @@ _HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*\Z")  # \Z (not $) so a 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """Never auto-follow a tool-issued redirect. The response (including its Location) is
     controlled by the tool, so following a 3xx would let the tool steer the broker to an
-    arbitrary host — an un-mediated request the broker would never have approved (SSRF). A
+    arbitrary host, an un-mediated request the broker would never have approved (SSRF). A
     3xx instead surfaces as an HTTPError: the api/mcp paths treat it as a tool error; the
     rest passthrough returns it to the caller as data."""
 
@@ -97,7 +97,7 @@ def _env_tool_secret(tool_id: str) -> str | None:
     ``TOOLSTACK_TOOL_SECRET_<TOOL>`` (id upper-cased, runs of non-alphanumerics collapsed
     to a single ``_`` so e.g. ``apple-calendar`` -> ``TOOLSTACK_TOOL_SECRET_APPLE_CALENDAR``).
 
-    Returns None when unset or empty (after stripping) — the feature is opt-in, so an
+    Returns None when unset or empty (after stripping); the feature is opt-in, so an
     unconfigured tool gets no header. The value is **stripped of surrounding whitespace**
     so it matches the tool side, which reads its copy through the same strip (a stray
     trailing newline in the env must not silently 401 every call).
@@ -106,7 +106,7 @@ def _env_tool_secret(tool_id: str) -> str | None:
     sends it) and the tool's secret backend (so the toolyard injects it for the tool to
     verify against). Note the id->env mapping is not injective: ids that differ only in
     case or in non-alphanumeric runs (``apple-calendar`` vs ``apple.calendar``) collapse to
-    the same env var — keep tool ids distinct under this normalization. A collision only
+    the same env var; keep tool ids distinct under this normalization. A collision only
     means the two tools share one channel secret, never that calls cross-wire (each tool
     still listens on its own loopback port)."""
     key = "TOOLSTACK_TOOL_SECRET_" + re.sub(r"[^A-Z0-9]+", "_", tool_id.upper())
@@ -120,7 +120,7 @@ class HttpRuntime:
 
     def __init__(self, timeout: float | None = None, tool_secret=_env_tool_secret) -> None:
         # Per-call cap on a tool forward (default 30s, override TOOLSTACK_TOOL_TIMEOUT). The
-        # broker serves requests serially (single-threaded HTTPServer — see broker/server.py),
+        # broker serves requests serially (single-threaded HTTPServer, see broker/server.py),
         # so one slow tool ties up the whole broker for this window; tune it down for a fleet of
         # fast tools, or up for a deliberately slow one.
         if timeout is None:
@@ -139,7 +139,7 @@ class HttpRuntime:
         if tool_op.type == "rest":
             return self._execute_rest(tool_op, arguments, request_id, caller_name)
         # The registry rejects unknown types at load, so this guards only a programmer error
-        # (a ToolOp built with a type no transport handles) — fail loud, never POST blind.
+        # (a ToolOp built with a type no transport handles), fail loud, never POST blind.
         raise RuntimeError(f"unsupported tool type {tool_op.type!r}")
 
     # -- api transport: POST /v1/actions/<op> ------------------------------------
@@ -174,7 +174,7 @@ class HttpRuntime:
     def _execute_mcp(self, tool_op: ToolOp, arguments: dict, request_id: int, caller_name: str) -> dict:
         base = f"http://127.0.0.1:{tool_op.port}/mcp"
         secret = self._tool_secret(tool_op.tool)
-        # 1. initialize — negotiate the protocol version and capture the session id the server
+        # 1. initialize: negotiate the protocol version and capture the session id the server
         #    may pin the exchange to. No protocol header here: it isn't negotiated yet.
         init_result, session = self._mcp_request(
             base, secret, None, None, 1, "initialize",
@@ -190,9 +190,9 @@ class HttpRuntime:
         # version the server negotiated (it may pick a different one than we advertised); use
         # our advertised version only if the server returned none.
         protocol = init_result.get("protocolVersion") or MCP_PROTOCOL_VERSION
-        # 2. notifications/initialized — a fire-and-forget notification (no response).
+        # 2. notifications/initialized: a fire-and-forget notification (no response).
         self._mcp_notify(base, secret, session, protocol, "notifications/initialized", {})
-        # 3. tools/call — op IS the MCP tool name; broker context rides in _meta.
+        # 3. tools/call: op IS the MCP tool name; broker context rides in _meta.
         result, _ = self._mcp_request(
             base, secret, session, protocol, 2, "tools/call",
             {
@@ -305,12 +305,12 @@ class HttpRuntime:
         verb = tool_op.op.upper()
         if verb not in REST_VERBS:
             # the registry only registers declared ops, but never use an arbitrary string
-            # as an HTTP method — guard against method injection explicitly.
+            # as an HTTP method; guard against method injection explicitly.
             raise RuntimeError(f"unsupported REST verb {tool_op.op!r}")
         path = self._rest_path(arguments)
         url = f"http://127.0.0.1:{tool_op.port}{path}"
         # Forward the caller's headers (minus the reserved namespace), then layer the broker's
-        # OWN headers on top so they always win — the broker's caller-identity assertion can't
+        # OWN headers on top so they always win; the broker's caller-identity assertion can't
         # be spoofed. (The body belongs to the caller's request, unlike the api transport where
         # context shares the JSON body, so context rides in headers here.)
         headers = self._rest_headers(arguments)
@@ -330,7 +330,7 @@ class HttpRuntime:
                 status, raw, msg = resp.status, resp.read(), resp.headers
         except urllib.error.HTTPError as exc:
             # A 4xx/5xx is a legitimate REST response in a passthrough (e.g. a 404 for a
-            # missing resource the caller asked about) — return it as data, don't raise.
+            # missing resource the caller asked about): return it as data, don't raise.
             status, raw, msg = exc.code, exc.read(), exc.headers
             exc.close()
         except urllib.error.URLError as exc:
@@ -338,7 +338,7 @@ class HttpRuntime:
         ctype = msg.get("Content-Type", "") if msg else ""
         # Return the tool's response headers too (full passthrough fidelity: Location on a
         # 201, Content-Type, pagination/rate-limit headers). dict() collapses a repeated
-        # header to its last value — fine for the single-valued headers a caller acts on.
+        # header to its last value, fine for the single-valued headers a caller acts on.
         resp_headers = dict(msg.items()) if msg else {}
         return {"status": status, "headers": resp_headers, "body": self._parse_body(raw, ctype)}
 
@@ -360,12 +360,12 @@ class HttpRuntime:
             if not isinstance(value, str):
                 raise RuntimeError(f"rest header {name!r} value must be a string")
             # printable ASCII only: rejects CR/LF/control chars (injection) and non-latin-1
-            # (which http.client can't encode) — the broker's own validator, not a stdlib backstop.
+            # (which http.client can't encode); the broker's own validator, not a stdlib backstop.
             if any(not (0x20 <= ord(c) <= 0x7e) for c in value):
                 raise RuntimeError(f"rest header {name!r} value has an invalid character")
             lname = name.lower()
             if lname in _RESERVED_REQ_HEADERS or lname.startswith("x-toolstack-"):
-                continue  # broker-owned — silently drop a caller attempt to set it
+                continue  # broker-owned: silently drop a caller attempt to set it
             out[name] = value
         return out
 
@@ -375,7 +375,7 @@ class HttpRuntime:
         request target. The path MUST keep the request on the tool's loopback origin: it is
         appended to ``http://127.0.0.1:<port>``, so a value that doesn't start with a single
         ``/`` could smuggle a userinfo@host (``@evil``) or a protocol-relative host
-        (``//evil``) into the authority. Reject those, plus anything but printable ASCII —
+        (``//evil``) into the authority. Reject those, plus anything but printable ASCII:
         control chars (CR/LF/tab/NUL) enable request smuggling, and a non-ASCII byte would
         otherwise raise deeper in http.client; a real path encodes those as %XX."""
         path = arguments.get("path")

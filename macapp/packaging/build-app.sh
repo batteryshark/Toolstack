@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build "Toolstack Operator.app" — a proper .app bundle from the SwiftPM release binary, so the
+# Build "Toolstack Operator.app": a proper .app bundle from the SwiftPM release binary, so the
 # operator app is a double-clickable, signable, first-class macOS app (not just `swift run`).
 #
 #   ./packaging/build-app.sh            # -> "build/Toolstack Operator.app" (unsigned)
@@ -35,12 +35,12 @@ done
 iconutil -c icns "$ICONSET" -o "${CONTENTS}/Resources/AppIcon.icns"
 rm -rf "$(dirname "$ICONSET")"
 
-# SwiftPM resource bundle(s) — so Bundle.module (the menu-bar icon) resolves in the packaged app.
+# SwiftPM resource bundle(s), so Bundle.module (the menu-bar icon) resolves in the packaged app.
 for b in "$BINDIR"/*.bundle; do [ -e "$b" ] && cp -R "$b" "${CONTENTS}/Resources/"; done
 
 # Fail fast if the Info.plist is malformed.
 plutil -lint "${CONTENTS}/Info.plist" >/dev/null
 
 echo "✓ built ${OUT}"
-echo "  unsigned — run it with:  open \"${OUT}\""
+echo "  unsigned, run it with:  open \"${OUT}\""
 echo "  ship it with:            ./packaging/sign-and-notarize.sh"

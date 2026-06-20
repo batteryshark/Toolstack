@@ -1,27 +1,27 @@
-# Toolstack admin panel — systemd unit TEMPLATE.
+# Toolstack admin panel: systemd unit TEMPLATE.
 #
 # This file ships with placeholders, not working values. To deploy:
 #   1. cp deploy/toolstack-admin.service /etc/systemd/system/toolstack-admin.service
-#   2. Edit every line marked "EDIT:" — the service account and the install root
+#   2. Edit every line marked "EDIT:", the service account and the install root
 #      (the root path repeats in WorkingDirectory + the three Exec lines). The
 #      defaults assume the checkout lives at /opt/toolstack owned by a
 #      `toolstack` user; change to taste.
 #   3. cp deploy/toolstack-admin.env.example /etc/toolstack/admin.env, then
-#      `chmod 600` it and fill it in — that is where the secret backend, the
+#      `chmod 600` it and fill it in; that is where the secret backend, the
 #      Infisical host/vault, and the toolyard runner live, so site config and
 #      secrets stay out of this unit (and out of version control).
 #   4. systemctl daemon-reload && systemctl enable --now toolstack-admin
 #
-# Supervision model (intentional — this is not an orphaned-process bug):
+# Supervision model (intentional, this is not an orphaned-process bug):
 #   ExecStart is the admin panel: the long-lived, systemd-tracked process.
 #   The broker is NOT a child of it. It is supervised out of band by a state
 #   file (PID + port under the admin XDG state dir), exactly like toolyard's
 #   ProcessRunner: it runs in its own process group, started/stopped through
-#   admin.supervisor. ExecStartPost auto-starts it on boot — idempotent, it
-#   no-ops if a healthy broker is already recorded — and ExecStopPost tears it
+#   admin.supervisor. ExecStartPost auto-starts it on boot (idempotent, it
+#   no-ops if a healthy broker is already recorded) and ExecStopPost tears it
 #   down; init reaps it. You can also start/stop/restart it from the dashboard.
 #   Trade-off: because systemd doesn't track the broker, a broker crash won't
-#   trigger a systemd restart on its own — the dashboard surfaces broker health,
+#   trigger a systemd restart on its own; the dashboard surfaces broker health,
 #   and `Restart=on-failure` below only covers the panel. If you'd rather systemd
 #   own the broker directly, run `python -m broker.server` as its own unit (with
 #   the same EnvironmentFile) and drop the ExecStartPost/ExecStopPost lines here.
@@ -42,7 +42,7 @@ WorkingDirectory=/opt/toolstack
 # admin knobs. Optional (the leading '-'): without it the panel uses its built-in
 # defaults (process runner, file secret backend). See toolstack-admin.env.example.
 EnvironmentFile=-/etc/toolstack/admin.env
-# EDIT: absolute path to the admin venv's python — repeated in all three lines.
+# EDIT: absolute path to the admin venv's python, repeated in all three lines.
 ExecStart=/opt/toolstack/admin/.venv/bin/python -m admin serve --port 8780
 ExecStartPost=/opt/toolstack/admin/.venv/bin/python -c "from admin import broker_config, supervisor; supervisor.start(broker_config.load())"
 ExecStopPost=/opt/toolstack/admin/.venv/bin/python -c "from admin import supervisor; supervisor.stop()"
@@ -50,20 +50,20 @@ Restart=on-failure
 RestartSec=3
 
 # --- State location -----------------------------------------------------------
-# Pin every file the service writes — broker SQLite, the admin password + session
-# key, the encrypted vault, supervisor + toolyard state, per-tool logs — under ONE
+# Pin every file the service writes (broker SQLite, the admin password + session
+# key, the encrypted vault, supervisor + toolyard state, per-tool logs) under ONE
 # tree instead of an implicit $HOME. A system service's $HOME is frequently unset or
 # /nonexistent, which would otherwise send the DB and vault to an unwritable path and
 # break a clean fresh-box start. StateDirectory makes systemd create + own
 # /var/lib/toolstack (0700); XDG_*_HOME=/var/lib routes the app there (it appends
 # /toolstack/... itself). redeploy-toolstack parses these Environment= lines out of
-# this file, so the out-of-band CLI resolves the identical paths — keep them in sync.
+# this file, so the out-of-band CLI resolves the identical paths; keep them in sync.
 StateDirectory=toolstack
 Environment=XDG_STATE_HOME=/var/lib
 Environment=XDG_CONFIG_HOME=/var/lib
 
 # --- Sandboxing (systemd hardening) -------------------------------------------
-# A baseline that's safe for a Python web service (no syscall filter — it would trip
+# A baseline that's safe for a Python web service (no syscall filter: it would trip
 # cryptography/uvicorn). Review against your install paths before enabling.
 NoNewPrivileges=true
 PrivateTmp=true

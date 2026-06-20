@@ -143,7 +143,7 @@ class ToolsCall(BrokerTestCase):
 
     def test_denied_op_is_hidden_in_result_but_audited_like_rest(self):
         # echo.secret is registered but not granted. Least privilege hides "denied" from the
-        # caller (reads as "unknown"), but the denial is still recorded — the same
+        # caller (reads as "unknown"), but the denial is still recorded; the same
         # policy.decision_deny + request.denied trail REST writes, so a probe stays queryable.
         result = self._call("echo__secret").body["result"]
         self.assertTrue(result["isError"])
@@ -153,7 +153,7 @@ class ToolsCall(BrokerTestCase):
         self.assertIn(("request", "denied"), pairs)
 
     def test_reason_is_stripped_from_tool_arguments(self):
-        # `_reason` is adapter metadata, never a tool argument — even on an allow op.
+        # `_reason` is adapter metadata, never a tool argument, even on an allow op.
         self._call("echo__say", {"m": "hi", "_reason": "because"})
         self.assertEqual(self.ctx.runtime.calls[0][2], {"m": "hi"})
 

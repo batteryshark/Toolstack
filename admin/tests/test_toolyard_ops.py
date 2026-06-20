@@ -75,7 +75,7 @@ class ToolyardOps(unittest.TestCase):
             toolyard_ops.remove("ghost", str(self.tools_root))
 
     def test_remove_refuses_external_tool_dir(self):
-        # A tool registered from an external dir is the operator's folder — never delete it.
+        # A tool registered from an external dir is the operator's folder; never delete it.
         other = Path(self.tmp, "elsewhere", "weather")
         other.mkdir(parents=True)
         (other / "toolyard.toml").write_text(

@@ -3,7 +3,7 @@
 Each function takes a :class:`~broker.store.Store`, performs one mutation, and
 records the matching ``admin.*`` audit event with the operator's identity. This
 lives apart from ``brokerctl`` so the CLI and the web panel share exactly one
-implementation of every mutation — and therefore one audit trail.
+implementation of every mutation, and therefore one audit trail.
 
 A missing caller raises :class:`LookupError` (not ``SystemExit``): the CLI
 converts it to ``SystemExit`` for a clean exit, while the web app renders it as
@@ -47,7 +47,7 @@ def path_scoped_keys(policy: dict) -> set:
 def coarse_update_drops_scope(store: Store, name: str, allow, review, deny=None) -> set:
     """Return the path-scoped keys that a coarse allow/review/deny update would DROP for this
     caller (empty == safe). A path-blind client (the web policy editor) can't express path
-    rules, so saving one over a caller that has them would silently flatten them — that entry
+    rules, so saving one over a caller that has them would silently flatten them; that entry
     point calls this to refuse. A path-aware client (the macapp, which renders + manages the
     rules) declares itself and is trusted to send the full picture; brokerctl is unguarded."""
     caller = require_caller(store, name)
@@ -58,7 +58,7 @@ def coarse_update_drops_scope(store: Store, name: str, allow, review, deny=None)
 
 def enabled_tools(policy: dict) -> list[str]:
     """The tools a caller may manage policy for: the explicit ``enabled`` list (set via the
-    web "Enabled tools" toggle) plus any tool that already carries granted ops — so a policy
+    web "Enabled tools" toggle) plus any tool that already carries granted ops, so a policy
     authored by ``brokerctl set-policy`` (which grants ops but never sets ``enabled``) still
     surfaces its tools in the editor. Sorted, de-duplicated."""
     granted = policy.get("tools", {})
@@ -89,7 +89,7 @@ def record_admin_event(store: Store, operator: str, event_type: str, details: di
 
 def record_admin_denied(store: Store, event_type: str, details: dict) -> None:
     """Append a *denied* ``admin.<event_type>`` audit event (e.g. a failed login). Unlike
-    :func:`record_admin_event` there is no authenticated operator — the actor (IP, attempted
+    :func:`record_admin_event` there is no authenticated operator; the actor (IP, attempted
     username) rides in ``details``. Callers MUST NOT put the submitted password in ``details``."""
     store.append_audit(time.time(), "admin", event_type, "denied", uuid.uuid4().hex, None, details)
 
@@ -114,8 +114,8 @@ def create_caller(store: Store, name: str, allow, review, operator: str, deny=No
 
 def _cancel_pending_approvals(store: Store, caller_id: int, surface, operator: str,
                               reason: str) -> int:
-    """Cancel a caller's pending approvals: mark each terminal in the store — so the
-    parked request can never execute even if a human later taps approve — and
+    """Cancel a caller's pending approvals: mark each terminal in the store (so the
+    parked request can never execute even if a human later taps approve) and
     best-effort withdraw it from the approval surface. Returns the count cancelled.
 
     ``surface`` may be None: ``brokerctl`` / the admin app revoke out of the broker
@@ -169,7 +169,7 @@ def issue_token(store: Store, name: str, operator: str) -> str:
 def rotate_token(store: Store, name: str, operator: str) -> str:
     """Replace a caller's tokens with a single fresh one and return it once.
 
-    Issues the new token first, then revokes every other active token for the caller —
+    Issues the new token first, then revokes every other active token for the caller:
     add-then-revoke so the caller is never momentarily tokenless (its in-flight
     approvals survive the rotation). This enforces one active token per caller; for a
     distinct identity, create a distinct caller."""
@@ -186,10 +186,10 @@ def revoke_token(store: Store, prefix: str, operator: str, surface=None) -> int:
     """Revoke tokens whose hash starts with ``prefix``; return how many were revoked.
 
     Cancels pending approvals only for callers the revocation leaves with no active
-    token — i.e. it fully de-authenticates them. A caller with other live tokens can
+    token; i.e. it fully de-authenticates them. A caller with other live tokens can
     still act, so its in-flight approvals stand."""
     if not prefix.strip():
-        return 0  # an empty prefix would LIKE-match every token — refuse to nuke all
+        return 0  # an empty prefix would LIKE-match every token; refuse to nuke all
     caller_ids = store.caller_ids_for_token_prefix(prefix)
     count = store.revoke_token_by_prefix(prefix)
     if count:
