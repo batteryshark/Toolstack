@@ -60,6 +60,12 @@ class ToolUnreachable(RuntimeError):
     returned an error, so the lifecycle can report `tool_unreachable` vs `tool_failed`."""
 
 
+class RestTemplateError(ValueError):
+    """A named rest op's path template could not be filled from the caller's arguments (a required
+    path parameter is missing, not a string, or would escape its path segment). Raised by
+    resolve_rest_path; the lifecycle turns it into a clean bad-arguments outcome, fail closed."""
+
+
 # Protocol version the broker advertises in `initialize`. A streamable-HTTP MCP
 # server negotiates down if it speaks an older one; we send a recent dated version.
 MCP_PROTOCOL_VERSION = "2025-06-18"
@@ -81,6 +87,59 @@ _RESERVED_REQ_HEADERS = frozenset({
     "te", "trailer", "transfer-encoding", "upgrade",
 })
 _HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*\Z")  # \Z (not $) so a trailing \n can't slip in
+
+# A path-template variable in a named rest op. ``{name}`` is one path segment; ``{+name}`` is RFC
+# 6570 reserved expansion (a cross-segment tail that may contain '/'). The name is snake_case, the
+# same convention OpenAPI / Swagger paths use, so a spec maps 1:1 onto named ops.
+_TEMPLATE_VAR = re.compile(r"\{(\+?)([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+
+def resolve_rest_path(template: str, arguments: dict) -> str:
+    """Fill a named rest op's path template from the caller's arguments and return the request path.
+
+    ``{name}`` becomes exactly ONE percent-encoded segment: a '/' in the value is encoded (it can't
+    add path structure) and a '.'/'..' segment is rejected (it can't traverse). ``{+name}`` is a
+    reserved cross-segment tail ('/' allowed, for an op that opts into a subtree) but empty / '.' /
+    '..' segments are still rejected, so it can't climb above the template's literal prefix. A
+    missing or non-string parameter raises RestTemplateError. The literal parts of the template are
+    the tool author's, never the caller's, so the caller fills blanks and never constructs a path."""
+    args = arguments if isinstance(arguments, dict) else {}
+
+    def fill(m: "re.Match") -> str:
+        reserved, name = m.group(1), m.group(2)
+        value = args.get(name)
+        if not isinstance(value, str) or value == "":
+            raise RestTemplateError(f"missing or empty path parameter {name!r}")
+        if reserved:  # {+name}: a tail that may span segments, but must not traverse or be absolute
+            encoded = urllib.parse.quote(value, safe="/")
+            if any(seg in ("", ".", "..") for seg in encoded.split("/")):
+                raise RestTemplateError(f"path parameter {name!r} has an empty or dot segment")
+            return encoded
+        if "/" in value:   # a single segment can't contain '/': use {+name} for a multi-segment tail
+            raise RestTemplateError(f"path parameter {name!r} may not contain '/'")
+        encoded = urllib.parse.quote(value, safe="")  # {name}: exactly one segment
+        if encoded in (".", ".."):                     # quote leaves dots as-is; reject a traversal
+            raise RestTemplateError(f"path parameter {name!r} may not be '.' or '..'")
+        return encoded
+
+    path = _TEMPLATE_VAR.sub(fill, template)
+    # Belt-and-suspenders: quote() already encodes every control char in a param value, so a CRLF
+    # can't smuggle a header line into the forwarded request. Assert it explicitly so a future
+    # widening of `safe=` can't silently reintroduce that.
+    if any(ord(c) < 0x20 or ord(c) == 0x7f for c in path):
+        raise RestTemplateError("resolved path contains a control character")
+    return path
+
+
+def append_query(path: str, arguments: dict) -> str:
+    """Append the caller's optional ``query`` dict to a request path. Shared by the passthrough
+    path (caller-supplied), a named op's resolved template path, and the approval card, so the
+    human approver sees the SAME target (path + query) that will actually execute."""
+    query = arguments.get("query")
+    if isinstance(query, dict) and query:
+        pairs = urllib.parse.urlencode({str(k): str(v) for k, v in query.items()})
+        path = path + ("&" if "?" in path else "?") + pairs
+    return path
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -309,12 +368,17 @@ class HttpRuntime:
 
     # -- rest transport: verb-as-op passthrough to 127.0.0.1:<port><path> ---------
     def _execute_rest(self, tool_op: ToolOp, arguments: dict, request_id: int, caller_name: str) -> dict:
-        verb = tool_op.op.upper()
+        verb = (tool_op.verb or tool_op.op).upper()
         if verb not in REST_VERBS:
             # the registry only registers declared ops, but never use an arbitrary string
             # as an HTTP method; guard against method injection explicitly.
-            raise RuntimeError(f"unsupported REST verb {tool_op.op!r}")
-        path = self._rest_path(arguments)
+            raise RuntimeError(f"unsupported REST verb {verb!r}")
+        if tool_op.path_template is not None:
+            # named op: the broker builds the path from the template + the caller's params, so the
+            # caller never supplies a free path (resolve_rest_path encodes each param to its segment).
+            path = append_query(resolve_rest_path(tool_op.path_template, arguments), arguments)
+        else:
+            path = self._rest_path(arguments)   # passthrough: the caller supplies the path
         url = f"http://127.0.0.1:{tool_op.port}{path}"
         # Forward the caller's headers (minus the reserved namespace), then layer the broker's
         # OWN headers on top so they always win; the broker's caller-identity assertion can't
@@ -391,11 +455,7 @@ class HttpRuntime:
         # allow only printable ASCII (0x21-0x7e); rejects control chars, space, DEL, non-ASCII
         if "\\" in path or any(not (0x21 <= ord(c) <= 0x7e) for c in path):
             raise RuntimeError("rest path contains invalid characters (use %XX encoding)")
-        query = arguments.get("query")
-        if isinstance(query, dict) and query:
-            pairs = urllib.parse.urlencode({str(k): str(v) for k, v in query.items()})
-            path = path + ("&" if "?" in path else "?") + pairs
-        return path
+        return append_query(path, arguments)
 
     @staticmethod
     def _parse_body(raw: bytes, ctype: str):
