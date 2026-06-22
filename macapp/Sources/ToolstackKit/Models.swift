@@ -43,7 +43,11 @@ public struct OpInfo: Codable, Sendable, Identifiable, Equatable {
     public let op: String
     public let risk: String
     public let description: String
+    public let verb: String?   // rest: the HTTP method (a named op's verb, or the op-as-verb)
+    public let path: String?   // rest NAMED op: the path template; nil for passthrough / api / mcp
     public var id: String { op }
+    /// A named rest op pins a (verb, path); a passthrough verb op (or an api/mcp op) does not.
+    public var isNamed: Bool { !(path ?? "").isEmpty }
 }
 
 /// A tool's secret DECLARATION (not a value): the file the tool reads (`name`), the backend
