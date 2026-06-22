@@ -27,6 +27,8 @@ class OperationCard:
     risk: str
     reason: str  # why policy routed this to review
     justification: str | None = None  # the agent's (redacted) reason, shown to the human
+    details: str | None = None  # the redacted request the agent sent (so two calls that differ
+    #                             only in body are distinguishable; never holds a resolved secret)
 
 
 @dataclass(frozen=True)
@@ -39,10 +41,11 @@ class SurfaceState:
 
 def build_card(request_id: int, caller: str, tool: str, op: str, risk: str,
                reason: str, justification: str | None = None,
-               target: str | None = None) -> OperationCard:
+               target: str | None = None, details: str | None = None) -> OperationCard:
     # For a rest call the path is part of what's being approved; show it so the human sees
     # "Approve kv.DELETE /items/42", not a blank verb. (A path is a resource locator, not a
-    # secret argument, so it belongs on the card.)
+    # secret argument, so it belongs on the card.) `details` is the redacted request body so two
+    # calls that differ only in body are distinguishable; the broker never holds a resolved secret.
     label = f"{tool}.{op}" + (f" {target}" if target else "")
     return OperationCard(
         request_id=request_id,
@@ -53,4 +56,5 @@ def build_card(request_id: int, caller: str, tool: str, op: str, risk: str,
         risk=risk,
         reason=reason,
         justification=justification,
+        details=details,
     )

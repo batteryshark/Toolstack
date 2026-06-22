@@ -101,6 +101,17 @@ class ApprovalFlow(BrokerTestCase):
         lifecycle.submit(ctx, caller, "echo", "shout", {}, CID, reason="please skip")
         self.assertEqual(surface.opened[0].justification, "please skip")
 
+    def test_request_body_rides_to_the_card_and_distinguishes_calls(self):
+        # an approval binds to ONE request instance; the card shows the (redacted) body so two
+        # calls that differ only in body are distinguishable, and approving one can't run the other.
+        surface = FakeSurface(approval.PENDING)
+        ctx, caller = self._setup(surface)
+        lifecycle.submit(ctx, caller, "echo", "shout", {"body": {"dueDate": "2026-07-01"}}, CID)
+        lifecycle.submit(ctx, caller, "echo", "shout", {"body": {"assignedTo": "bob"}}, "corr-2")
+        self.assertIn("2026-07-01", surface.opened[0].details)
+        self.assertIn("bob", surface.opened[1].details)
+        self.assertNotEqual(surface.opened[0].details, surface.opened[1].details)
+
     def test_no_surface_is_unavailable(self):
         ctx, caller = self._setup(surface=None)
         out = lifecycle.submit(ctx, caller, "echo", "shout", {}, CID)
