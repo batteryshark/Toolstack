@@ -104,8 +104,13 @@ class NodSurface:
             "dedupe_key": str(card.request_id),  # retry-safe open
             "notification": {"redact": True},  # nothing sensitive on a lock screen
         }
+        md = []
         if card.justification:
-            payload["body_markdown"] = f"**Agent's reason:** {card.justification}"
+            md.append(f"**Agent's reason:** {card.justification}")
+        if card.details:  # the redacted request the agent sent (no resolved secrets; the tool
+            md.append(f"**Request the agent sent:**\n```json\n{card.details}\n```")  # injects those
+        if md:
+            payload["body_markdown"] = "\n\n".join(md)
         result = self._call("POST", "/api/v1/requests", payload)
         return str(result["request_id"])
 

@@ -22,7 +22,7 @@ from dataclasses import dataclass, replace
 
 from . import approval
 from . import policy as policy_rules
-from .redaction import redact
+from .redaction import redact, redact_request
 from .runtime import RestTemplateError, ToolUnreachable, append_query, resolve_rest_path
 
 OK = "ok"
@@ -121,7 +121,8 @@ def _open_approval(ctx, request_id, caller_name, tool, op, risk, arguments, corr
     ctx.store.update_request(request_id, arguments_json=json.dumps(arguments))
     # the agent's reason (redacted) rides along to the human on the card
     card = approval.build_card(request_id, caller_name, tool, op, risk,
-                               reason="policy review", justification=redact(reason), target=target)
+                               reason="policy review", justification=redact(reason), target=target,
+                               details=redact_request(arguments))
     try:
         ref = ctx.surface.open(card)
     except Exception as exc:

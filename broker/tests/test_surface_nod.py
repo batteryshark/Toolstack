@@ -138,6 +138,16 @@ class NodSurfaceHTTP(unittest.TestCase):
         self.assertTrue(body["notification"]["redact"])
         self.assertNotIn("arguments", body)  # no raw args in the card
 
+    def test_open_includes_redacted_request_in_body_markdown(self):
+        card = OperationCard(
+            request_id=7, title="Approve echo.shout for caller hermes", caller="hermes",
+            tool="echo", op="shout", risk="write", reason="policy review",
+            details='{\n  "body": {\n    "dueDate": "2026-07-01"\n  }\n}')
+        self.surface.open(card)
+        body = _FakeNod.created["body"]
+        self.assertIn("2026-07-01", body["body_markdown"])       # the human sees what was submitted
+        self.assertEqual(set(body) - NOD_CREATE_FIELDS, set())   # still only nod-accepted top-level fields
+
     def test_open_payload_obeys_nod_create_contract(self):
         """Every field the adapter sends is one nod actually accepts, and every
         option kind is a real OptionKind, the doc-vs-code drift this task closed."""
