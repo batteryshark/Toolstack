@@ -142,8 +142,8 @@ ctl issue-token  --name my-agent                          # prints the bearer to
 ```
 
 Give the token to the agent as its `Authorization: Bearer ...`. Tighten or widen access later
-with `set-policy` (`--allow` / `--review` / `--deny`, path-scoped for `rest` tools), and
-rotate with `revoke-token` / `issue-token`. (`ctl` uses the broker's default DB path; if you
+with `set-policy` (`--allow` / `--review` / `--deny`, by op name; a bare-verb `rest` op can also
+be path-scoped, e.g. `kv.GET /items/**`), and rotate with `revoke-token` / `issue-token`. (`ctl` uses the broker's default DB path; if you
 changed `db_path` in `broker.toml`, pass `--db <path>`.)
 
 ## Backups

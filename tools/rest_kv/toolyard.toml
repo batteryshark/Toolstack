@@ -51,5 +51,27 @@ risk = "destructive"
 description = "Delete /items/<key>. 404 if absent."
 args = [ { name = "path", type = "string", required = true, description = "request path on the tool, e.g. /items/42" }, { name = "body", type = "object", required = false, description = "JSON request body (POST/PUT/PATCH)" }, { name = "query", type = "object", required = false, description = "query-string parameters" }, { name = "headers", type = "object", required = false, description = "request headers to forward (broker reserves X-Toolstack-*)" } ]
 
+# A tool can ALSO expose NAMED ops on the same service. A named op pins a (verb, path-template):
+# the agent calls it by name and fills {key}, so it never constructs a free path, and policy grants
+# it by name (kv.get_item) with no path glob. The bare verbs above stay as the broad escape hatch.
+# Risk still derives from the verb (get_item=read, delete_item=destructive). The broker fills the
+# template and forwards GET /items/<key> to this same service.
+#   kv.get_item    {key = "foo"}   ->  GET /items/foo
+#   kv.delete_item {key = "foo"}   ->  DELETE /items/foo
+
+[[operations]]
+name = "get_item"
+verb = "GET"
+path = "/items/{key}"
+description = "Read one item by key (a named op; grant it as kv.get_item, no path glob needed)."
+args = [ { name = "key", type = "string", required = true, description = "the item key, e.g. foo" } ]
+
+[[operations]]
+name = "delete_item"
+verb = "DELETE"
+path = "/items/{key}"
+description = "Delete one item by key (a named op; risk derives from DELETE = destructive)."
+args = [ { name = "key", type = "string", required = true, description = "the item key, e.g. foo" } ]
+
 # Like the other templates, this demo ships with NO secrets, and the optional broker_secret
 # defense-in-depth check works the same way (see app.py verify_broker).
