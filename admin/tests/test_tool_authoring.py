@@ -232,7 +232,7 @@ class ReadWrite(unittest.TestCase):
 class BundledSampleTools(unittest.TestCase):
     """Guard against the recurring 'sample shipped without a Dockerfile' redeploy failure
     (echo_mcp, then rest_kv): every tool bundled under <repo>/tools must be startable by the
-    docker runner — i.e. carry an `image` or a `Dockerfile` (a process `command` alone won't
+    docker runner, i.e. carry an `image` or a `Dockerfile` (a process `command` alone won't
     build). Caught here at test time instead of at `redeploy` time."""
 
     def test_every_bundled_tool_is_docker_startable(self):
@@ -245,7 +245,7 @@ class BundledSampleTools(unittest.TestCase):
                 data = tool_authoring.read(tool_dir)
                 self.assertIsNone(
                     tool_authoring.entrypoint_error(data, tool_dir, runner="docker"),
-                    f"{tool_dir.name} can't start under the docker runner — add a Dockerfile "
+                    f"{tool_dir.name} can't start under the docker runner: add a Dockerfile "
                     f"or set an image in its toolyard.toml")
 
 
