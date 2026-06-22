@@ -53,6 +53,13 @@ import urllib.request
 
 from .registry import ToolOp
 
+
+class ToolUnreachable(RuntimeError):
+    """The broker could not reach the tool at all (connection refused, DNS, or timeout),
+    i.e. the tool process is probably not running. Kept distinct from a tool that ran and
+    returned an error, so the lifecycle can report `tool_unreachable` vs `tool_failed`."""
+
+
 # Protocol version the broker advertises in `initialize`. A streamable-HTTP MCP
 # server negotiates down if it speaks an older one; we send a recent dated version.
 MCP_PROTOCOL_VERSION = "2025-06-18"
@@ -164,7 +171,7 @@ class HttpRuntime:
             exc.close()
             raise RuntimeError(f"tool returned HTTP {exc.code}")
         except urllib.error.URLError as exc:
-            raise RuntimeError(f"tool unreachable: {exc.reason}")
+            raise ToolUnreachable(f"tool unreachable: {exc.reason}")
         try:
             return json.loads(body)
         except json.JSONDecodeError:
@@ -231,7 +238,7 @@ class HttpRuntime:
             exc.close()
             raise RuntimeError(f"tool returned HTTP {exc.code}")
         except urllib.error.URLError as exc:
-            raise RuntimeError(f"tool unreachable: {exc.reason}")
+            raise ToolUnreachable(f"tool unreachable: {exc.reason}")
         message = self._parse_jsonrpc(raw, ctype)
         if "error" in message:
             err = message["error"] or {}
@@ -334,7 +341,7 @@ class HttpRuntime:
             status, raw, msg = exc.code, exc.read(), exc.headers
             exc.close()
         except urllib.error.URLError as exc:
-            raise RuntimeError(f"tool unreachable: {exc.reason}")
+            raise ToolUnreachable(f"tool unreachable: {exc.reason}")
         ctype = msg.get("Content-Type", "") if msg else ""
         # Return the tool's response headers too (full passthrough fidelity: Location on a
         # 201, Content-Type, pagination/rate-limit headers). dict() collapses a repeated

@@ -36,7 +36,7 @@ GET  /v1/requests/<id>           poll a request (owner only) -> status + result 
 
 - Auth: `Authorization: Bearer <token>` (one caller). Only `GET /v1/health` is open.
 - Action responses: `200` ran · `202` pending review · `403` denied · `404` unknown ·
-  `400` invalid · `429` rate-limited · `502` tool failed · `503` approval surface unavailable.
+  `400` invalid · `429` rate-limited · `502` tool failed/unreachable · `503` approval surface unavailable.
 - A reviewed request resolves on poll to `ok` / `denied` / `expired`, carrying the
   human's `approver` + `note`; the agent's (redacted) `reason` is shown to the approver.
 - Discovery is policy-filtered: a caller sees only the ops it may use.
