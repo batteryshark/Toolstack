@@ -23,7 +23,7 @@ from dataclasses import dataclass, replace
 from . import approval
 from . import policy as policy_rules
 from .redaction import redact
-from .runtime import ToolUnreachable
+from .runtime import RestTemplateError, ToolUnreachable, append_query, resolve_rest_path
 
 OK = "ok"
 PENDING = "pending_approval"
@@ -64,19 +64,32 @@ def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Out
     audit.record("request", "received", "accepted", correlation_id,
                  request_id=request_id, details=received)
 
-    # For a rest tool, policy may scope by request path; pass it so decide() can match the
-    # path-glob rules. A rest call with no valid path can't be authorized against those rules,
-    # so deny it fail-closed here (execute would reject it anyway). api / mcp pass no path.
+    # Policy decision. A bare-verb (passthrough) rest op scopes by request path, so pass the
+    # caller's path to decide() for the path-glob match (no valid path => fail closed). A *named*
+    # rest op, like api / mcp, keys on the op NAME: the bot picks a declared capability and the
+    # broker fills the template, so there's no free path to scope. The card shows the resolved path.
+    # The card target shows path + query (append_query), so a human approves the SAME request that
+    # executes, not a misleadingly narrow path.
     target = None  # the rest path, shown on the approval card
-    if tool_op.type == "rest":
+    if tool_op.type == "rest" and tool_op.path_template is None:
         rest_path = arguments.get("path") if isinstance(arguments, dict) else None
         if isinstance(rest_path, str) and rest_path.startswith("/"):
-            target = rest_path
+            target = append_query(rest_path, arguments)
             decision = policy_rules.decide(ctx.store.policy_for(caller.id), tool, op, rest_path)
         else:
             decision = policy_rules.DENY
     else:
         decision = policy_rules.decide(ctx.store.policy_for(caller.id), tool, op)
+        if decision != policy_rules.DENY and tool_op.path_template is not None:
+            # named op: resolve the template for the card AND validate the caller's params early;
+            # a missing/invalid path param fails closed before we execute or open an approval.
+            try:
+                target = append_query(resolve_rest_path(tool_op.path_template, arguments), arguments)
+            except RestTemplateError:
+                ctx.store.update_request(request_id, status="failed", error="bad_arguments")
+                audit.record("runtime", "bad_arguments", FAILED, correlation_id,
+                             request_id=request_id, details={"tool": tool, "op": op})
+                return Outcome(FAILED, request_id=request_id, error="bad_arguments")
 
     if decision == policy_rules.DENY:
         ctx.store.update_request(request_id, status="denied")

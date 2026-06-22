@@ -42,6 +42,10 @@ class ToolOp:
     risk: str
     port: int
     type: str
+    verb: str | None = None           # rest: the HTTP method (a named op's `verb`, or the op-as-verb
+    #                                   for a bare-verb passthrough); None for api / mcp.
+    path_template: str | None = None  # rest *named* op: the RFC 6570-style path template the broker
+    #                                   fills from the caller's params; None = passthrough / api / mcp.
 
 
 class Registry:
@@ -87,14 +91,34 @@ class Registry:
         ops = {}
         for o in data.get("operations", []):
             risk = o.get("risk", "unknown")
+            verb, template = None, None
             if tool_type == "rest":
+                template = o.get("path")
+                if template is not None:
+                    # named op: `name` is a label, `verb` is the method, `path` is the template the
+                    # broker fills from the caller's params (so the caller picks a named op + fills
+                    # blanks, never constructs a free path). risk derives from the verb.
+                    verb = str(o.get("verb", "")).upper()
+                    if verb not in REST_VERB_RISK:
+                        raise ValueError(
+                            f"{toml_path}: rest op {o['name']!r} declares a path, so it needs a "
+                            f"verb (one of {', '.join(REST_VERB_RISK)})")
+                    if not (isinstance(template, str) and template.startswith("/")):
+                        raise ValueError(
+                            f"{toml_path}: rest op {o['name']!r} path must start with '/'")
+                else:
+                    # bare-verb passthrough (the escape hatch): the name IS the verb, the caller
+                    # supplies the path, and policy globs it. risk still derives from the verb.
+                    verb = o["name"].upper()
                 # the verb defines the risk; override the manifest (case-insensitively) so a
                 # mislabelled or hand-written rest op can't misrepresent risk on the approval card
-                risk = REST_VERB_RISK.get(o["name"].upper(), risk)
+                risk = REST_VERB_RISK.get(verb, risk)
             ops[o["name"]] = {
                 "risk": risk,
                 "description": o.get("description", ""),
                 "args": o.get("args", []),
+                "verb": verb,
+                "template": template,
             }
         # NOTE: data["secrets"] is deliberately never read here.
         catalog[tool_id] = {"port": port, "type": tool_type, "ops": ops}
@@ -126,20 +150,26 @@ class Registry:
         entry = self._catalog.get(tool)
         if entry is None or op not in entry["ops"]:
             return None
-        return ToolOp(tool, op, entry["ops"][op]["risk"], entry["port"], entry["type"])
+        meta = entry["ops"][op]
+        return ToolOp(tool, op, meta["risk"], entry["port"], entry["type"],
+                      verb=meta.get("verb"), path_template=meta.get("template"))
 
     def describe(self, tool: str, op: str) -> dict | None:
         entry = self._catalog.get(tool)
         if entry is None or op not in entry["ops"]:
             return None
         meta = entry["ops"][op]
+        # verb + path are set for a rest tool (a named op carries its template; a passthrough op
+        # carries its verb and a null path). They're absent (null) for api / mcp ops.
         return {"tool": tool, "op": op, "risk": meta["risk"],
-                "description": meta["description"], "args": meta["args"]}
+                "description": meta["description"], "args": meta["args"],
+                "verb": meta.get("verb"), "path": meta.get("template")}
 
     def list_ops(self) -> list[dict]:
         ops = []
         for tool, entry in self._catalog.items():
             for op, meta in entry["ops"].items():
                 ops.append({"tool": tool, "op": op, "type": entry["type"], "risk": meta["risk"],
-                            "description": meta["description"]})
+                            "description": meta["description"],
+                            "verb": meta.get("verb"), "path": meta.get("template")})
         return ops

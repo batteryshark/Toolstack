@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest import mock
 
 from broker.registry import ToolOp
-from broker.runtime import HttpRuntime, _env_tool_secret
+from broker.runtime import HttpRuntime, RestTemplateError, _env_tool_secret, resolve_rest_path
 
 
 class _FakeTool(BaseHTTPRequestHandler):
@@ -410,6 +410,104 @@ class RestForward(unittest.TestCase):
         self.assertEqual(result["status"], 201)
         self.assertEqual(result["headers"].get("Location"), "/items/new")    # full-fidelity passthrough
         self.assertEqual(result["headers"].get("Content-Type"), "application/json")
+
+
+class ResolveTemplate(unittest.TestCase):
+    """resolve_rest_path: fills a named rest op's path template from caller params, encoding each
+    param to its segment and refusing any value that would escape it. Pure function, no I/O."""
+
+    def test_single_segment_is_filled_and_encoded(self):
+        self.assertEqual(
+            resolve_rest_path("/me/todo/lists/{list_id}/tasks/{task_id}",
+                              {"list_id": "AA 1", "task_id": "b#2"}),
+            "/me/todo/lists/AA%201/tasks/b%232")   # space + '#' percent-encoded within one segment
+
+    def test_slash_in_single_segment_is_rejected(self):
+        # a single {name} segment can't carry '/': it would add path structure (use {+name} instead)
+        with self.assertRaises(RestTemplateError):
+            resolve_rest_path("/items/{id}", {"id": "a/b"})
+
+    def test_no_params_returns_template_verbatim(self):
+        self.assertEqual(resolve_rest_path("/me/messages", {}), "/me/messages")
+
+    def test_missing_param_raises(self):
+        with self.assertRaises(RestTemplateError):
+            resolve_rest_path("/items/{id}", {})
+
+    def test_non_string_param_raises(self):
+        with self.assertRaises(RestTemplateError):
+            resolve_rest_path("/items/{id}", {"id": 42})
+
+    def test_dot_segment_param_is_rejected(self):
+        for bad in ("..", "."):
+            with self.assertRaises(RestTemplateError):
+                resolve_rest_path("/items/{id}", {"id": bad})
+
+    def test_reserved_tail_spans_segments(self):
+        self.assertEqual(
+            resolve_rest_path("/files/{+rest}", {"rest": "a/b/c.txt"}),
+            "/files/a/b/c.txt")            # {+name} keeps '/'; an op opts into a subtree explicitly
+
+    def test_reserved_tail_rejects_traversal_and_absolute(self):
+        for bad in ("a/../b", "/etc/passwd", "a//b", "a/./b"):
+            with self.assertRaises(RestTemplateError):
+                resolve_rest_path("/files/{+rest}", {"rest": bad})
+
+    def test_crlf_param_stays_encoded(self):
+        # a CRLF in a value is percent-encoded, so no raw control char reaches the forwarded request
+        out = resolve_rest_path("/items/{id}", {"id": "a\r\nb"})
+        self.assertEqual(out, "/items/a%0D%0Ab")
+        self.assertNotIn("\r", out)
+        self.assertNotIn("\n", out)
+
+
+class NamedRestForward(unittest.TestCase):
+    """A named rest op: the broker fills the template from the caller's params and forwards the
+    resolved <verb> <path> to the tool. The caller never supplies a free path."""
+
+    def setUp(self):
+        _FakeRestTool.received = {}
+        _FakeRestTool.status = 200
+        _FakeRestTool.resp_body = None
+        _FakeRestTool.resp_ctype = "application/json"
+        _FakeRestTool.resp_location = None
+        self.server = HTTPServer(("127.0.0.1", 0), _FakeRestTool)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.thread.join, 5)
+        self.addCleanup(self.server.shutdown)
+
+    def _op(self, verb, template, op="get_task"):
+        return ToolOp("graph", op, "read", self.port, "rest", verb=verb, path_template=template)
+
+    def test_forwards_resolved_path_with_op_verb(self):
+        result = HttpRuntime().execute(
+            self._op("GET", "/me/todo/lists/{list_id}/tasks/{task_id}"),
+            {"list_id": "42", "task_id": "99"}, 7, "hermes")
+        self.assertEqual(_FakeRestTool.received["method"], "GET")          # verb from op.verb, not the name
+        self.assertEqual(_FakeRestTool.received["path"], "/me/todo/lists/42/tasks/99")
+        self.assertEqual(result["status"], 200)
+
+    def test_query_is_appended_to_resolved_path(self):
+        HttpRuntime().execute(self._op("GET", "/me/messages"),
+                              {"query": {"$top": "5"}}, 7, "hermes")
+        self.assertEqual(_FakeRestTool.received["path"], "/me/messages?%24top=5")
+
+    def test_param_cannot_escape_its_segment(self):
+        # a caller trying to traverse out of the route is refused before any forward
+        with self.assertRaises(RestTemplateError):
+            HttpRuntime().execute(self._op("GET", "/me/todo/lists/{list_id}"),
+                                  {"list_id": "../../admin"}, 7, "hermes")
+        self.assertEqual(_FakeRestTool.received, {})   # never reached the tool
+
+    def test_body_is_forwarded_for_a_named_write(self):
+        HttpRuntime().execute(self._op("POST", "/me/sendMail", op="send_mail"),
+                              {"body": {"message": {"subject": "hi"}}}, 7, "hermes")
+        self.assertEqual(_FakeRestTool.received["method"], "POST")
+        self.assertEqual(_FakeRestTool.received["path"], "/me/sendMail")
+        self.assertEqual(_FakeRestTool.received["body"], {"message": {"subject": "hi"}})
 
 
 class EnvToolSecret(unittest.TestCase):

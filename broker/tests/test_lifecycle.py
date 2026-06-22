@@ -108,6 +108,61 @@ class RestPathScoped(BrokerTestCase):
         out = lifecycle.submit(ctx, caller, "kv", "GET", {}, CID)  # no path argument
         self.assertEqual(out.status, lifecycle.DENIED)
 
+    def test_review_card_includes_path_and_query(self):
+        ctx, caller = self._ctx(review=["kv.GET /items/**"])
+        out = lifecycle.submit(ctx, caller, "kv", "GET",
+                               {"path": "/items/42", "query": {"fields": "all"}}, CID)
+        self.assertEqual(out.status, lifecycle.PENDING)
+        self.assertIn("/items/42?fields=all", ctx.surface.opened[0].title)   # query is on the card too
+
+
+class NamedRestLifecycle(BrokerTestCase):
+    """A named rest op keys policy on the op NAME (no path glob): the bot picks a declared
+    capability, the broker fills the template, and an undeclared op is simply not granted."""
+
+    NAMED = {"graph": {
+        "get_task": {"verb": "GET", "path": "/me/todo/lists/{list_id}/tasks/{task_id}", "risk": "read"},
+        "send_mail": {"verb": "POST", "path": "/me/sendMail", "risk": "write"},
+    }}
+
+    def _ctx(self, allow=None, review=None):
+        ctx = self.make_ctx(catalog=self.NAMED, tool_type="rest")
+        token = seed_caller(ctx.store, "hermes", allow=allow, review=review)
+        return ctx, authenticate(ctx.store, f"Bearer {token}")
+
+    def test_granted_named_op_runs(self):
+        ctx, caller = self._ctx(allow=["graph.get_task"])
+        out = lifecycle.submit(ctx, caller, "graph", "get_task",
+                               {"list_id": "42", "task_id": "99"}, CID)
+        self.assertEqual(out.status, lifecycle.OK)
+
+    def test_ungranted_named_op_is_denied(self):
+        # the bot may get_task but the policy never granted send_mail -> it cannot reach /me/sendMail
+        ctx, caller = self._ctx(allow=["graph.get_task"])
+        out = lifecycle.submit(ctx, caller, "graph", "send_mail",
+                               {"body": {"message": {}}}, CID)
+        self.assertEqual(out.status, lifecycle.DENIED)
+
+    def test_missing_path_param_fails_closed(self):
+        ctx, caller = self._ctx(allow=["graph.get_task"])
+        out = lifecycle.submit(ctx, caller, "graph", "get_task", {"list_id": "42"}, CID)  # no task_id
+        self.assertEqual(out.status, lifecycle.FAILED)
+        self.assertEqual(out.error, "bad_arguments")
+
+    def test_review_card_shows_the_resolved_path(self):
+        ctx, caller = self._ctx(review=["graph.send_mail"])
+        out = lifecycle.submit(ctx, caller, "graph", "send_mail", {"body": {"x": 1}}, CID)
+        self.assertEqual(out.status, lifecycle.PENDING)
+        self.assertIn("/me/sendMail", ctx.surface.opened[0].title)   # resolved path on the card
+
+    def test_review_card_includes_the_query_that_executes(self):
+        # the human must approve the SAME request that runs: path AND query, not a narrower path
+        ctx, caller = self._ctx(review=["graph.get_task"])
+        out = lifecycle.submit(ctx, caller, "graph", "get_task",
+                               {"list_id": "42", "task_id": "99", "query": {"expand": "details"}}, CID)
+        self.assertEqual(out.status, lifecycle.PENDING)
+        self.assertIn("/me/todo/lists/42/tasks/99?expand=details", ctx.surface.opened[0].title)
+
 
 if __name__ == "__main__":
     unittest.main()
