@@ -27,9 +27,12 @@ ARG_TYPES = ("string", "number", "integer", "boolean", "object", "array")
 # `type` (and, for rest, the op shape) differs.
 TOOL_TYPES = ("api", "mcp", "rest")
 
-# For a "rest" tool the op IS an HTTP verb, and its risk is DERIVED from the verb (not
-# operator-chosen) so a DELETE can't be mislabelled "read". The op's args are fixed too:
-# every verb takes the same {path, body, query} passthrough shape.
+# A "rest" op is one of two shapes, and either way its risk is DERIVED from the verb (not
+# operator-chosen) so a DELETE can't be mislabelled "read":
+#   - a NAMED op (name + verb + path template): the agent calls it by name and fills the path's
+#     {params}; the operator declares those params as args.
+#   - a bare-verb passthrough (the op IS the verb): the agent passes the fixed {path, body, query,
+#     headers} shape and policy scopes the path by glob.
 REST_VERBS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 REST_VERB_RISK = {"GET": "read", "POST": "write", "PUT": "write",
                   "PATCH": "write", "DELETE": "destructive"}
@@ -56,6 +59,23 @@ def from_json(raw: str) -> dict:
     return normalize(json.loads(raw))
 
 
+def _norm_args(raw) -> list[dict]:
+    """Normalize a list of arg descriptors (api ops and named rest ops author their own), dropping
+    blank rows and coercing types."""
+    out = []
+    for a in raw or []:
+        name = str(a.get("name") if a.get("name") is not None else "").strip()
+        if not name:
+            continue
+        out.append({
+            "name": name,
+            "type": str(a.get("type") if a.get("type") is not None else "").strip() or "string",
+            "required": bool(a.get("required")),
+            "description": str(a.get("description") if a.get("description") is not None else "").strip(),
+        })
+    return out
+
+
 def normalize(data: dict) -> dict:
     """Coerce a raw tool dict to clean types and drop blank rows, so validation and
     serialization can assume a tidy shape."""
@@ -69,33 +89,35 @@ def normalize(data: dict) -> dict:
         if not name:
             continue
         if tool_type == "rest":
-            # A rest op IS a verb: uppercase it, derive its risk, and give it the fixed
-            # passthrough arg shape. The operator only picks which verbs to expose; risk and
-            # args are not theirs to set (validate rejects a name that isn't a verb).
-            verb = name.upper()
-            operations.append({
-                "name": verb,
-                "risk": REST_VERB_RISK.get(verb, "write"),
-                "description": s(o.get("description")),
-                "args": [dict(a) for a in REST_ARGS],
-            })
+            path = s(o.get("path"))
+            if path:
+                # NAMED rest op: `name` is a label, `verb` is the method, `path` is the template;
+                # the operator declares the path params as args. Risk derives from the verb.
+                verb = s(o.get("verb")).upper()
+                operations.append({
+                    "name": name,
+                    "verb": verb,
+                    "path": path,
+                    "risk": REST_VERB_RISK.get(verb, "write"),
+                    "description": s(o.get("description")),
+                    "args": _norm_args(o.get("args")),
+                })
+            else:
+                # bare-verb passthrough: the name IS the verb, risk + args are fixed (validate
+                # rejects a name that isn't a verb).
+                verb = name.upper()
+                operations.append({
+                    "name": verb,
+                    "risk": REST_VERB_RISK.get(verb, "write"),
+                    "description": s(o.get("description")),
+                    "args": [dict(a) for a in REST_ARGS],
+                })
             continue
-        args = []
-        for a in o.get("args") or []:
-            an = s(a.get("name"))
-            if not an:
-                continue
-            args.append({
-                "name": an,
-                "type": s(a.get("type")) or "string",
-                "required": bool(a.get("required")),
-                "description": s(a.get("description")),
-            })
         operations.append({
             "name": name,
             "risk": s(o.get("risk")) or "read",
             "description": s(o.get("description")),
-            "args": args,
+            "args": _norm_args(o.get("args")),
         })
 
     secrets = []
@@ -157,10 +179,18 @@ def validate(data: dict) -> list[str]:
         if o["name"] in seen:
             errors.append(f"duplicate operation '{o['name']}'")
         seen.add(o["name"])
-        # For a rest tool the op must be one of the HTTP verbs (normalize uppercases it and
-        # derives the risk, so risk is always valid here; only the verb itself can be wrong).
-        if is_rest and o["name"] not in REST_VERBS:
-            errors.append(f"rest op '{o['name']}' must be an HTTP verb ({', '.join(REST_VERBS)})")
+        # A rest op is either a NAMED op (has a path template: validate the verb + path) or a
+        # bare-verb passthrough (the name must be an HTTP verb). normalize derives the risk either
+        # way, so risk is always valid here.
+        if is_rest:
+            if o.get("path"):
+                if o.get("verb") not in REST_VERBS:
+                    errors.append(f"named rest op '{o['name']}' needs a verb ({', '.join(REST_VERBS)})")
+                if not o["path"].startswith("/"):
+                    errors.append(f"named rest op '{o['name']}' path must start with '/'")
+            elif o["name"] not in REST_VERBS:
+                errors.append(f"rest op '{o['name']}' must be an HTTP verb ({', '.join(REST_VERBS)}), "
+                              f"or give it a path to make it a named op")
         if o["risk"] not in RISKS:
             errors.append(f"operation '{o['name']}' risk must be one of {', '.join(RISKS)}")
         for a in o["args"]:
@@ -233,7 +263,11 @@ def to_toml(data: dict) -> str:
         out.append(f"image = {_s(data['image'])}")
     out.append(f"port = {data['port']}")
     for o in data["operations"]:
-        out += ["", "[[operations]]", f"name = {_s(o['name'])}", f"risk = {_s(o['risk'])}"]
+        out += ["", "[[operations]]", f"name = {_s(o['name'])}"]
+        if o.get("path"):                                  # named rest op: verb + path template
+            out.append(f"verb = {_s(o['verb'])}")
+            out.append(f"path = {_s(o['path'])}")
+        out.append(f"risk = {_s(o['risk'])}")
         if o["description"]:
             out.append(f"description = {_s(o['description'])}")
         if o["args"]:

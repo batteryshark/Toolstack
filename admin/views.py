@@ -122,6 +122,7 @@ _TOOL_EDITOR_JS = """
   var ARG_TYPES = ["string","number","integer","boolean","object","array"];
   var RISK_CHOICES = ["read","write","destructive"];
   var TOOL_TYPES = ["api","mcp","rest"];   // matches admin TOOL_TYPES
+  var REST_VERBS = ["GET","POST","PUT","PATCH","DELETE"];   // matches admin REST_VERBS
   function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
   function opts(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+v+'</option>';}).join('');}
   function riskOpts(sel){return RISK_CHOICES.indexOf(sel)<0 ? [sel].concat(RISK_CHOICES) : RISK_CHOICES;}
@@ -146,9 +147,15 @@ _TOOL_EDITOR_JS = """
       + '<select class="op-risk">'+opts(riskOpts(o.risk||'read'), o.risk||'read')+'</select>'
       + '<input class="op-desc" placeholder="description">'
       + '<button type="button" class="rm">remove op</button></div>'
+      + '<div class="row op-rest">'
+      + '<select class="op-verb">'+opts(REST_VERBS, o.verb||'GET')+'</select>'
+      + '<input class="op-path" placeholder="/me/messages/{id}  (set a path = named op; blank = the op name IS the verb)">'
+      + '</div>'
       + '<div class="args"></div><button type="button" class="add-arg">add argument</button></div>');
     card.querySelector('.op-name').value = o.name||'';
     card.querySelector('.op-desc').value = o.description||'';
+    card.querySelector('.op-verb').value = o.verb||'GET';
+    card.querySelector('.op-path').value = o.path||'';
     var args = card.querySelector('.args');
     (o.args||[]).forEach(function(a){args.appendChild(argRow(a));});
     card.querySelector('.add-arg').onclick = function(){args.appendChild(argRow());};
@@ -183,8 +190,15 @@ _TOOL_EDITOR_JS = """
   (initial.operations && initial.operations.length ? initial.operations : [{}]).forEach(function(o){ops.appendChild(opCard(o));});
   var secs = document.getElementById('secrets');
   (initial.secrets||[]).forEach(function(s){secs.appendChild(secRow(s));});
-  document.getElementById('add-op').onclick = function(){ops.appendChild(opCard());};
+  var f_type = document.getElementById('f_type');
+  function syncType(){   // the verb/path row only applies to a rest tool
+    var isRest = f_type.value === 'rest';
+    [].forEach.call(document.querySelectorAll('.op-rest'), function(el){el.style.display = isRest ? '' : 'none';});
+  }
+  document.getElementById('add-op').onclick = function(){ops.appendChild(opCard()); syncType();};
   document.getElementById('add-secret').onclick = function(){secs.appendChild(secRow());};
+  f_type.addEventListener('change', syncType);
+  syncType();
 
   document.getElementById('tool-form').addEventListener('submit', function(){
     var tool = {
@@ -198,6 +212,8 @@ _TOOL_EDITOR_JS = """
         return {name: card.querySelector('.op-name').value,
                 risk: card.querySelector('.op-risk').value,
                 description: card.querySelector('.op-desc').value,
+                verb: card.querySelector('.op-verb').value,
+                path: card.querySelector('.op-path').value,
                 args: [].map.call(card.querySelectorAll('.argrow'), function(r){
                   return {name: r.querySelector('.arg-name').value,
                           type: r.querySelector('.arg-type').value,
@@ -615,6 +631,61 @@ def caller_tools_view(*, user, csrf, caller, all_tools, enabled, error=None) -> 
     return page(f"Tools · {caller}", body, user=user, csrf=csrf)
 
 
+def _op_effect_table(tool: str, ops: list, current_ops: dict, *, subtitle: str = "") -> str:
+    """A per-op effect table (allow / review / deny), used for api / mcp ops and for NAMED rest
+    ops (which grant by op name). For a named rest op the route (verb + path template) is shown."""
+    show_route = any(o.get("path") for o in ops)
+    op_rows = []
+    for op in ops:
+        name = op["op"]
+        effect = current_ops.get(name, "deny")
+        select = (f"<select name='op__{esc(tool)}__{esc(name)}'>"
+                  + "".join(f"<option value='{v}'{' selected' if effect == v else ''}>{v.title()}</option>"
+                            for v in ("allow", "review", "deny"))
+                  + "</select>")
+        route = f"<td><code>{esc(op.get('verb') or '')} {esc(op.get('path') or '')}</code></td>" if show_route else ""
+        op_rows.append(
+            "<tr>"
+            f"<td>{esc(name)}</td>"
+            f"<td><span class='risk {esc(op['risk'])}'>{esc(op['risk'])}</span></td>"
+            f"{route}"
+            f"<td>{esc(op.get('description', ''))}</td>"
+            f"<td>{select}</td>"
+            "</tr>"
+        )
+    sub = f" <span class='muted'>({esc(subtitle)})</span>" if subtitle else ""
+    route_h = "<th>Route</th>" if show_route else ""
+    return (
+        "<section><div class='row'>"
+        f"<h2>{esc(tool)}{sub}</h2>"
+        f"<button type='button' onclick=\"setTool('{esc(tool)}','allow')\">Allow all</button>"
+        f"<button type='button' onclick=\"setTool('{esc(tool)}','review')\">Review all</button>"
+        f"<button type='button' onclick=\"setTool('{esc(tool)}','deny')\">Deny all</button>"
+        "</div>"
+        f"<table><thead><tr><th>Operation</th><th>Risk</th>{route_h}<th>Description</th><th>Effect</th></tr></thead>"
+        f"<tbody>{''.join(op_rows)}</tbody></table></section>"
+    )
+
+
+def _rest_rule_section(tool: str) -> str:
+    """The (verb, path-glob, effect) rule editor for a rest tool's bare-verb passthrough ops."""
+    return (
+        "<section>"
+        f"<h2>{esc(tool)} <span class='muted'>(rest passthrough: path rules)</span></h2>"
+        "<p class='muted'>For the bare HTTP verbs (the passthrough escape hatch). Most specific "
+        "wins (most literal characters, then fewest wildcards; a genuine tie resolves to the most "
+        "restrictive). A path matching no rule is <strong>denied</strong>. Blank pattern = any "
+        "path; an explicit deny carves a hole inside a broader allow.</p>"
+        "<p class='muted'><strong>Specificity warning:</strong> a broad <code>allow</code> "
+        "(e.g. <code>/**</code>) grants every sub-path you didn't separately deny; prefer narrow "
+        "allows. For tighter scoping, declare a named op instead.</p>"
+        f"<div id='rules__{esc(tool)}' class='rules'></div>"
+        f"<button type='button' id='addrule__{esc(tool)}'>Add rule</button>"
+        f"<input type='hidden' id='rest_rules__{esc(tool)}' name='rest_rules__{esc(tool)}'>"
+        "</section>"
+    )
+
+
 def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, error=None) -> str:
     err = f"<div class='error'>{esc(error)}</div>" if error else ""
     tool_policies = current.get("tools", {})
@@ -640,61 +711,28 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, err
                    "valid tools root to manage policy.")
         sections.append(f"<section><p class='muted'>{msg}</p></section>")
     rest_rules: dict = {}   # tool -> [{verb, pattern, effect}] (seeds the JS rule rows)
-    rest_verbs: dict = {}   # tool -> [verb, ...] (the verbs the tool exposes)
+    rest_verbs: dict = {}   # tool -> [verb, ...] (the passthrough verbs the tool exposes)
     for tool, ops in sorted(ops_by_tool.items()):
         current_ops = tool_policies.get(tool, {})
         if ops and ops[0].get("type") == "rest":
-            # rest tool: edit (verb, path-glob, effect) rules instead of per-verb effects
-            rest_verbs[tool] = [op["op"] for op in ops]
-            rules = []
-            for key, effect in current_ops.items():
-                verb, _, pattern = key.partition(" ")
-                rules.append({"verb": verb, "pattern": pattern, "effect": effect})
-            rest_rules[tool] = rules
-            sections.append(
-                "<section>"
-                f"<h2>{esc(tool)} <span class='muted'>(rest: path rules)</span></h2>"
-                "<p class='muted'>Most specific wins (most literal characters, then fewest "
-                "wildcards; a genuine tie resolves to the most restrictive). A path matching no "
-                "rule is <strong>denied</strong>. Blank pattern = any path; an explicit deny "
-                "carves a hole inside a broader allow.</p>"
-                "<p class='muted'><strong>Specificity warning:</strong> a broad <code>allow</code> "
-                "(e.g. <code>/**</code>) grants every sub-path you didn't separately deny; prefer "
-                "narrow allows over a wide allow patched with denies, since one forgotten deny "
-                "leaves the path open.</p>"
-                f"<div id='rules__{esc(tool)}' class='rules'></div>"
-                f"<button type='button' id='addrule__{esc(tool)}'>Add rule</button>"
-                f"<input type='hidden' id='rest_rules__{esc(tool)}' name='rest_rules__{esc(tool)}'>"
-                "</section>"
-            )
+            # A rest tool can carry both shapes. Named ops (with a path template) grant by name,
+            # like api ops; bare-verb passthrough ops grant via path-glob rules. Render whichever
+            # the tool has.
+            passthrough_verbs = [op["op"] for op in ops if not op.get("path")]
+            named = [op for op in ops if op.get("path")]
+            if named:
+                sections.append(_op_effect_table(tool, named, current_ops, subtitle="named ops"))
+            if passthrough_verbs:
+                rest_verbs[tool] = passthrough_verbs
+                rules = []
+                for key, effect in current_ops.items():
+                    verb, _, pattern = key.partition(" ")
+                    if verb in passthrough_verbs:   # a named-op key (bare name) is not a path rule
+                        rules.append({"verb": verb, "pattern": pattern, "effect": effect})
+                rest_rules[tool] = rules
+                sections.append(_rest_rule_section(tool))
             continue
-        op_rows = []
-        for op in ops:
-            name = op["op"]
-            effect = current_ops.get(name, "deny")
-            select = (f"<select name='op__{esc(tool)}__{esc(name)}'>"
-                      + "".join(
-                          f"<option value='{v}'{' selected' if effect == v else ''}>{v.title()}</option>"
-                          for v in ("allow", "review", "deny"))
-                      + "</select>")
-            op_rows.append(
-                "<tr>"
-                f"<td>{esc(name)}</td>"
-                f"<td><span class='risk {esc(op['risk'])}'>{esc(op['risk'])}</span></td>"
-                f"<td>{esc(op.get('description', ''))}</td>"
-                f"<td>{select}</td>"
-                "</tr>"
-            )
-        sections.append(
-            "<section><div class='row'>"
-            f"<h2>{esc(tool)}</h2>"
-            f"<button type='button' onclick=\"setTool('{esc(tool)}','allow')\">Allow all</button>"
-            f"<button type='button' onclick=\"setTool('{esc(tool)}','review')\">Review all</button>"
-            f"<button type='button' onclick=\"setTool('{esc(tool)}','deny')\">Deny all</button>"
-            "</div>"
-            "<table><thead><tr><th>Operation</th><th>Risk</th><th>Description</th><th>Effect</th></tr></thead>"
-            f"<tbody>{''.join(op_rows)}</tbody></table></section>"
-        )
+        sections.append(_op_effect_table(tool, ops, current_ops))
     sections.append("</form>")
     if rest_verbs:  # seed + wire the rule-row editor for the rest tools on this page
         rules_js = json.dumps(rest_rules).replace("</", "<\\/")

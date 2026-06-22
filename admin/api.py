@@ -244,7 +244,8 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         try:
             for op in Registry.from_sources(config.tools_root, config.tool_dirs).list_ops():
                 ops_by_tool.setdefault(op["tool"], []).append(
-                    {"op": op["op"], "risk": op["risk"], "description": op["description"]})
+                    {"op": op["op"], "risk": op["risk"], "description": op["description"],
+                     "verb": op.get("verb"), "path": op.get("path")})  # rest: distinguishes named vs passthrough
         except Exception as exc:
             log.warning("could not read tool ops for the policy editor: %s", exc)
             # tools still listed (without ops) if the registry can't be read
