@@ -24,7 +24,7 @@ virtualenv. See [admin/README.md](../admin/README.md) for what the panel does.
 - A **service account**: a dedicated `toolstack` user + group (`sudo useradd --system --user-group --shell /usr/sbin/nologin toolstack`), or point the unit's `User=` / `Group=` at an account you already have.
 - An **admin virtualenv** with the package + panel deps: `python3 -m venv admin/.venv && admin/.venv/bin/pip install -e '.[vault]' -r admin/requirements.txt` (run from the checkout root). Installing the package puts `brokerctl` / `toolstack` / `toolyard` in `admin/.venv/bin` alongside the admin. (`deploy/install.sh` and `redeploy-toolstack` do this for you.)
 - A **secret backend**: the dev `file` backend (a local `secrets.toml`) or **Infisical** (set the `TOOLSTACK_INFISICAL_*` vars, see the env example).
-- For production tool isolation: **Docker** (`TOOLSTACK_RUNNER=docker`). The `process` runner is dev-only.
+- For production tool isolation: **Docker** (`TOOLSTACK_RUNNER=docker`); the `process` runner is dev-only. The docker runner needs a little extra setup, see "Docker tool runner" below.
 - For human approvals: a reachable **[nod](https://github.com/batteryshark/nod)** instance and an issuer token, configured from the dashboard, not this env file (see "Broker config" below).
 
 ## Install
@@ -59,6 +59,27 @@ steps follow for when you want to do it by hand.
 The broker's own run-config (its port, DB path, the nod URL/token/channel, approval TTL,
 rate limit) is **not** in the env file; the admin app stores it in `broker.toml` and you
 edit it from the dashboard's **Config** page. (`admin/broker_config.py` is the source of truth.)
+
+## Docker tool runner
+
+With `TOOLSTACK_RUNNER=docker`, the service shells out to `docker build` / `docker run`, which
+needs two things the unit's sandbox otherwise denies:
+
+1. **Access to the docker socket.** Grant the service the `docker` group, or every build is
+   `permission denied ... unix:///var/run/docker.sock`. Uncomment `SupplementaryGroups=docker`
+   in the unit (or `sudo usermod -aG docker toolstack`), then **reload and restart** so the new
+   group takes effect:
+   ```bash
+   sudo systemctl daemon-reload && sudo systemctl restart toolstack-admin
+   ```
+   The restart matters: a group change doesn't reach the already-running service until it
+   re-execs.
+2. **A writable docker config.** `ProtectHome=true` hides `~/.docker`, so the unit sets
+   `DOCKER_CONFIG=/var/lib/toolstack/.docker` (under the state dir). Nothing to do; this just
+   silences the `Error loading config file: ~/.docker/config.json` warning.
+
+Each tool you run under docker must carry a `Dockerfile` or an `image=` in its `toolyard.toml`
+(a process `command` alone won't build); the bundled samples do.
 
 ## Supervision model (why `ExecStartPost`, and why it's not an orphan bug)
 
