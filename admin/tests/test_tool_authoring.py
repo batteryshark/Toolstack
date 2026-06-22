@@ -164,6 +164,59 @@ class RestAuthoring(unittest.TestCase):
         self.assertEqual(load_tool(Path(tmp, "toolyard.toml")).type, "rest")
 
 
+NAMED_REST_FIXTURE = {
+    "id": "graph", "type": "rest", "command": "python3 -m toolyard.http_proxy", "image": "",
+    "description": "Graph", "port": 4640,
+    "operations": [
+        {"name": "get_task", "verb": "get",   # lowercase verb -> uppercased
+         "path": "/me/todo/lists/{list_id}/tasks/{task_id}", "description": "Get a task",
+         "args": [{"name": "list_id", "type": "string", "required": True, "description": "list id"},
+                  {"name": "task_id", "type": "string", "required": True, "description": "task id"}]},
+        {"name": "GET"},   # a bare-verb passthrough alongside the named op
+    ],
+    "secrets": [],
+}
+
+
+class NamedRestAuthoring(unittest.TestCase):
+    """A rest op may be NAMED (name + verb + path template) instead of a bare verb. normalize keeps
+    the verb + path, derives risk from the verb, and the pair round-trips through write/read."""
+
+    def test_normalize_keeps_named_op_and_derives_risk(self):
+        ops = {o["name"]: o for o in tool_authoring.normalize(NAMED_REST_FIXTURE)["operations"]}
+        self.assertEqual(ops["get_task"]["verb"], "GET")                       # uppercased
+        self.assertEqual(ops["get_task"]["path"], "/me/todo/lists/{list_id}/tasks/{task_id}")
+        self.assertEqual(ops["get_task"]["risk"], "read")                      # derived from GET
+        self.assertEqual([a["name"] for a in ops["get_task"]["args"]], ["list_id", "task_id"])
+        self.assertIsNone(ops["GET"].get("path"))                             # passthrough still works
+
+    def test_validate_accepts_named_op(self):
+        self.assertEqual(tool_authoring.validate(tool_authoring.normalize(NAMED_REST_FIXTURE)), [])
+
+    def test_validate_rejects_named_op_without_verb(self):
+        bad = {**NAMED_REST_FIXTURE, "operations": [{"name": "get_task", "path": "/x/{id}"}]}
+        self.assertTrue(any("needs a verb" in e for e in
+                            tool_authoring.validate(tool_authoring.normalize(bad))))
+
+    def test_validate_rejects_named_op_with_relative_path(self):
+        bad = {**NAMED_REST_FIXTURE,
+               "operations": [{"name": "get_task", "verb": "GET", "path": "me/messages"}]}
+        self.assertTrue(any("must start with '/'" in e for e in
+                            tool_authoring.validate(tool_authoring.normalize(bad))))
+
+    def test_named_op_round_trips_and_broker_reads_it(self):
+        tmp = tempfile.mkdtemp(prefix="admin-named-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        tool_authoring.write(tmp, tool_authoring.normalize(NAMED_REST_FIXTURE))
+        op = Registry.from_sources(None, [tmp]).lookup("graph", "get_task")   # broker reads the named op
+        self.assertEqual((op.verb, op.path_template, op.risk),
+                         ("GET", "/me/todo/lists/{list_id}/tasks/{task_id}", "read"))
+        again = {o["name"]: o for o in tool_authoring.read(tmp)["operations"]}  # editor reads it back
+        self.assertEqual(again["get_task"]["verb"], "GET")
+        self.assertEqual(again["get_task"]["path"], "/me/todo/lists/{list_id}/tasks/{task_id}")
+        self.assertEqual([a["name"] for a in again["get_task"]["args"]], ["list_id", "task_id"])
+
+
 class ReadWrite(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="admin-author-")
