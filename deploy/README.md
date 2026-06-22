@@ -21,12 +21,18 @@ virtualenv. See [admin/README.md](../admin/README.md) for what the panel does.
 ## Prerequisites
 
 - **Python 3.11+** (the broker/toolyard use `tomllib`).
-- An **admin virtualenv** with the panel's deps: `python3 -m venv admin/.venv && admin/.venv/bin/pip install -r admin/requirements.txt`. (`redeploy-toolstack` creates/refreshes this for you.)
+- A **service account**: a dedicated `toolstack` user + group (`sudo useradd --system --user-group --shell /usr/sbin/nologin toolstack`), or point the unit's `User=` / `Group=` at an account you already have.
+- An **admin virtualenv** with the package + panel deps: `python3 -m venv admin/.venv && admin/.venv/bin/pip install -e '.[vault]' -r admin/requirements.txt` (run from the checkout root). Installing the package puts `brokerctl` / `toolstack` / `toolyard` in `admin/.venv/bin` alongside the admin. (`deploy/install.sh` and `redeploy-toolstack` do this for you.)
 - A **secret backend**: the dev `file` backend (a local `secrets.toml`) or **Infisical** (set the `TOOLSTACK_INFISICAL_*` vars, see the env example).
 - For production tool isolation: **Docker** (`TOOLSTACK_RUNNER=docker`). The `process` runner is dev-only.
 - For human approvals: a reachable **[nod](https://github.com/batteryshark/nod)** instance and an issuer token, configured from the dashboard, not this env file (see "Broker config" below).
 
 ## Install
+
+**The quick way:** from the checkout, `sudo deploy/install.sh` does everything below in one
+shot, creating the service user, building the venv, prompting for the admin password, and
+installing + enabling the unit. Override the account with `TOOLSTACK_USER=<name>`. The manual
+steps follow for when you want to do it by hand.
 
 1. **Lay down the code** at your install root (the examples assume `/opt/toolstack`, owned by a `toolstack` user, change to taste) and build the admin venv (above).
 2. **Create the state dir and set the admin password** (the panel fails closed; it refuses to start without one). The service keeps everything it writes under `/var/lib/toolstack` (the unit's `StateDirectory` owns it); create it now so the password lands where the service will read it:

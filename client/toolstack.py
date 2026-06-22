@@ -95,6 +95,12 @@ def _request(method: str, path: str, body=None):
         # as URLError subclasses, and the distinction matters when diagnosing.
         print(f"cannot reach broker at {_base()}: {type(exc).__name__}: {exc.reason}",
               file=sys.stderr)
+        # The most common cause is "I installed the CLIs but never started a broker." Say so,
+        # and point at the ways to start one (installing this package does not run anything).
+        print("Is a broker running at that address? Start one from the admin app (Start broker), "
+              "the Docker one-box (deploy/docker), the systemd service (deploy/), or directly with "
+              "`python3 -m broker.server`. Point elsewhere with TOOLSTACK_URL.",
+              file=sys.stderr)
         raise SystemExit(2)
 
 
