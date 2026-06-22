@@ -48,11 +48,20 @@ class Submit(BrokerTestCase):
         self.assertIsNone(out.request_id)
 
     def test_tool_failure_maps_to_failed(self):
-        # Registered, but the stub runtime has no handler for it -> it raises.
+        # Registered, the tool ran but raised -> a generic tool_failed.
         ctx, caller = self._setup(catalog={"boom": {"now": "low"}}, allow=["boom.now"])
         out = lifecycle.submit(ctx, caller, "boom", "now", {}, CID)
         self.assertEqual(out.status, lifecycle.FAILED)
+        self.assertEqual(out.error, "tool_failed")
         self.assertEqual(ctx.store.request(out.request_id)["status"], "failed")
+
+    def test_unreachable_tool_maps_to_tool_unreachable(self):
+        # The broker couldn't reach the tool (process not running) -> a distinct, diagnostic
+        # error so the caller knows to start it, not a generic tool_failed.
+        ctx, caller = self._setup(catalog={"down": {"now": "low"}}, allow=["down.now"])
+        out = lifecycle.submit(ctx, caller, "down", "now", {}, CID)
+        self.assertEqual(out.status, lifecycle.FAILED)
+        self.assertEqual(out.error, "tool_unreachable")
 
     def test_arguments_never_appear_in_audit(self):
         ctx, caller = self._setup(catalog={"echo": {"say": "low"}}, allow=["echo.say"])

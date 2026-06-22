@@ -10,7 +10,7 @@ The authority boundary: the only address an agent can reach. See [../plan.md](..
 - **`GET /v1/health`**: the only unauthenticated route.
 - **`POST /v1/actions/<tool>.<op>`**: authenticated with `Authorization: Bearer <token>`:
   - `200` ran · `202` review-required (opened in nod) · `403` denied · `404` unknown
-    · `400` malformed · `429` rate-limited · `502` tool failed · `503` approval
+    · `400` malformed · `429` rate-limited · `502` tool failed/unreachable · `503` approval
     surface unavailable.
 - **`GET /v1/requests/<id>`**, poll a request (owner only): drives approval
   resolution and returns the current status (`pending_approval` → `ok` / `denied` /
@@ -65,8 +65,9 @@ TOOLSTACK_TOOLS_ROOT=tools python3 -m broker.server
 # 3. call it
 TOKEN=<token from step 2>
 curl -s -X POST http://127.0.0.1:8765/v1/actions/echo.say \
-     -H "Authorization: Bearer $TOKEN" -d '{"arguments": {"msg": "hi"}}'
-# -> {"status":"ok","request_id":1,"result":{"echoed":{"msg":"hi"}}}
+     -H "Authorization: Bearer $TOKEN" -d '{"arguments": {"m": "hi"}}'
+# -> {"status":"ok","request_id":1,"result":{"echoed":{"m":"hi"}}}
+# (a 502 {"error":"tool_unreachable"} here means the tool isn't running: start it with step 1)
 ```
 
 Configuration (env vars):

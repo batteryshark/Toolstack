@@ -182,7 +182,7 @@ a bespoke web UI.
 ```text
 GET  /v1/health                         # only unauthenticated route
 GET  /v1/tools, /v1/tools/<tool>.<op>   # discovery (policy-filtered to the caller)
-POST /v1/actions/<tool>.<op>            # 200 ran · 202 review · 403 denied · 404 unknown · 429 rate-limited · 502 tool failed · 503 no surface
+POST /v1/actions/<tool>.<op>            # 200 ran · 202 review · 403 denied · 404 unknown · 429 rate-limited · 502 tool failed/unreachable · 503 no surface
 GET  /v1/requests/<id>                  # poll a request (owner only): status + result + approver/note
 # operator actions (callers/policies/tokens/audit) = brokerctl on the host, not HTTP
 # POST /mcp: broker-native MCP (JSON-RPC), same auth/policy/audit

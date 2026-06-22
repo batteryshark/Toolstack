@@ -23,6 +23,7 @@ from dataclasses import dataclass, replace
 from . import approval
 from . import policy as policy_rules
 from .redaction import redact
+from .runtime import ToolUnreachable
 
 OK = "ok"
 PENDING = "pending_approval"
@@ -139,7 +140,14 @@ def execute_request(ctx, request_id, tool, op, arguments, correlation_id, caller
                  request_id=request_id, details={"tool": tool, "op": op})
     try:
         result = ctx.runtime.execute(tool_op, arguments, request_id, caller_name)
-    except Exception as exc:  # a tool failure must not crash the broker
+    except ToolUnreachable as exc:  # the broker couldn't reach the tool: it's probably not running
+        log.warning("tool %s.%s unreachable: %s", tool, op, exc)
+        ctx.store.update_request(request_id, status="failed", error="tool_unreachable",
+                                 arguments_json=None)
+        audit.record("runtime", "execution_failed", FAILED, correlation_id,
+                     request_id=request_id, details={"tool": tool, "op": op, "error": "unreachable"})
+        return Outcome(FAILED, request_id=request_id, error="tool_unreachable")
+    except Exception as exc:  # the tool ran but errored; a tool failure must not crash the broker
         log.warning("tool %s.%s failed: %s: %s", tool, op, type(exc).__name__, exc)
         ctx.store.update_request(request_id, status="failed", error="tool_failed",
                                  arguments_json=None)

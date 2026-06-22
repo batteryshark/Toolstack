@@ -11,13 +11,15 @@ from broker.audit import AuditLog
 from broker.context import BrokerContext
 from broker.identity import hash_token
 from broker.registry import Registry
+from broker.runtime import ToolUnreachable
 from broker.store import Store
 
 _DEFAULT_SURFACE = object()  # sentinel: distinguish "use a fake" from "no surface"
 
 
 class FakeRuntime:
-    """Records calls and echoes arguments; raises for the 'boom' tool."""
+    """Records calls and echoes arguments; the 'boom' tool errors, the 'down' tool is
+    unreachable (as if its process isn't running)."""
 
     def __init__(self):
         self.calls = []
@@ -26,6 +28,8 @@ class FakeRuntime:
         self.calls.append((tool_op.tool, tool_op.op, arguments, request_id, caller_name))
         if tool_op.tool == "boom":
             raise RuntimeError("simulated tool failure")
+        if tool_op.tool == "down":
+            raise ToolUnreachable("tool unreachable: simulated")
         return {"echoed": arguments}
 
 
