@@ -35,25 +35,35 @@ low-power token to the broker; everything sensitive lives behind it.
 - **Secret backend**: Infisical or SOPS.
 - **Tailnet**: Tailscale Serve (or any VPN); the ingress boundary.
 
-## Install
+## Run it
 
-The broker, toolyard, and client are stdlib-only Python (3.11+, for `tomllib`). Install the
-repo to put the CLIs on your PATH:
+The fastest way to bring up the whole stack (broker + admin panel) is the one-box Docker setup:
 
 ```bash
-pip install -e .          # editable: the commands track your checkout
+cd deploy/docker
+cp .env.example .env       # set an admin password + vault passphrase
+docker compose up
+```
+
+Open the admin panel at http://127.0.0.1:8780 and drive everything from there. For a native
+single-host install under systemd, run `sudo deploy/install.sh` (it creates the service user,
+the virtualenv, the admin password, and the unit) or follow [deploy/README.md](deploy/README.md).
+
+## The CLIs
+
+The broker, toolyard, and client are stdlib-only Python (3.11+, for `tomllib`). `pip install -e .`
+puts the commands on your PATH:
+
+```bash
+pip install -e .
 toolstack --help
 ```
 
-This installs `toolstack` (the agent client), `brokerctl` (operator CLI), `toolyard` (tool
-runner), and `toolstack-mcp` (the client as an MCP stdio server). Runtime stays
-zero-dependency; each also runs uninstalled as `python3 -m client.toolstack`,
-`python3 -m broker.brokerctl`, etc. The **admin web app** carries the only runtime deps
-(FastAPI/uvicorn) and has its own venv; see [admin/README.md](admin/README.md).
-
-For a real (systemd) install (the admin panel supervising the broker, with an
-`EnvironmentFile`, the supervision model, and verification steps), see
-[deploy/README.md](deploy/README.md).
+That installs `toolstack` (agent client), `brokerctl` (operator), `toolyard` (tool runner), and
+`toolstack-mcp` (the client as an MCP stdio server); each also runs uninstalled as
+`python3 -m client.toolstack`, and so on. **Installing the CLIs does not start anything**: they
+talk to a broker you run via one of the paths above. Only the admin app carries runtime deps
+(FastAPI/uvicorn), in its own venv; see [admin/README.md](admin/README.md).
 
 ## Maturity
 

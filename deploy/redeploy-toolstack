@@ -105,8 +105,10 @@ if [[ "$SKIP_VENV" -eq 0 ]]; then
     echo "==> Creating admin virtualenv"
     python3 -m venv "$REPO_ROOT/admin/.venv"
   fi
-  echo "==> Installing admin dependencies"
-  "$VENV_PIP" install -r "$REPO_ROOT/admin/requirements.txt"
+  echo "==> Installing the package + admin dependencies"
+  # Editable install of the root package too, so brokerctl/toolstack/toolyard land in the venv
+  # alongside the admin (the bootstrap + redeploy use admin/.venv/bin/brokerctl).
+  "$VENV_PIP" install -e '.[vault]' -r "$REPO_ROOT/admin/requirements.txt"
 fi
 
 if [[ "$SKIP_SERVICE" -eq 0 ]]; then

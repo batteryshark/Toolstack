@@ -40,6 +40,18 @@ Provision a tool's secret into the vault from inside the box:
 docker compose exec toolstack sh -c 'printf "%s" "the-secret" | toolyard vault-set <tool> <FIELD>'
 ```
 
+## The operator CLI (`brokerctl`)
+
+`brokerctl` (and `toolstack` / `toolyard`) live **inside** the container, not on the host, so
+they won't show up under `/opt/toolstack` or an `admin/.venv`. The admin UI covers everything
+`brokerctl` does, but if you want the CLI, run it in the box (its `XDG_*` already point at
+`/data`, so it opens the right DB):
+
+```bash
+docker compose exec toolstack brokerctl list-callers
+docker compose exec toolstack brokerctl create-caller --name my-agent --allow echo_api.echo
+```
+
 ## The trust boundary (important)
 
 Inside the container the broker and admin bind `0.0.0.0` so Docker can reach them. The
