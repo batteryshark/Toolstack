@@ -19,6 +19,11 @@ across all three; ops are always the unit of policy (`<tool>.<op>`).
 - Pick **mcp** to put an existing MCP server behind the broker's policy/approval.
 - Pick **rest** to proxy a REST API: the caller passes `{path, body, query, headers}` and gets
   back `{status, headers, body}`, gated per `(verb, path)` in policy (e.g. `kv.GET /items/**`).
+  To put an **external authenticated API** (MS Graph, etc.) behind the broker with **no tool
+  code**, point a rest tool's `command` at the bundled `python3 -m toolyard.http_proxy` and add a
+  `[proxy]` block (a `base_url` plus a secret-to-request `inject` map). The proxy injects your
+  credential and forwards under `base_url`; the broker never sees the secret. See
+  [../toolyard/http_proxy.py](../toolyard/http_proxy.py).
 
 All three are served on a loopback port the toolyard assigns; see
 [../toolyard/README.md](../toolyard/README.md) for the manifest, runners, and secrets.
