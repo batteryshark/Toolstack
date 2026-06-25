@@ -484,7 +484,14 @@ def create_app() -> FastAPI:
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool=tool,
                 dir_value=dir_path, error="; ".join(errors)))
-        tool_authoring.write(dir_path, tool)
+        try:
+            # write() runs the entrypoint check that validate() can't (it needs the directory and
+            # the runner); surface its ValueError as a form error, not an opaque 500.
+            tool_authoring.write(dir_path, tool)
+        except ValueError as exc:
+            return HTMLResponse(views.tool_editor_view(
+                user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool=tool,
+                dir_value=dir_path, error=str(exc)))
         norm_dir = str(Path(dir_path))  # normalize so the later removable check matches
         if norm_dir not in config.tool_dirs:
             config.tool_dirs = [*config.tool_dirs, norm_dir]
@@ -541,7 +548,14 @@ def create_app() -> FastAPI:
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="edit", tool=tool,
                 dir_value=dir_path, error="; ".join(errors)))
-        tool_authoring.write(dir_path, tool)
+        try:
+            # write() runs the entrypoint check that validate() can't; surface its ValueError as a
+            # form error, not an opaque 500.
+            tool_authoring.write(dir_path, tool)
+        except ValueError as exc:
+            return HTMLResponse(views.tool_editor_view(
+                user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="edit", tool=tool,
+                dir_value=dir_path, error=str(exc)))
         with open_store(config) as store:
             operations.record_admin_event(store, user, "tool_edited", {"tool": tool["id"], "dir": dir_path})
         return render_dashboard(request, user, banner=(

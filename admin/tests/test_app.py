@@ -329,6 +329,20 @@ class AdminApp(unittest.TestCase):
         self.assertIn("id must", r.text)
         self.assertFalse((newdir / "toolyard.toml").exists())
 
+    def test_add_rest_tool_without_entrypoint_shows_error_not_500(self):
+        # validate() can't run the entrypoint check (it has no directory); write() does and raises.
+        # A rest tool with no command/image used to let that ValueError escape as a 500 on save.
+        self._login()
+        csrf = _csrf(self.client.get("/tools/new").text)
+        newdir = Path(self.tmp, "remoteapi")
+        newdir.mkdir()
+        tool = {"id": "remoteapi", "type": "rest", "command": "", "image": "", "port": 4640,
+                "operations": [{"name": "GET"}], "secrets": []}
+        r = self.client.post("/tools/new", data={
+            "dir": str(newdir), "tool_json": json.dumps(tool), "_csrf": csrf})
+        self.assertEqual(r.status_code, 200)                      # form re-rendered, NOT a 500
+        self.assertFalse((newdir / "toolyard.toml").exists())     # rejected before writing
+
     def test_remove_tool_unregisters_but_keeps_files(self):
         self._login()
         csrf = _csrf(self.client.get("/tools/new").text)
