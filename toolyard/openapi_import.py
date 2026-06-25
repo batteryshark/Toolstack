@@ -11,7 +11,8 @@ proxy (toolyard.http_proxy) injecting the credential and pinning every route to 
 
 The auth block is scaffolded from the spec's security scheme (bearer / apiKey / oauth2) with a
 placeholder secret you wire to your backend; everything else is derived. Stdlib only (the stdlib
-has no TOML *writer*, so the document is emitted by hand).
+has no TOML *writer*, so the document is emitted by hand). The CLI reads a JSON spec; the admin
+panel additionally accepts YAML (it does the text->dict parse and hands a dict to parse_spec).
 """
 
 from __future__ import annotations

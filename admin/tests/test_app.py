@@ -26,6 +26,14 @@ from broker.store import Store
 PASSWORD = "hunter2-admin"
 
 
+def _has_yaml() -> bool:
+    try:
+        import yaml  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def _csrf(html_text: str) -> str:
     m = re.search(r'name="_csrf" value="([^"]+)"', html_text)
     assert m, "no CSRF token in page"
@@ -401,9 +409,22 @@ class AdminApp(unittest.TestCase):
     def test_parse_openapi_rejects_bad_json(self):
         self._login()
         csrf = _csrf(self.client.get("/tools/new").text)
-        r = self.client.post("/tools/parse-openapi", data={"spec": "not json", "_csrf": csrf})
+        r = self.client.post("/tools/parse-openapi", data={"spec": "{not valid", "_csrf": csrf})
         self.assertEqual(r.status_code, 400)
-        self.assertIn("valid JSON", r.json()["error"])
+        self.assertIn("not valid", r.json()["error"].lower())
+
+    @unittest.skipUnless(_has_yaml(), "PyYAML not installed")
+    def test_parse_openapi_accepts_yaml(self):
+        self._login()
+        csrf = _csrf(self.client.get("/tools/new").text)
+        spec = ("openapi: 3.0.0\n"
+                "servers:\n  - url: https://api.example.com/v1\n"
+                "paths:\n  /items/{id}:\n    get:\n      operationId: getItem\n")
+        r = self.client.post("/tools/parse-openapi", data={"spec": spec, "_csrf": csrf})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["base_url"], "https://api.example.com/v1")
+        self.assertEqual(body["operations"][0]["name"], "getItem")
 
     def test_remove_tool_unregisters_but_keeps_files(self):
         self._login()

@@ -469,12 +469,24 @@ def create_app() -> FastAPI:
         data = await read_form(request)
         if not csrf_ok(request, data):
             return JSONResponse({"error": "invalid CSRF token"}, status_code=400)
+        raw = (data.get("spec") or "").strip()
+        if not raw:
+            return JSONResponse({"error": "the spec is empty"}, status_code=400)
         try:
-            spec = json.loads(data.get("spec") or "")
-        except (json.JSONDecodeError, TypeError):
-            return JSONResponse({"error": "the spec must be valid JSON"}, status_code=400)
+            spec = json.loads(raw)   # JSON first (a YAML spec falls through to PyYAML below)
+        except json.JSONDecodeError:
+            try:
+                import yaml   # an admin dependency; the toolyard stays stdlib-only and dict-based
+            except ImportError:
+                return JSONResponse({"error": "the spec is not valid JSON; install PyYAML for YAML"},
+                                    status_code=400)
+            try:
+                spec = yaml.safe_load(raw)
+            except yaml.YAMLError as exc:
+                return JSONResponse({"error": f"the spec is not valid JSON or YAML: {exc}"},
+                                    status_code=400)
         if not isinstance(spec, dict):
-            return JSONResponse({"error": "the spec must be a JSON object"}, status_code=400)
+            return JSONResponse({"error": "the spec must be a JSON or YAML object"}, status_code=400)
         try:
             return JSONResponse(openapi_import.parse_spec(spec))
         except Exception as exc:  # a malformed spec must not 500 the panel

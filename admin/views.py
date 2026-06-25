@@ -937,7 +937,7 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
             "<p class='muted'>Paste a spec, parse it, then check the operations you want "
             "(a subset, not the whole spec). The selected ops, the base URL, and an auth scaffold "
             "pre-fill the form below; review and save.</p>"
-            "<textarea id='oai-spec' rows='6' placeholder='paste OpenAPI / Swagger JSON here'></textarea>"
+            "<textarea id='oai-spec' rows='6' placeholder='paste OpenAPI / Swagger spec (JSON or YAML)'></textarea>"
             "<div class='row'><button type='button' id='oai-parse'>Parse spec</button></div>"
             "<div id='oai-error' class='error' hidden></div>"
             "<div id='oai-results' hidden><p class='muted' id='oai-base'></p>"
