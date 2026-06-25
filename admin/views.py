@@ -178,6 +178,26 @@ _TOOL_EDITOR_JS = """
     row.querySelector('.rm').onclick = function(){row.remove();};
     return row;
   }
+  var INJECT_INTO = ["header","query","body"];
+  function injectRow(i){
+    i = i||{};
+    var row = mk('<div class="injectrow"><select class="inj-into">'+opts(INJECT_INTO, i.into||'header')+'</select>'
+      + '<input class="inj-name" placeholder="header / query / body key">'
+      + '<input class="inj-value" placeholder="value (use ${secret:NAME})">'
+      + '<button type="button" class="rm">remove</button></div>');
+    row.querySelector('.inj-into').value = i.into||'header';
+    row.querySelector('.inj-name').value = i.name||'';
+    row.querySelector('.inj-value').value = i.value||'';
+    row.querySelector('.rm').onclick = function(){row.remove();};
+    return row;
+  }
+  function fwdRow(h){
+    var row = mk('<div class="fwdrow"><input class="fwd-name" placeholder="header name (e.g. Prefer)">'
+      + '<button type="button" class="rm">remove</button></div>');
+    row.querySelector('.fwd-name').value = (h && h.name) || h || '';
+    row.querySelector('.rm').onclick = function(){row.remove();};
+    return row;
+  }
 
   var initial = window.TOOL_INITIAL || {};
   document.getElementById('f_id').value = initial.id||'';
@@ -191,14 +211,36 @@ _TOOL_EDITOR_JS = """
   var secs = document.getElementById('secrets');
   (initial.secrets||[]).forEach(function(s){secs.appendChild(secRow(s));});
   var f_type = document.getElementById('f_type');
-  function syncType(){   // the verb/path row only applies to a rest tool
+  var injectList = document.getElementById('inject-list');
+  var forwardList = document.getElementById('forward-list');
+  var proxy = (initial.type === 'rest' && initial.proxy) ? initial.proxy : null;
+  if (proxy) {
+    document.querySelector('input[name=rest_mode][value=proxied]').checked = true;
+    document.getElementById('f_base_url').value = proxy.base_url||'';
+    (proxy.inject||[]).forEach(function(i){injectList.appendChild(injectRow(i));});
+    (proxy.forward_headers||[]).forEach(function(h){forwardList.appendChild(fwdRow(h));});
+  } else if (initial.type === 'rest') {
+    document.querySelector('input[name=rest_mode][value=local]').checked = true;
+  }
+  function restMode(){
+    var r = document.querySelector('input[name=rest_mode]:checked');
+    return r ? r.value : 'proxied';
+  }
+  function syncMode(){   // show the proxy panel for rest+proxied; the verb/path op row for any rest
     var isRest = f_type.value === 'rest';
+    var proxied = isRest && restMode() === 'proxied';
+    document.getElementById('rest-mode').hidden = !isRest;
+    document.getElementById('proxy-panel').hidden = !proxied;
+    document.getElementById('entry-fields').hidden = proxied;
     [].forEach.call(document.querySelectorAll('.op-rest'), function(el){el.style.display = isRest ? '' : 'none';});
   }
-  document.getElementById('add-op').onclick = function(){ops.appendChild(opCard()); syncType();};
+  document.getElementById('add-op').onclick = function(){ops.appendChild(opCard()); syncMode();};
   document.getElementById('add-secret').onclick = function(){secs.appendChild(secRow());};
-  f_type.addEventListener('change', syncType);
-  syncType();
+  document.getElementById('add-inject').onclick = function(){injectList.appendChild(injectRow());};
+  document.getElementById('add-forward').onclick = function(){forwardList.appendChild(fwdRow());};
+  f_type.addEventListener('change', syncMode);
+  [].forEach.call(document.querySelectorAll('input[name=rest_mode]'), function(r){r.addEventListener('change', syncMode);});
+  syncMode();
 
   document.getElementById('tool-form').addEventListener('submit', function(){
     var tool = {
@@ -229,6 +271,22 @@ _TOOL_EDITOR_JS = """
                 writable: r.querySelector('.sec-writable').checked};
       })
     };
+    if (tool.type === 'rest' && restMode() === 'proxied') {
+      tool.command = 'python3 -m toolyard.http_proxy';   // the bundled wrapper; no operator code
+      tool.image = '';
+      delete tool.port;                                  // the admin assigns a free loopback port on save
+      tool.proxy = {
+        base_url: document.getElementById('f_base_url').value.trim(),
+        inject: [].map.call(injectList.querySelectorAll('.injectrow'), function(r){
+          return {into: r.querySelector('.inj-into').value,
+                  name: r.querySelector('.inj-name').value.trim(),
+                  value: r.querySelector('.inj-value').value};
+        }).filter(function(x){return x.name;}),
+        forward_headers: [].map.call(forwardList.querySelectorAll('.fwdrow'), function(r){
+          return r.querySelector('.fwd-name').value.trim();
+        }).filter(function(s){return s;})
+      };
+    }
     document.getElementById('tool_json').value = JSON.stringify(tool);
   });
 })();
@@ -831,15 +889,32 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         "<label class='field'>transport <span class='muted'>(api = POST /v1/actions; "
         "mcp = streamable-HTTP MCP server; rest = verb-as-op passthrough)</span>"
         "<select id='f_type'></select></label>"
+        "<div id='rest-mode' class='field' hidden><span class='muted'>REST tool:</span> "
+        "<label><input type='radio' name='rest_mode' value='proxied' checked> Proxied "
+        "(forward to an external API URL)</label> "
+        "<label><input type='radio' name='rest_mode' value='local'> Local "
+        "(a process on a loopback port)</label></div>"
         "<label class='field'>description <span class='muted'>(optional)</span>"
         "<textarea id='f_description' rows='2' placeholder='what this tool does'></textarea></label>"
+        "<div id='entry-fields'>"
         "<label class='field'>entrypoint command <span class='muted'>(process backend)</span>"
         "<input id='f_command' placeholder='python3 app.py'></label>"
         "<label class='field'>image <span class='muted'>(docker backend)</span>"
         "<input id='f_image' placeholder='ghcr.io/owner/tool:tag'></label>"
         "<p class='muted'>Leave both blank for a docker tool that builds the "
         "<code>Dockerfile</code> in its own directory.</p>"
-        "<label class='field'>port <input id='f_port' type='number' placeholder='4700' required></label>"
+        "<label class='field'>port <input id='f_port' type='number' placeholder='4700'></label>"
+        "</div>"
+        "<div id='proxy-panel' hidden>"
+        "<label class='field'>Base URL <input id='f_base_url' placeholder='https://api.example.com/v1'></label>"
+        "<h3>Inject <span class='muted'>(values added to the upstream request; "
+        "value may use <code>${secret:NAME}</code>)</span></h3>"
+        "<div id='inject-list'></div><button type='button' id='add-inject'>Add inject</button>"
+        "<h3>Forwarded headers <span class='muted'>(caller headers passed through; "
+        "reserved headers are always blocked)</span></h3>"
+        "<div id='forward-list'></div><button type='button' id='add-forward'>Add forwarded header</button>"
+        "<p class='muted'>The loopback port is assigned automatically when you save.</p>"
+        "</div>"
         "<h3>Operations</h3><div id='ops'></div>"
         "<button type='button' id='add-op'>Add operation</button>"
         "<h3>Secrets <span class='muted'>(declarations only; values stay in the secret backend)</span></h3>"

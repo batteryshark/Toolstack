@@ -343,6 +343,45 @@ class AdminApp(unittest.TestCase):
         self.assertEqual(r.status_code, 200)                      # form re-rendered, NOT a 500
         self.assertFalse((newdir / "toolyard.toml").exists())     # rejected before writing
 
+    def test_add_proxy_tool_emits_proxy_block_and_auto_assigns_port(self):
+        # proxy mode: no operator command/port; the admin auto-fills the wrapper command and a
+        # free loopback port, and emits the [proxy] block. This is the "external API" path.
+        self._login()
+        csrf = _csrf(self.client.get("/tools/new").text)
+        newdir = Path(self.tmp, "graphproxy")
+        newdir.mkdir()
+        tool = {"id": "graphproxy", "type": "rest", "command": "", "image": "",
+                "proxy": {"base_url": "https://graph.microsoft.com/v1.0",
+                          "inject": [{"into": "header", "name": "Authorization",
+                                      "value": "Bearer ${secret:tok}"}],
+                          "forward_headers": ["Prefer"]},
+                "operations": [{"name": "get_me", "verb": "GET", "path": "/me", "args": []}],
+                "secrets": [{"name": "tok", "field": "TOK", "writable": False}]}
+        r = self.client.post("/tools/new", data={
+            "dir": str(newdir), "tool_json": json.dumps(tool), "_csrf": csrf})
+        self.assertEqual(r.status_code, 200)
+        parsed = tomllib.loads((newdir / "toolyard.toml").read_text())
+        self.assertEqual(parsed["proxy"]["base_url"], "https://graph.microsoft.com/v1.0")
+        self.assertEqual(parsed["entrypoint"]["command"], "python3 -m toolyard.http_proxy")
+        self.assertTrue(1 <= parsed["entrypoint"]["port"] <= 65535)   # admin assigned a free port
+        self.assertEqual(parsed["proxy"]["inject"][0]["name"], "Authorization")
+
+    def test_add_proxy_tool_rejects_undeclared_secret_ref(self):
+        self._login()
+        csrf = _csrf(self.client.get("/tools/new").text)
+        newdir = Path(self.tmp, "badproxy")
+        newdir.mkdir()
+        tool = {"id": "badproxy", "type": "rest", "command": "", "image": "",
+                "proxy": {"base_url": "https://api.example.com/v1",
+                          "inject": [{"into": "header", "name": "Authorization",
+                                      "value": "Bearer ${secret:missing}"}]},
+                "operations": [{"name": "GET"}], "secrets": []}
+        r = self.client.post("/tools/new", data={
+            "dir": str(newdir), "tool_json": json.dumps(tool), "_csrf": csrf})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("no matching", r.text)                       # validation error, not a 500
+        self.assertFalse((newdir / "toolyard.toml").exists())
+
     def test_remove_tool_unregisters_but_keeps_files(self):
         self._login()
         csrf = _csrf(self.client.get("/tools/new").text)
