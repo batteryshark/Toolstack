@@ -249,10 +249,11 @@ _TOOL_EDITOR_JS = """
     oaiParse.onclick = function(){
       var err = document.getElementById('oai-error');
       err.hidden = true;
-      var fd = new FormData();
-      fd.append('spec', document.getElementById('oai-spec').value);
-      fd.append('_csrf', document.querySelector('input[name=_csrf]').value);
-      fetch('/tools/parse-openapi', {method: 'POST', body: fd})
+      // urlencoded (not FormData/multipart): the panel's read_form parses urlencoded bodies only
+      var body = new URLSearchParams();
+      body.append('spec', document.getElementById('oai-spec').value);
+      body.append('_csrf', document.querySelector('input[name=_csrf]').value);
+      fetch('/tools/parse-openapi', {method: 'POST', body: body})
         .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, j: j}; }); })
         .then(function(res){
           if (!res.ok) { err.textContent = (res.j && res.j.error) || 'parse failed'; err.hidden = false; return; }
