@@ -9,5 +9,9 @@
 fastapi==0.137.1
 uvicorn==0.49.0
 
+# Parse YAML OpenAPI/Swagger specs in the tool importer (the stdlib has no YAML parser; the
+# broker/toolyard stay stdlib-only and read a JSON spec without it).
+PyYAML==6.0.2
+
 # Needed only to run the test suite (FastAPI's TestClient is built on httpx):
 httpx==0.28.1
