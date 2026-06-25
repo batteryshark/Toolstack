@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import sqlite3
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -466,6 +467,7 @@ def create_app() -> FastAPI:
         config = broker_config.load()
         dir_path = (data.get("dir") or "").strip()
         tool = _tool_from_form(data)
+        _assign_proxy_port(tool)   # proxy mode: allocate a free loopback port (no operator field)
         if not csrf_ok(request, data):
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool=tool,
@@ -539,6 +541,7 @@ def create_app() -> FastAPI:
             return render_dashboard(request, user, error=f"no such tool: {tool_id}")
         dir_path = tools[tool_id]["path"]
         tool = _tool_from_form(data)
+        _assign_proxy_port(tool, dir_path)   # proxy mode: reuse the existing port, else allocate
         if not csrf_ok(request, data):
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="edit", tool=tool,
@@ -681,6 +684,32 @@ def _tool_from_form(data: dict) -> dict:
         return tool_authoring.from_json(data.get("tool_json") or "{}")
     except Exception:
         return tool_authoring.normalize({})
+
+
+def _assign_proxy_port(tool: dict, dir_path: str | None = None) -> None:
+    """A proxied rest tool has no operator-supplied port; give it a free loopback port so it's an
+    ordinary fixed-port rest tool. On edit, reuse the existing port (read from the current manifest)
+    so it doesn't churn. The TOCTOU window is the same any fixed-port tool already has; the
+    toolyard's start-time port check catches a collision."""
+    if not tool.get("proxy"):
+        return
+    port = tool.get("port")
+    if isinstance(port, int) and 1 <= port <= 65535:
+        return
+    if dir_path:
+        try:
+            existing = tool_authoring.read(dir_path).get("port")
+        except Exception:
+            existing = None
+        if isinstance(existing, int) and 1 <= existing <= 65535:
+            tool["port"] = existing
+            return
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        tool["port"] = s.getsockname()[1]
+    finally:
+        s.close()
 
 
 def _config_from_form(data: dict, current) -> "broker_config.BrokerRunConfig":

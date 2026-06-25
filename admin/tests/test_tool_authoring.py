@@ -302,5 +302,83 @@ class BundledSampleTools(unittest.TestCase):
                     f"or set an image in its toolyard.toml")
 
 
+PROXY_FIXTURE = {
+    "id": "graph", "type": "rest", "command": "", "image": "", "port": 4640,
+    "description": "Graph proxy",
+    "proxy": {
+        "base_url": "https://graph.microsoft.com/v1.0",
+        "inject": [{"into": "header", "name": "Authorization", "value": "Bearer ${secret:graph_token}"}],
+        "forward_headers": ["Prefer", "If-Match"],
+        "rotatable": ["graph_token"],
+    },
+    "operations": [{"name": "get_me", "verb": "GET", "path": "/me", "args": []}, {"name": "GET"}],
+    "secrets": [{"name": "graph_token", "field": "GRAPH_TOKEN", "writable": True}],
+}
+
+
+class ProxyAuthoring(unittest.TestCase):
+    """A proxied rest tool (external API): the operator fills a [proxy] block; the command is
+    auto-set to the bundled http_proxy and the entrypoint check is satisfied without a command."""
+
+    def _bad_proxy(self, **over):
+        return {**PROXY_FIXTURE, "proxy": {**PROXY_FIXTURE["proxy"], **over}}
+
+    def test_normalize_autofills_command_and_carries_proxy(self):
+        norm = tool_authoring.normalize(PROXY_FIXTURE)
+        self.assertEqual(norm["command"], "python3 -m toolyard.http_proxy")
+        self.assertEqual(norm["proxy"]["base_url"], "https://graph.microsoft.com/v1.0")
+        self.assertEqual(norm["proxy"]["inject"][0]["name"], "Authorization")
+
+    def test_validate_accepts_full_proxy(self):
+        self.assertEqual(tool_authoring.validate(tool_authoring.normalize(PROXY_FIXTURE)), [])
+
+    def test_entrypoint_satisfied_in_proxy_mode_without_command(self):
+        norm = tool_authoring.normalize(PROXY_FIXTURE)
+        self.assertIsNone(tool_authoring.entrypoint_error(norm, ".", runner="docker"))  # even docker
+
+    def test_validate_rejects_inject_into_invalid(self):
+        bad = self._bad_proxy(inject=[{"into": "cookie", "name": "X", "value": "y"}])
+        self.assertTrue(any("header/query/body" in e
+                            for e in tool_authoring.validate(tool_authoring.normalize(bad))))
+
+    def test_validate_rejects_inject_secret_without_declaration(self):
+        bad = {**PROXY_FIXTURE, "secrets": [], "proxy": {**PROXY_FIXTURE["proxy"], "rotatable": []}}
+        self.assertTrue(any("no matching" in e
+                            for e in tool_authoring.validate(tool_authoring.normalize(bad))))
+
+    def test_validate_requires_secret_for_base_url_ref(self):
+        bad = self._bad_proxy(base_url="https://api.example.com/${secret:tenant}/v1")
+        errs = tool_authoring.validate(tool_authoring.normalize(bad))
+        self.assertTrue(any("tenant" in e and "no matching" in e for e in errs))
+
+    def test_validate_rejects_reserved_forward_header(self):
+        bad = self._bad_proxy(forward_headers=["Authorization"])
+        self.assertTrue(any("reserved" in e
+                            for e in tool_authoring.validate(tool_authoring.normalize(bad))))
+
+    def test_validate_rejects_rotatable_not_writable(self):
+        bad = {**PROXY_FIXTURE, "secrets": [{"name": "graph_token", "field": "GRAPH_TOKEN", "writable": False}]}
+        self.assertTrue(any("writable" in e
+                            for e in tool_authoring.validate(tool_authoring.normalize(bad))))
+
+    def test_to_toml_emits_proxy_block(self):
+        parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(PROXY_FIXTURE)))
+        self.assertEqual(parsed["proxy"]["base_url"], "https://graph.microsoft.com/v1.0")
+        self.assertEqual(parsed["proxy"]["inject"][0]["into"], "header")
+        self.assertEqual(parsed["proxy"]["forward_headers"], ["Prefer", "If-Match"])
+        self.assertEqual(parsed["proxy"]["rotatable"], ["graph_token"])
+
+    def test_written_proxy_tool_round_trips_and_broker_reads_it(self):
+        tmp = tempfile.mkdtemp(prefix="admin-proxy-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        tool_authoring.write(tmp, tool_authoring.normalize(PROXY_FIXTURE))  # entrypoint ok (proxy)
+        reg = Registry.from_sources(None, [tmp])
+        self.assertEqual(reg.lookup("graph", "get_me").path_template, "/me")  # registry ignores [proxy]
+        again = tool_authoring.read(tmp)                                      # editor reads it back
+        self.assertEqual(again["proxy"]["base_url"], "https://graph.microsoft.com/v1.0")
+        self.assertEqual(again["proxy"]["forward_headers"], ["Prefer", "If-Match"])
+        self.assertEqual(again["command"], "python3 -m toolyard.http_proxy")
+
+
 if __name__ == "__main__":
     unittest.main()
