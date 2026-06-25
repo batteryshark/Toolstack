@@ -153,6 +153,19 @@ def build_operations(spec: dict) -> list:
     return ops
 
 
+def parse_spec(spec: dict) -> dict:
+    """Parse a spec into the pieces a UI needs to offer a SELECTABLE import: the base_url, the
+    auth inject + secret scaffold, and the full operation list. The caller (the admin panel) lets
+    the operator pick a subset of `operations` rather than importing the whole spec."""
+    inject, secrets = _auth(spec)
+    return {
+        "base_url": base_url(spec),
+        "inject": inject,
+        "secrets": secrets,
+        "operations": build_operations(spec),
+    }
+
+
 def build_toolyard_toml(spec: dict, *, tool_id: str, port: int) -> str:
     """Render a complete ``toolyard.toml`` for a rest tool fronting this spec through the proxy."""
     inject, secrets = _auth(spec)
