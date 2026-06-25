@@ -65,6 +65,15 @@ class BuildPieces(unittest.TestCase):
         self.assertEqual(inject[0]["value"], "Bearer ${secret:api_token}")
         self.assertEqual(secrets[0]["name"], "api_token")
 
+    def test_parse_spec_bundles_base_url_inject_secrets_and_ops(self):
+        # what the admin UI consumes to offer a selectable import
+        out = openapi_import.parse_spec(SPEC)
+        self.assertEqual(out["base_url"], "https://graph.microsoft.com/v1.0")
+        self.assertEqual(out["inject"][0]["name"], "Authorization")
+        self.assertEqual(out["secrets"][0]["name"], "api_token")
+        self.assertEqual({o["name"] for o in out["operations"]},
+                         {"getTask", "sendMail", "listMessages"})
+
 
 class RoundTrip(unittest.TestCase):
     """The generated toml is valid and the broker registry reads it back as named ops."""

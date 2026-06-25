@@ -382,6 +382,29 @@ class AdminApp(unittest.TestCase):
         self.assertIn("no matching", r.text)                       # validation error, not a 500
         self.assertFalse((newdir / "toolyard.toml").exists())
 
+    def test_parse_openapi_returns_selectable_ops(self):
+        self._login()
+        csrf = _csrf(self.client.get("/tools/new").text)
+        spec = {"openapi": "3.0.0", "info": {"title": "X"},
+                "servers": [{"url": "https://api.example.com/v1"}],
+                "components": {"securitySchemes": {"b": {"type": "http", "scheme": "bearer"}}},
+                "paths": {"/items/{id}": {"get": {"operationId": "getItem",
+                          "parameters": [{"name": "id", "in": "path", "required": True}]}}}}
+        r = self.client.post("/tools/parse-openapi", data={"spec": json.dumps(spec), "_csrf": csrf})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["base_url"], "https://api.example.com/v1")
+        self.assertEqual(body["operations"][0]["name"], "getItem")
+        self.assertEqual(body["operations"][0]["path"], "/items/{id}")
+        self.assertEqual(body["inject"][0]["name"], "Authorization")
+
+    def test_parse_openapi_rejects_bad_json(self):
+        self._login()
+        csrf = _csrf(self.client.get("/tools/new").text)
+        r = self.client.post("/tools/parse-openapi", data={"spec": "not json", "_csrf": csrf})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("valid JSON", r.json()["error"])
+
     def test_remove_tool_unregisters_but_keeps_files(self):
         self._login()
         csrf = _csrf(self.client.get("/tools/new").text)

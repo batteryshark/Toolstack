@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from broker import operations
 from broker.registry import Registry
+from toolyard import openapi_import
 
 from . import (api, auth, broker_config, loginguard, settings, supervisor,
                tool_authoring, tool_sources, toolyard_ops, views)
@@ -457,6 +458,27 @@ def create_app() -> FastAPI:
             return redirect("/login")
         return HTMLResponse(views.tool_editor_view(
             user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool={}, dir_value=""))
+
+    @app.post("/tools/parse-openapi")
+    async def parse_openapi(request: Request):
+        """Parse a pasted OpenAPI/Swagger spec into {base_url, inject, secrets, operations} so the
+        editor can offer a SELECTABLE import (the operator picks a subset). Read-only: parses and
+        returns, writes nothing."""
+        if not current_user(request):
+            return JSONResponse({"error": "auth"}, status_code=401)
+        data = await read_form(request)
+        if not csrf_ok(request, data):
+            return JSONResponse({"error": "invalid CSRF token"}, status_code=400)
+        try:
+            spec = json.loads(data.get("spec") or "")
+        except (json.JSONDecodeError, TypeError):
+            return JSONResponse({"error": "the spec must be valid JSON"}, status_code=400)
+        if not isinstance(spec, dict):
+            return JSONResponse({"error": "the spec must be a JSON object"}, status_code=400)
+        try:
+            return JSONResponse(openapi_import.parse_spec(spec))
+        except Exception as exc:  # a malformed spec must not 500 the panel
+            return JSONResponse({"error": f"could not parse spec: {type(exc).__name__}"}, status_code=400)
 
     @app.post("/tools/new")
     async def create_tool(request: Request):

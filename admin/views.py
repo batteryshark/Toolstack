@@ -242,6 +242,55 @@ _TOOL_EDITOR_JS = """
   [].forEach.call(document.querySelectorAll('input[name=rest_mode]'), function(r){r.addEventListener('change', syncMode);});
   syncMode();
 
+  // OpenAPI import (new-tool mode): parse a pasted spec, pick a SUBSET of ops, pre-fill the form.
+  var oaiParse = document.getElementById('oai-parse');
+  if (oaiParse) {
+    var parsedSpec = null;
+    oaiParse.onclick = function(){
+      var err = document.getElementById('oai-error');
+      err.hidden = true;
+      var fd = new FormData();
+      fd.append('spec', document.getElementById('oai-spec').value);
+      fd.append('_csrf', document.querySelector('input[name=_csrf]').value);
+      fetch('/tools/parse-openapi', {method: 'POST', body: fd})
+        .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, j: j}; }); })
+        .then(function(res){
+          if (!res.ok) { err.textContent = (res.j && res.j.error) || 'parse failed'; err.hidden = false; return; }
+          parsedSpec = res.j;
+          var box = document.getElementById('oai-ops');
+          box.innerHTML = '';
+          (parsedSpec.operations || []).forEach(function(op, idx){
+            var row = mk('<label class="oai-op"><input type="checkbox" data-i="'+idx+'"> '
+              + '<code></code> <b></b> <span class="muted"></span></label>');
+            row.querySelector('code').textContent = op.verb + ' ' + op.path;   // textContent: no HTML injection
+            row.querySelector('b').textContent = ' ' + op.name + ' ';
+            row.querySelector('.muted').textContent = op.description || '';
+            box.appendChild(row);
+          });
+          document.getElementById('oai-base').textContent = parsedSpec.base_url
+            ? ('Base URL: ' + parsedSpec.base_url)
+            : 'No server URL in the spec; set Base URL manually after importing.';
+          document.getElementById('oai-results').hidden = false;
+        })
+        .catch(function(){ err.textContent = 'parse failed'; err.hidden = false; });
+    };
+    document.getElementById('oai-add').onclick = function(){
+      if (!parsedSpec) return;
+      f_type.value = 'rest';
+      document.querySelector('input[name=rest_mode][value=proxied]').checked = true;
+      if (parsedSpec.base_url) document.getElementById('f_base_url').value = parsedSpec.base_url;
+      (parsedSpec.inject || []).forEach(function(i){ injectList.appendChild(injectRow(i)); });
+      (parsedSpec.secrets || []).forEach(function(s){ secs.appendChild(secRow(s)); });
+      [].forEach.call(document.querySelectorAll('#oai-ops input[type=checkbox]:checked'), function(c){
+        var op = parsedSpec.operations[+c.getAttribute('data-i')];
+        ops.appendChild(opCard({name: op.name, verb: op.verb, path: op.path,
+                                description: op.description, args: op.args}));
+      });
+      syncMode();
+      document.getElementById('import-openapi').open = false;
+    };
+  }
+
   document.getElementById('tool-form').addEventListener('submit', function(){
     var tool = {
       id: document.getElementById('f_id').value,
@@ -880,9 +929,24 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
                      f"<p class='muted'>Directory: <code>{esc(dir_value)}</code></p>")
         id_attr = " readonly"  # renaming a tool would orphan its caller policies
     initial = json.dumps(tool).replace("</", "<\\/")  # safe to embed in <script>
+    import_section = ""
+    if mode == "new":
+        import_section = (
+            "<details id='import-openapi'><summary>Import from an OpenAPI / Swagger spec</summary>"
+            "<p class='muted'>Paste a spec, parse it, then check the operations you want "
+            "(a subset, not the whole spec). The selected ops, the base URL, and an auth scaffold "
+            "pre-fill the form below; review and save.</p>"
+            "<textarea id='oai-spec' rows='6' placeholder='paste OpenAPI / Swagger JSON here'></textarea>"
+            "<div class='row'><button type='button' id='oai-parse'>Parse spec</button></div>"
+            "<div id='oai-error' class='error' hidden></div>"
+            "<div id='oai-results' hidden><p class='muted' id='oai-base'></p>"
+            "<div id='oai-ops'></div>"
+            "<button type='button' id='oai-add'>Add selected operations</button></div>"
+            "</details>")
     body = (
         f"{err}<section><div class='row'><a class='button' href='/tools'>Back</a>"
         f"<h2>{'Add tool' if mode == 'new' else 'Edit tool: ' + esc(tool.get('id', ''))}</h2></div>"
+        f"{import_section}"
         f"<form id='tool-form' method='post' action='{action}'>"
         f"{_csrf_field(csrf)}{dir_field}"
         f"<label class='field'>id <input id='f_id' placeholder='weather'{id_attr} required></label>"
