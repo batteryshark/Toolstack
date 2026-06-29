@@ -16,37 +16,14 @@ import json
 import re
 import tomllib
 from pathlib import Path
-from urllib.parse import urlsplit
 
 # The risk taxonomy: read / write / destructive. (One vocabulary, no low/medium/high.)
 RISK_CHOICES = ("read", "write", "destructive")
 RISKS = RISK_CHOICES
 ARG_TYPES = ("string", "number", "integer", "boolean", "object", "array")
 # Tool transports the panel can author. "api" POSTs /v1/actions/<op>; "mcp" is a
-# streamable-HTTP MCP server the broker calls via tools/call; "rest" is a verb-as-op
-# passthrough. All are served on a port, so the entrypoint form is identical; only the
-# `type` (and, for rest, the op shape) differs.
-TOOL_TYPES = ("api", "mcp", "rest")
-
-# A "rest" op is one of two shapes, and either way its risk is DERIVED from the verb (not
-# operator-chosen) so a DELETE can't be mislabelled "read":
-#   - a NAMED op (name + verb + path template): the agent calls it by name and fills the path's
-#     {params}; the operator declares those params as args.
-#   - a bare-verb passthrough (the op IS the verb): the agent passes the fixed {path, body, query,
-#     headers} shape and policy scopes the path by glob.
-REST_VERBS = ("GET", "POST", "PUT", "PATCH", "DELETE")
-REST_VERB_RISK = {"GET": "read", "POST": "write", "PUT": "write",
-                  "PATCH": "write", "DELETE": "destructive"}
-REST_ARGS = (
-    {"name": "path", "type": "string", "required": True,
-     "description": "request path on the tool, e.g. /items/42"},
-    {"name": "body", "type": "object", "required": False,
-     "description": "JSON request body (POST/PUT/PATCH)"},
-    {"name": "query", "type": "object", "required": False,
-     "description": "query-string parameters"},
-    {"name": "headers", "type": "object", "required": False,
-     "description": "request headers to forward (the broker reserves the X-Toolstack-* namespace)"},
-)
+# streamable-HTTP MCP server the broker calls via tools/call.
+TOOL_TYPES = ("api", "mcp")
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
 _NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")             # operation / argument names
@@ -54,66 +31,10 @@ _SECRET_RE = re.compile(r"^[A-Za-z0-9_.-]+$")         # also used as a filename
 _VAULT_RE = re.compile(r"^[A-Za-z0-9 _.-]+$")         # Infisical project name/slug/id
 _ITEM_RE = re.compile(r"^[A-Za-z0-9_./-]+$")          # Infisical secret path (may have /)
 
-# Proxy mode: a "rest" tool whose external API lives off our system. The operator fills a [proxy]
-# block instead of a process/port; the entrypoint is the bundled http_proxy. The values below
-# mirror toolyard/http_proxy.py (independent packages, so duplicated, not shared).
-PROXY_COMMAND = "python3 -m toolyard.http_proxy"
-INJECT_INTO = ("header", "query", "body")
-_SECRET_REF = re.compile(r"\$\{secret:([A-Za-z0-9_-]+)\}")          # ${secret:NAME} reference
-_HEADER_NAME = re.compile(r"\A[A-Za-z0-9!#$%&'*+.^_`|~-]+\Z")       # RFC 7230 header-name token
-# Caller headers the proxy will never forward (auth, transport/framing, broker-owned).
-_NEVER_FORWARD = {"authorization", "host", "content-length", "content-type", "connection",
-                  "transfer-encoding", "te", "trailer", "expect", "upgrade", "cookie",
-                  "x-toolstack-secret"}
-_NEVER_FORWARD_PREFIXES = ("x-toolstack-", "proxy-", "x-forwarded-")
-
 
 def from_json(raw: str) -> dict:
     """Parse the editor's hidden JSON field into a normalized tool dict."""
     return normalize(json.loads(raw))
-
-
-def _norm_args(raw) -> list[dict]:
-    """Normalize a list of arg descriptors (api ops and named rest ops author their own), dropping
-    blank rows and coercing types."""
-    out = []
-    for a in raw or []:
-        name = str(a.get("name") if a.get("name") is not None else "").strip()
-        if not name:
-            continue
-        out.append({
-            "name": name,
-            "type": str(a.get("type") if a.get("type") is not None else "").strip() or "string",
-            "required": bool(a.get("required")),
-            "description": str(a.get("description") if a.get("description") is not None else "").strip(),
-        })
-    return out
-
-
-def _norm_proxy(raw) -> dict | None:
-    """Normalize the [proxy] block (proxied rest tool). Returns None unless a base_url is set, so
-    a non-proxy tool carries no proxy key. Drops blank inject/forward/rotatable rows."""
-    if not isinstance(raw, dict):
-        return None
-    base_url = str(raw.get("base_url") if raw.get("base_url") is not None else "").strip()
-    if not base_url:
-        return None
-    inject = []
-    for it in raw.get("inject") or []:
-        name = str(it.get("name") if it.get("name") is not None else "").strip()
-        if not name:
-            continue
-        inject.append({
-            "into": str(it.get("into") if it.get("into") is not None else "").strip() or "header",
-            "name": name,
-            "value": str(it.get("value") if it.get("value") is not None else ""),
-        })
-    fwd = [str(h).strip() for h in (raw.get("forward_headers") or []) if str(h).strip()]
-    rot = [str(r).strip() for r in (raw.get("rotatable") or []) if str(r).strip()]
-    proxy = {"base_url": base_url, "inject": inject, "forward_headers": fwd}
-    if rot:
-        proxy["rotatable"] = rot
-    return proxy
 
 
 def normalize(data: dict) -> dict:
@@ -128,36 +49,22 @@ def normalize(data: dict) -> dict:
         name = s(o.get("name"))
         if not name:
             continue
-        if tool_type == "rest":
-            path = s(o.get("path"))
-            if path:
-                # NAMED rest op: `name` is a label, `verb` is the method, `path` is the template;
-                # the operator declares the path params as args. Risk derives from the verb.
-                verb = s(o.get("verb")).upper()
-                operations.append({
-                    "name": name,
-                    "verb": verb,
-                    "path": path,
-                    "risk": REST_VERB_RISK.get(verb, "write"),
-                    "description": s(o.get("description")),
-                    "args": _norm_args(o.get("args")),
-                })
-            else:
-                # bare-verb passthrough: the name IS the verb, risk + args are fixed (validate
-                # rejects a name that isn't a verb).
-                verb = name.upper()
-                operations.append({
-                    "name": verb,
-                    "risk": REST_VERB_RISK.get(verb, "write"),
-                    "description": s(o.get("description")),
-                    "args": [dict(a) for a in REST_ARGS],
-                })
-            continue
+        args = []
+        for a in o.get("args") or []:
+            an = s(a.get("name"))
+            if not an:
+                continue
+            args.append({
+                "name": an,
+                "type": s(a.get("type")) or "string",
+                "required": bool(a.get("required")),
+                "description": s(a.get("description")),
+            })
         operations.append({
             "name": name,
             "risk": s(o.get("risk")) or "read",
             "description": s(o.get("description")),
-            "args": _norm_args(o.get("args")),
+            "args": args,
         })
 
     secrets = []
@@ -178,23 +85,17 @@ def normalize(data: dict) -> dict:
     try:
         port = int(data.get("port"))
     except (TypeError, ValueError):
-        port = None  # flagged by validate (proxy mode: the admin assigns a free port before write)
-
-    proxy = _norm_proxy(data.get("proxy"))
-    command = s(data.get("command"))
-    if proxy and tool_type == "rest" and not command:
-        command = PROXY_COMMAND   # proxy mode runs the bundled wrapper; the operator writes no code
+        port = None  # flagged by validate
 
     return {
         "id": s(data.get("id")),
         "type": tool_type,
         "description": s(data.get("description")),
-        "command": command,
+        "command": s(data.get("command")),
         "image": s(data.get("image")),
         "port": port,
         "operations": operations,
         "secrets": secrets,
-        "proxy": proxy,   # None unless a [proxy] base_url is set
     }
 
 
@@ -217,7 +118,6 @@ def validate(data: dict) -> list[str]:
         errors.append("port must be an integer between 1 and 65535")
     if not data["operations"]:
         errors.append("add at least one operation")
-    is_rest = data["type"] == "rest"
     seen = set()
     for o in data["operations"]:
         if not _NAME_RE.match(o["name"]):
@@ -225,18 +125,6 @@ def validate(data: dict) -> list[str]:
         if o["name"] in seen:
             errors.append(f"duplicate operation '{o['name']}'")
         seen.add(o["name"])
-        # A rest op is either a NAMED op (has a path template: validate the verb + path) or a
-        # bare-verb passthrough (the name must be an HTTP verb). normalize derives the risk either
-        # way, so risk is always valid here.
-        if is_rest:
-            if o.get("path"):
-                if o.get("verb") not in REST_VERBS:
-                    errors.append(f"named rest op '{o['name']}' needs a verb ({', '.join(REST_VERBS)})")
-                if not o["path"].startswith("/"):
-                    errors.append(f"named rest op '{o['name']}' path must start with '/'")
-            elif o["name"] not in REST_VERBS:
-                errors.append(f"rest op '{o['name']}' must be an HTTP verb ({', '.join(REST_VERBS)}), "
-                              f"or give it a path to make it a named op")
         if o["risk"] not in RISKS:
             errors.append(f"operation '{o['name']}' risk must be one of {', '.join(RISKS)}")
         for a in o["args"]:
@@ -251,39 +139,7 @@ def validate(data: dict) -> list[str]:
             errors.append(f"secret '{sec['name']}' vault has invalid characters")
         if sec.get("item") and not _ITEM_RE.match(sec["item"]):
             errors.append(f"secret '{sec['name']}' item has invalid characters")
-    if data.get("proxy"):
-        errors += _validate_proxy(data["proxy"], data["secrets"])
     return errors
-
-
-def _validate_proxy(proxy: dict, secrets: list) -> list[str]:
-    """Validate a [proxy] block: base_url, inject rows, forward_headers, rotatable, and that every
-    ${secret:NAME} (in base_url or an inject value) has a matching [[secrets]] declaration."""
-    errs: list[str] = []
-    base = urlsplit(proxy.get("base_url", ""))
-    if base.scheme not in ("http", "https") or not base.netloc:
-        errs.append("proxy base_url must be an absolute http(s) URL")
-    declared = {sec["name"] for sec in secrets}
-    writable = {sec["name"] for sec in secrets if sec.get("writable")}
-    refs = set(_SECRET_REF.findall(proxy.get("base_url", "")))
-    for it in proxy.get("inject", []):
-        if it["into"] not in INJECT_INTO:
-            errs.append(f"inject destination must be header/query/body, got '{it['into']}'")
-        if it["into"] == "header" and not _HEADER_NAME.match(it["name"]):
-            errs.append(f"inject header name '{it['name']}' has invalid characters")
-        refs |= set(_SECRET_REF.findall(it.get("value", "")))
-    for ref in sorted(refs):
-        if ref not in declared:
-            errs.append(f"inject ${{secret:{ref}}} has no matching [[secrets]] entry")
-    for h in proxy.get("forward_headers", []):
-        if h.lower() in _NEVER_FORWARD or h.lower().startswith(_NEVER_FORWARD_PREFIXES):
-            errs.append(f"forward_headers may not include the reserved header '{h}'")
-        elif not _HEADER_NAME.match(h):
-            errs.append(f"forward_headers '{h}' has invalid characters")
-    for r in proxy.get("rotatable", []):
-        if r not in writable:
-            errs.append(f"rotatable '{r}' must be a [[secrets]] entry with writable = true")
-    return errs
 
 
 def _s(value) -> str:
@@ -303,11 +159,6 @@ def _arg_inline(arg: dict) -> str:
     return "{ " + ", ".join(parts) + " }"
 
 
-def _inject_inline(it: dict) -> str:
-    return ("{ into = " + _s(it["into"]) + ", name = " + _s(it["name"])
-            + ", value = " + _s(it["value"]) + " }")
-
-
 def entrypoint_error(data: dict, dir_path: str | Path, runner: str | None = None) -> str | None:
     """Whether the tool has a usable entrypoint for the active toolyard runner: the one
     validity rule that depends on the directory (and on which runner will start the tool).
@@ -322,10 +173,6 @@ def entrypoint_error(data: dict, dir_path: str | Path, runner: str | None = None
     so a save in a docker deployment is checked against docker. Kept out of :func:`validate`
     (which is pure) so ``write`` and the add-from-source flows apply it where they have the
     directory."""
-    if data.get("proxy"):
-        # proxy mode runs the bundled http_proxy (command auto-set in normalize); no operator
-        # command/image/Dockerfile is needed regardless of runner.
-        return None
     if runner is None:
         from . import settings
         runner = settings.tool_runner_backend()
@@ -349,21 +196,8 @@ def to_toml(data: dict) -> str:
     if data["image"]:
         out.append(f"image = {_s(data['image'])}")
     out.append(f"port = {data['port']}")
-    proxy = data.get("proxy")
-    if proxy:
-        out += ["", "[proxy]", f"base_url = {_s(proxy['base_url'])}"]
-        if proxy.get("inject"):
-            out.append("inject = [ " + ", ".join(_inject_inline(i) for i in proxy["inject"]) + " ]")
-        if proxy.get("forward_headers"):
-            out.append("forward_headers = [ " + ", ".join(_s(h) for h in proxy["forward_headers"]) + " ]")
-        if proxy.get("rotatable"):
-            out.append("rotatable = [ " + ", ".join(_s(r) for r in proxy["rotatable"]) + " ]")
     for o in data["operations"]:
-        out += ["", "[[operations]]", f"name = {_s(o['name'])}"]
-        if o.get("path"):                                  # named rest op: verb + path template
-            out.append(f"verb = {_s(o['verb'])}")
-            out.append(f"path = {_s(o['path'])}")
-        out.append(f"risk = {_s(o['risk'])}")
+        out += ["", "[[operations]]", f"name = {_s(o['name'])}", f"risk = {_s(o['risk'])}"]
         if o["description"]:
             out.append(f"description = {_s(o['description'])}")
         if o["args"]:
@@ -393,7 +227,6 @@ def read(dir_path: str | Path) -> dict:
         "port": entry.get("port"),
         "operations": data.get("operations", []),
         "secrets": data.get("secrets", []),
-        "proxy": data.get("proxy"),
     })
 
 

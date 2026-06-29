@@ -183,17 +183,13 @@ public actor ApiClient {
         try await send("GET", "/api/callers/\(caller)/policy")
     }
 
-    /// Replace a caller's policy. `allow`/`review`/`deny` are `tool.op` specs (for a rest tool the
-    /// op may be path-scoped, e.g. `kv.GET /items/**`). An op in none of the lists is denied;
-    /// `deny` is for explicit carve-outs inside a broader rest allow.
+    /// Replace a caller's policy. `allow`/`review`/`deny` are `tool.op` specs.
+    /// An op in none of the lists is denied.
     @discardableResult
     public func setPolicy(caller: String, allow: [String], review: [String],
                           deny: [String] = []) async throws -> PolicyResponse {
-        // manages_path_rules: this editor renders + manages rest path rules and sends the full
-        // picture, so the broker won't refuse a save that intentionally drops a path rule.
         try await send("PUT", "/api/callers/\(caller)/policy",
-                       body: ["allow": allow, "review": review, "deny": deny,
-                              "manages_path_rules": true])
+                       body: ["allow": allow, "review": review, "deny": deny])
     }
 
     /// Set which tools a caller is enabled for (gates the policy editor). Returns the new list.

@@ -1,22 +1,22 @@
 """Broker-native MCP endpoint (a second ingress framing for the same authority).
 
-The broker speaks REST natively. This module lets an MCP-native agent reach the very
-same tools, over the same trust boundary, WITHOUT the client-side stdio adapter
-(`client/mcp_server.py`): it terminates JSON-RPC (MCP) frames at `POST /mcp`, applies
-the SAME policy / approval / audit as the REST `/v1/actions` path (it calls the same
-`request_lifecycle.submit` and emits the same terminal `request.*` event), and executes
-through the same REST runtime. Tools speak REST, so frames are *translated* here, not
-blindly forwarded to a tool. The agent's token authenticates the call exactly as for REST
-(the gateway authenticates before routing here).
+This module lets an MCP-native agent reach the same tools, over the same trust
+boundary, WITHOUT the client-side stdio adapter (`client/mcp_server.py`): it
+terminates JSON-RPC (MCP) frames at `POST /mcp`, applies the SAME policy /
+approval / audit as the HTTP `/v1/actions` path (it calls the same
+`request_lifecycle.submit` and emits the same terminal `request.*` event), and
+executes through the same runtime dispatch. Frames are translated here, not
+blindly forwarded to a tool. The agent's token authenticates the call before
+routing.
 
 **Stateless and non-blocking, by design.** Each POST is one independent JSON-RPC call:
 there is no MCP session id and no batching. A `tools/call` on a review op returns
 `pending_approval` + a request id immediately rather than holding the connection open:
-identical to the REST 202, and necessary because the broker is single-threaded (one
+identical to the HTTP action flow, and necessary because the broker is single-threaded (one
 SQLite connection, one request at a time), so blocking one caller on a human's approval
 would freeze every caller. The blocking, poll-until-resolved experience stays in the
 per-process stdio adapter, where holding a single connection is safe; an HTTP MCP caller
-polls `GET /v1/requests/<id>` for the pending request, exactly as a REST caller does.
+polls `GET /v1/requests/<id>` for the pending request.
 
 Stdlib only. The small schema helpers are intentionally duplicated from the client adapter
 so the broker stays independent of the `client` package (same rationale as the broker/
@@ -34,7 +34,7 @@ PROTOCOL_VERSION = "2024-11-05"
 _JSON_TYPES = {"string", "integer", "number", "boolean", "object", "array"}
 
 # Outcome statuses that make an MCP tools/call an error result. `pending_approval` is NOT
-# one of them; it is in-progress, not failed (mirrors the REST 202).
+# one of them; it is in-progress, not failed (mirrors the HTTP action flow).
 _MCP_FAIL = {lifecycle.DENIED, lifecycle.FAILED, lifecycle.UNAVAILABLE, lifecycle.EXPIRED}
 
 
@@ -47,7 +47,7 @@ class _InvalidParams(Exception):
 
 
 class _RateLimited(Exception):
-    """A tools/call over the per-caller limit. Surfaced as HTTP 429 (like the REST path),
+    """A tools/call over the per-caller limit. Surfaced as HTTP 429,
     so it is audited via the gateway's response_returned outcome map, not a JSON-RPC
     method error."""
 
@@ -88,7 +88,7 @@ def _result(text: str, is_error: bool = False) -> dict:
 
 def _allowed(ctx, caller):
     """Yield (tool, op, effect) for every op this caller may use (allow/review); denied
-    ops are omitted: least privilege, identical to REST discovery."""
+    ops are omitted: least privilege."""
     policy = ctx.store.policy_for(caller.id)
     for op in ctx.registry.list_ops():
         effect = policy_rules.decide(policy, op["tool"], op["op"])
@@ -131,7 +131,7 @@ def _resolve_name(ctx, name: str):
 
 def _call_tool(ctx, caller, correlation_id, params) -> dict:
     # Local import breaks an import cycle: gateway imports this module to route /mcp, and
-    # these two helpers shape/audit the outcome identically to the REST action path. Reusing
+    # these two helpers shape/audit the outcome identically to the HTTP action path. Reusing
     # them (rather than duplicating) is what guarantees "audit works the same" (AC).
     from .gateway import _audit_request_terminal, _outcome_body
 
@@ -142,7 +142,7 @@ def _call_tool(ctx, caller, correlation_id, params) -> dict:
         raise _InvalidParams("arguments must be an object")
     name = params.get("name", "")
 
-    # Rate-limit every tools/call attempt up front, exactly as REST does for POST
+    # Rate-limit every tools/call attempt up front, exactly as POST
     # /v1/actions, before name resolution, so a flood of unknown names is throttled too.
     if ctx.rate_limiter is not None and not ctx.rate_limiter.allow(caller.id):
         raise _RateLimited()
@@ -157,14 +157,14 @@ def _call_tool(ctx, caller, correlation_id, params) -> dict:
     reason = args.pop("_reason", None)
     reason = reason if isinstance(reason, str) and reason.strip() else None
 
-    # The SAME path as REST _action: submit applies policy/approval and writes the same
+    # The SAME path as _action: submit applies policy/approval and writes the same
     # audit trail (request.received, policy.decision_*, then the terminal request.* below).
     outcome = lifecycle.submit(ctx, caller, tool, op, args, correlation_id, reason=reason)
     _audit_request_terminal(ctx, outcome, correlation_id, tool, op)
 
     # Least privilege at the RESULT layer only: a denied or unknown op reads as "unknown
     # tool" to the caller (never reveal an op they may not use), but submit() already wrote
-    # the same denial/lookup audit REST does, so the probe stays queryable.
+    # the same denial/lookup audit, so the probe stays queryable.
     if outcome.status in (lifecycle.DENIED, lifecycle.NOT_FOUND):
         return _result(f'unknown tool "{name}"', is_error=True)
     body = _outcome_body(outcome)
@@ -196,7 +196,7 @@ def handle(body, ctx, caller, correlation_id) -> tuple[int, dict]:
     the gateway uses the status for the response AND for the audit outcome word. Almost
     everything is HTTP 200 with a JSON-RPC envelope (results and JSON-RPC method errors
     alike, per the JSON-RPC-over-HTTP convention); the exception is a per-caller throttle,
-    which is HTTP 429 like the REST path so it audits as `rate_limited`. A notification
+    which is HTTP 429 so it audits as `rate_limited`. A notification
     (no id) carries no response body (`{}`). The caller is already authenticated by the
     gateway. Batching is intentionally unsupported."""
     if body is None:  # the gateway passes None for a malformed JSON body

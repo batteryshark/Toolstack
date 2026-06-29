@@ -20,9 +20,9 @@ The authority boundary: the only address an agent can reach. See [../plan.md](..
   caller may use (filtered by policy, with effect/risk/description), and one op's
   args on demand. Lets agents discover lazily instead of carrying schemas in context.
 - **`POST /mcp`**, broker-native **MCP** (JSON-RPC, streamable HTTP): the same tools, auth,
-  policy, approval, and audit as the REST gateway, for agents that speak MCP. A `tools/call`
+  policy, approval, and audit as the HTTP action API, for agents that speak MCP. A `tools/call`
   maps to the same lifecycle as `POST /v1/actions`; resolution is poll-only (`tools/call`
-  returns a request id to poll, same as a `202` on the REST path).
+  returns a request id to poll, same as a `202` action response).
 - **Identity**: callers + bearer tokens stored as SHA-256 hashes; revoking a token
   or caller takes effect on the next request.
 - **Policy**: per-caller `allow` / `review` / `deny`, **default-deny**.
@@ -117,8 +117,7 @@ One process, internal modules (not separate services):
 - `policy.py`: `allow` / `review` / `deny`, default-deny (pure).
 - `registry.py`: reads `toolyard.toml` for tool/op/risk/port; ignores `[[secrets]]`.
 - `runtime.py`, forwards an approved call to the tool on `127.0.0.1:<port>`, dispatching the
-  tool's transport: `api` (POST /v1/actions/<op>), `mcp` (broker is the MCP *client*), or
-  `rest` (verb-as-op passthrough). This is the broker as an MCP **client**.
+  tool's transport: `api` (POST /v1/actions/<op>) or `mcp` (broker is the MCP *client*).
 - `request_lifecycle.py`: the orchestration across the above (incl. approval resolution).
 - `approval.py`: the operation card + normalized surface state (the adapter contract).
 - `mcp.py`, the **`POST /mcp` ingress**: the broker as an MCP *server*, terminating JSON-RPC

@@ -32,7 +32,7 @@ Then:
 3. **Add a caller** and mint a token (this is your agent's bearer token).
 4. **Author a tool** (or use the bundled `echo`), grant the caller an op (allow / review).
 5. Point your agent at the broker: `TOOLSTACK_URL=http://127.0.0.1:8765`,
-   `TOOLSTACK_TOKEN=<the token>` (REST, or the broker-native MCP at `POST /mcp`).
+   `TOOLSTACK_TOKEN=<the token>` (HTTP action API, or the broker-native MCP at `POST /mcp`).
 
 Provision a tool's secret into the vault from inside the box:
 

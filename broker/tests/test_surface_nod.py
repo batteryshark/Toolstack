@@ -145,8 +145,8 @@ class NodSurfaceHTTP(unittest.TestCase):
             details='{\n  "body": {\n    "dueDate": "2026-07-01"\n  }\n}')
         self.surface.open(card)
         body = _FakeNod.created["body"]
-        self.assertIn("2026-07-01", body["body_markdown"])       # the human sees what was submitted
-        self.assertEqual(set(body) - NOD_CREATE_FIELDS, set())   # still only nod-accepted top-level fields
+        self.assertIn("2026-07-01", body["body_markdown"])
+        self.assertEqual(set(body) - NOD_CREATE_FIELDS, set())
 
     def test_open_payload_obeys_nod_create_contract(self):
         """Every field the adapter sends is one nod actually accepts, and every

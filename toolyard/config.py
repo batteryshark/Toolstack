@@ -13,11 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Tool transports this toolyard knows how to run. "api" answers /v1/actions/<op>; "mcp" is
-# a streamable-HTTP MCP server; "rest" is a verb-as-op passthrough. All three are served on
-# a loopback port. An unknown type is rejected at load; never accepted silently. Mirrors
-# broker/registry.py and admin/tool_authoring.py (independent packages, so the set is
-# duplicated, not shared).
-TOOL_TYPES = ("api", "mcp", "rest")
+# a streamable-HTTP MCP server. Both are served on a loopback port. An unknown type is
+# rejected at load; never accepted silently. Mirrors broker/registry.py and
+# admin/tool_authoring.py (independent packages, so the set is duplicated, not shared).
+TOOL_TYPES = ("api", "mcp")
 
 # A tool id is the routing key and a directory name; it must match this charset, and must NOT
 # contain a dot, since the broker splits a policy spec on the FIRST dot into (tool, op), so a

@@ -193,20 +193,8 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         data = await _json_object(request)
         allow, review = _str_list(data.get("allow"), "allow"), _str_list(data.get("review"), "review")
         deny = _str_list(data.get("deny"), "deny")
-        # A path-aware client (the macapp policy editor) renders + manages rest path rules and
-        # sends the full picture, so it may intentionally drop rules; it declares itself with
-        # this flag. A path-blind client that omits it is refused if it would flatten path rules.
-        manages_path = bool(data.get("manages_path_rules"))
         with open_store(broker_config.load()) as store:
             try:
-                if not manages_path:
-                    dropped = operations.coarse_update_drops_scope(store, name, allow, review, deny)
-                    if dropped:
-                        raise HTTPException(
-                            status_code=409,
-                            detail="caller has path-scoped rules this client can't manage; edit "
-                                   "them with a path-aware client or brokerctl. Would drop: "
-                                   + ", ".join(sorted(dropped)))
                 operations.set_policy(store, name, allow, review, user, deny=deny)
                 policy = store.policy_for(operations.require_caller(store, name)["id"])
             except LookupError as exc:
@@ -244,8 +232,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         try:
             for op in Registry.from_sources(config.tools_root, config.tool_dirs).list_ops():
                 ops_by_tool.setdefault(op["tool"], []).append(
-                    {"op": op["op"], "risk": op["risk"], "description": op["description"],
-                     "verb": op.get("verb"), "path": op.get("path")})  # rest: distinguishes named vs passthrough
+                    {"op": op["op"], "risk": op["risk"], "description": op["description"]})
         except Exception as exc:
             log.warning("could not read tool ops for the policy editor: %s", exc)
             # tools still listed (without ops) if the registry can't be read

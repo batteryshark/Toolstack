@@ -44,11 +44,11 @@ environment, so the look/feel is confirmed by running it in Xcode.
 The full operator surface over the admin API:
 
 - **Broker**: start / stop / restart + health.
-- **Tools**: add from a local folder or GitHub, author a manifest in-app (api / mcp / rest),
+- **Tools**: add from a local folder or GitHub, author a manifest in-app (api / mcp),
   edit description + secret declarations, set secret values, per-tool start/stop/restart, and
   update a tool from its source.
 - **Callers**: create, issue / rotate / revoke tokens, enable tools, and edit policy
-  (including rest per-`(verb, path)` rules).
+  per operation.
 - **Activity**: a pane over the request + audit log; plus the active secret-backend view.
 
 The login persists in the Keychain, and the app ships as a signed, notarized `.app`.

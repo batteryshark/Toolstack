@@ -10,7 +10,6 @@ from toolyard.config import discover, load
 REPO = Path(__file__).resolve().parents[2]
 TOOL_TOML = REPO / "tools" / "echo_api" / "toolyard.toml"
 TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
-TOOL_REST_TOML = REPO / "tools" / "rest_kv" / "toolyard.toml"
 
 
 class Load(unittest.TestCase):
@@ -28,17 +27,11 @@ class Load(unittest.TestCase):
         self.assertEqual(tool.type, "mcp")    # the streamable-HTTP MCP transport
         self.assertEqual(tool.port, 4611)
 
-    def test_parses_rest_kv_tool(self):
-        tool = load(TOOL_REST_TOML)
-        self.assertEqual(tool.id, "kv")
-        self.assertEqual(tool.type, "rest")   # the verb-as-op passthrough
-        self.assertEqual(tool.port, 4621)
-
     def test_discover_finds_all_example_tools(self):
         ids = {d.id for d in discover(REPO / "tools")}
         self.assertIn("echo", ids)
         self.assertIn("echo-mcp", ids)
-        self.assertIn("kv", ids)
+        self.assertNotIn("kv", ids)
 
 
 class Secrets(unittest.TestCase):
@@ -127,6 +120,11 @@ class PortValidation(unittest.TestCase):
         # a typo'd type must fail at load, not register silently and mis-dispatch at call time
         with self.assertRaises(ValueError) as cm:
             load(self._write('id = "x"\ntype = "mpc"\n[entrypoint]\nport = 4700\ncommand = "c"\n'))
+        self.assertIn("unknown type", str(cm.exception))
+
+    def test_rest_type_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            load(self._write('id = "kv"\ntype = "rest"\n[entrypoint]\nport = 4621\ncommand = "c"\n'))
         self.assertIn("unknown type", str(cm.exception))
 
 

@@ -1,7 +1,7 @@
 """Tool runtime (the execution seam): forward an approved call to the tool
 container on ``127.0.0.1:<port>``.
 
-Three tool transports share this seam, dispatched on ``ToolOp.type``:
+Two tool transports share this seam, dispatched on ``ToolOp.type``:
 
 * **api**: the broker POSTs ``/v1/actions/<op>`` with the arguments + broker
   context and returns the tool's JSON (the original toolyard contract).
@@ -12,15 +12,6 @@ Three tool transports share this seam, dispatched on ``ToolOp.type``:
   in ``toolyard.toml`` exactly like an api tool; the runtime maps op -> MCP tool
   name. The MCP ``result`` (content blocks + optional ``structuredContent``) is
   returned to the caller unchanged.
-* **rest**: a **verb-as-op passthrough**: the op IS an HTTP verb (GET/POST/PUT/
-  PATCH/DELETE). The caller passes ``{path, body, query, headers}``; the broker forwards
-  the raw ``<verb> 127.0.0.1:<port><path>`` request, caller headers included, minus the
-  broker-reserved namespace (see ``_RESERVED_REQ_HEADERS``), and returns the tool's
-  ``{status, headers, body}``. Policy/approval still key on ``(tool, <verb>)``. A 4xx/5xx
-  from the tool is a legitimate REST response and passes through as data; only a
-  transport failure raises. The path is validated to stay on the tool's loopback
-  origin (no scheme/host injection).
-
 The broker attaches NO workload secrets; the tool already has its own, resolved
 by the toolyard at container start. The broker adds ``broker_request_id`` and the
 caller name so the tool has request context (in the api body; in MCP under the
@@ -48,7 +39,6 @@ import json
 import os
 import re
 import urllib.error
-import urllib.parse
 import urllib.request
 
 from .registry import ToolOp
@@ -60,94 +50,15 @@ class ToolUnreachable(RuntimeError):
     returned an error, so the lifecycle can report `tool_unreachable` vs `tool_failed`."""
 
 
-class RestTemplateError(ValueError):
-    """A named rest op's path template could not be filled from the caller's arguments (a required
-    path parameter is missing, not a string, or would escape its path segment). Raised by
-    resolve_rest_path; the lifecycle turns it into a clean bad-arguments outcome, fail closed."""
-
-
 # Protocol version the broker advertises in `initialize`. A streamable-HTTP MCP
 # server negotiates down if it speaks an older one; we send a recent dated version.
 MCP_PROTOCOL_VERSION = "2025-06-18"
 
-# The HTTP verbs a "rest" passthrough tool may expose as ops. The op IS the verb, so this
-# also guards against using an arbitrary op string as an HTTP method (method injection).
-REST_VERBS = ("GET", "POST", "PUT", "PATCH", "DELETE")
-
-# Request headers the broker OWNS on a rest passthrough: a caller can't set or override
-# these. The X-Toolstack-* namespace carries the broker's caller-identity assertion + the
-# opt-in shared secret (forwarding a caller's copy would let an agent impersonate another
-# caller); Host/Content-Length are computed for the loopback hop; Content-Type matches the
-# broker's JSON body; the hop-by-hop headers are per-connection. Everything ELSE the caller
-# puts in `arguments.headers` is forwarded, so the passthrough is faithful for app headers
-# (Accept, an upstream Authorization, custom X-* ...) without ceding the broker's identity.
-_RESERVED_REQ_HEADERS = frozenset({
-    "host", "content-length", "content-type",
-    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailer", "transfer-encoding", "upgrade",
-})
-_HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*\Z")  # \Z (not $) so a trailing \n can't slip in
-
-# A path-template variable in a named rest op. ``{name}`` is one path segment; ``{+name}`` is RFC
-# 6570 reserved expansion (a cross-segment tail that may contain '/'). The name is snake_case, the
-# same convention OpenAPI / Swagger paths use, so a spec maps 1:1 onto named ops.
-_TEMPLATE_VAR = re.compile(r"\{(\+?)([a-zA-Z_][a-zA-Z0-9_]*)\}")
-
-
-def resolve_rest_path(template: str, arguments: dict) -> str:
-    """Fill a named rest op's path template from the caller's arguments and return the request path.
-
-    ``{name}`` becomes exactly ONE percent-encoded segment: a '/' in the value is encoded (it can't
-    add path structure) and a '.'/'..' segment is rejected (it can't traverse). ``{+name}`` is a
-    reserved cross-segment tail ('/' allowed, for an op that opts into a subtree) but empty / '.' /
-    '..' segments are still rejected, so it can't climb above the template's literal prefix. A
-    missing or non-string parameter raises RestTemplateError. The literal parts of the template are
-    the tool author's, never the caller's, so the caller fills blanks and never constructs a path."""
-    args = arguments if isinstance(arguments, dict) else {}
-
-    def fill(m: "re.Match") -> str:
-        reserved, name = m.group(1), m.group(2)
-        value = args.get(name)
-        if not isinstance(value, str) or value == "":
-            raise RestTemplateError(f"missing or empty path parameter {name!r}")
-        if reserved:  # {+name}: a tail that may span segments, but must not traverse or be absolute
-            encoded = urllib.parse.quote(value, safe="/")
-            if any(seg in ("", ".", "..") for seg in encoded.split("/")):
-                raise RestTemplateError(f"path parameter {name!r} has an empty or dot segment")
-            return encoded
-        if "/" in value:   # a single segment can't contain '/': use {+name} for a multi-segment tail
-            raise RestTemplateError(f"path parameter {name!r} may not contain '/'")
-        encoded = urllib.parse.quote(value, safe="")  # {name}: exactly one segment
-        if encoded in (".", ".."):                     # quote leaves dots as-is; reject a traversal
-            raise RestTemplateError(f"path parameter {name!r} may not be '.' or '..'")
-        return encoded
-
-    path = _TEMPLATE_VAR.sub(fill, template)
-    # Belt-and-suspenders: quote() already encodes every control char in a param value, so a CRLF
-    # can't smuggle a header line into the forwarded request. Assert it explicitly so a future
-    # widening of `safe=` can't silently reintroduce that.
-    if any(ord(c) < 0x20 or ord(c) == 0x7f for c in path):
-        raise RestTemplateError("resolved path contains a control character")
-    return path
-
-
-def append_query(path: str, arguments: dict) -> str:
-    """Append the caller's optional ``query`` dict to a request path. Shared by the passthrough
-    path (caller-supplied), a named op's resolved template path, and the approval card, so the
-    human approver sees the SAME target (path + query) that will actually execute."""
-    query = arguments.get("query")
-    if isinstance(query, dict) and query:
-        pairs = urllib.parse.urlencode({str(k): str(v) for k, v in query.items()})
-        path = path + ("&" if "?" in path else "?") + pairs
-    return path
-
-
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """Never auto-follow a tool-issued redirect. The response (including its Location) is
     controlled by the tool, so following a 3xx would let the tool steer the broker to an
-    arbitrary host, an un-mediated request the broker would never have approved (SSRF). A
-    3xx instead surfaces as an HTTPError: the api/mcp paths treat it as a tool error; the
-    rest passthrough returns it to the caller as data."""
+    arbitrary host, an un-mediated request the broker would never have approved (SSRF).
+    A 3xx instead surfaces as an HTTPError and is treated as a tool error."""
 
     def redirect_request(self, *args, **kwargs):
         return None
@@ -180,9 +91,8 @@ def _env_tool_secret(tool_id: str) -> str | None:
 
 
 class HttpRuntime:
-    """Forwards an approved call over HTTP. Handles all three tool transports (api,
-    streamable-HTTP mcp, rest passthrough); the constructor and ``execute`` signature are
-    shared, dispatched on ``ToolOp.type``."""
+    """Forwards an approved call over HTTP. Handles api and streamable-HTTP mcp tools;
+    the constructor and ``execute`` signature are shared, dispatched on ``ToolOp.type``."""
 
     def __init__(self, timeout: float | None = None, tool_secret=_env_tool_secret) -> None:
         # Per-call cap on a tool forward (default 30s, override TOOLSTACK_TOOL_TIMEOUT). The
@@ -202,8 +112,6 @@ class HttpRuntime:
             return self._execute_api(tool_op, arguments, request_id, caller_name)
         if tool_op.type == "mcp":
             return self._execute_mcp(tool_op, arguments, request_id, caller_name)
-        if tool_op.type == "rest":
-            return self._execute_rest(tool_op, arguments, request_id, caller_name)
         # The registry rejects unknown types at load, so this guards only a programmer error
         # (a ToolOp built with a type no transport handles), fail loud, never POST blind.
         raise RuntimeError(f"unsupported tool type {tool_op.type!r}")
@@ -365,105 +273,3 @@ class HttpRuntime:
         if msg is not None and ("result" in msg or "error" in msg):
             return msg
         raise RuntimeError("tool returned no JSON-RPC response in SSE stream")
-
-    # -- rest transport: verb-as-op passthrough to 127.0.0.1:<port><path> ---------
-    def _execute_rest(self, tool_op: ToolOp, arguments: dict, request_id: int, caller_name: str) -> dict:
-        verb = (tool_op.verb or tool_op.op).upper()
-        if verb not in REST_VERBS:
-            # the registry only registers declared ops, but never use an arbitrary string
-            # as an HTTP method; guard against method injection explicitly.
-            raise RuntimeError(f"unsupported REST verb {verb!r}")
-        if tool_op.path_template is not None:
-            # named op: the broker builds the path from the template + the caller's params, so the
-            # caller never supplies a free path (resolve_rest_path encodes each param to its segment).
-            path = append_query(resolve_rest_path(tool_op.path_template, arguments), arguments)
-        else:
-            path = self._rest_path(arguments)   # passthrough: the caller supplies the path
-        url = f"http://127.0.0.1:{tool_op.port}{path}"
-        # Forward the caller's headers (minus the reserved namespace), then layer the broker's
-        # OWN headers on top so they always win; the broker's caller-identity assertion can't
-        # be spoofed. (The body belongs to the caller's request, unlike the api transport where
-        # context shares the JSON body, so context rides in headers here.)
-        headers = self._rest_headers(arguments)
-        headers["X-Toolstack-Request-Id"] = str(request_id)
-        headers["X-Toolstack-Caller"] = caller_name
-        body = arguments.get("body")
-        data = None
-        if body is not None:
-            data = json.dumps(body).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        secret = self._tool_secret(tool_op.tool)
-        if secret:
-            headers["X-Toolstack-Secret"] = secret
-        req = urllib.request.Request(url, data=data, headers=headers, method=verb)
-        try:
-            with _OPENER.open(req, timeout=self._timeout) as resp:
-                status, raw, msg = resp.status, resp.read(), resp.headers
-        except urllib.error.HTTPError as exc:
-            # A 4xx/5xx is a legitimate REST response in a passthrough (e.g. a 404 for a
-            # missing resource the caller asked about): return it as data, don't raise.
-            status, raw, msg = exc.code, exc.read(), exc.headers
-            exc.close()
-        except urllib.error.URLError as exc:
-            raise ToolUnreachable(f"tool unreachable: {exc.reason}")
-        ctype = msg.get("Content-Type", "") if msg else ""
-        # Return the tool's response headers too (full passthrough fidelity: Location on a
-        # 201, Content-Type, pagination/rate-limit headers). dict() collapses a repeated
-        # header to its last value, fine for the single-valued headers a caller acts on.
-        resp_headers = dict(msg.items()) if msg else {}
-        return {"status": status, "headers": resp_headers, "body": self._parse_body(raw, ctype)}
-
-    @staticmethod
-    def _rest_headers(arguments: dict) -> dict:
-        """Validate and filter the caller's ``headers`` (an optional name->value object).
-        Drops the broker-reserved headers (so the caller can't spoof the broker's identity or
-        the channel secret) and rejects malformed names / control-character values (header
-        injection). Returns the forwardable subset; the broker adds its own headers after."""
-        raw = arguments.get("headers")
-        if raw is None:
-            return {}
-        if not isinstance(raw, dict):
-            raise RuntimeError("rest 'headers' must be an object")
-        out: dict = {}
-        for name, value in raw.items():
-            if not isinstance(name, str) or not _HEADER_NAME_RE.match(name):
-                raise RuntimeError(f"invalid rest header name {name!r}")
-            if not isinstance(value, str):
-                raise RuntimeError(f"rest header {name!r} value must be a string")
-            # printable ASCII only: rejects CR/LF/control chars (injection) and non-latin-1
-            # (which http.client can't encode); the broker's own validator, not a stdlib backstop.
-            if any(not (0x20 <= ord(c) <= 0x7e) for c in value):
-                raise RuntimeError(f"rest header {name!r} value has an invalid character")
-            lname = name.lower()
-            if lname in _RESERVED_REQ_HEADERS or lname.startswith("x-toolstack-"):
-                continue  # broker-owned: silently drop a caller attempt to set it
-            out[name] = value
-        return out
-
-    @staticmethod
-    def _rest_path(arguments: dict) -> str:
-        """Validate the caller's ``path`` (and optional ``query`` dict) and return the
-        request target. The path MUST keep the request on the tool's loopback origin: it is
-        appended to ``http://127.0.0.1:<port>``, so a value that doesn't start with a single
-        ``/`` could smuggle a userinfo@host (``@evil``) or a protocol-relative host
-        (``//evil``) into the authority. Reject those, plus anything but printable ASCII:
-        control chars (CR/LF/tab/NUL) enable request smuggling, and a non-ASCII byte would
-        otherwise raise deeper in http.client; a real path encodes those as %XX."""
-        path = arguments.get("path")
-        if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
-            raise RuntimeError("rest call needs a 'path' argument starting with a single '/'")
-        # allow only printable ASCII (0x21-0x7e); rejects control chars, space, DEL, non-ASCII
-        if "\\" in path or any(not (0x21 <= ord(c) <= 0x7e) for c in path):
-            raise RuntimeError("rest path contains invalid characters (use %XX encoding)")
-        return append_query(path, arguments)
-
-    @staticmethod
-    def _parse_body(raw: bytes, ctype: str):
-        """Decode the tool's response body: parsed JSON when it says JSON, else text."""
-        text = raw.decode("utf-8", "replace")
-        if "application/json" in ctype:
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                return text
-        return text

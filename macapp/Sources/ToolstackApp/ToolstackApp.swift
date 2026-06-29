@@ -445,23 +445,12 @@ struct ToolsPane: View {
     }
 }
 
-/// One editable rest path rule: a verb, a path glob (blank = any path), and an effect.
-struct EditableRule: Identifiable {
-    let id = UUID()
-    var verb: String
-    var pattern: String
-    var effect: Effect
-}
-
-/// Per-caller policy editor. For api/mcp tools it's an allow / review / deny picker per op.
-/// For a rest tool it edits PATH RULES: (verb, path-glob, effect) rows; most-specific wins,
-/// an unmatched path is denied, and an explicit deny carves a hole inside a broader allow.
+/// Per-caller policy editor: allow / review / deny picker per operation.
 struct PolicyEditor: View {
     @EnvironmentObject var model: AppModel
     let caller: String
     @Environment(\.dismiss) private var dismiss
-    @State private var effects: [String: Effect] = [:]            // "tool.op" -> effect (api/mcp)
-    @State private var restRules: [String: [EditableRule]] = [:]  // tool id -> path rules (rest)
+    @State private var effects: [String: Effect] = [:]            // "tool.op" -> effect
     @State private var enabled: Set<String> = []
     @State private var loaded = false
 
@@ -487,14 +476,7 @@ struct PolicyEditor: View {
                 List {
                     ForEach(enabledTools) { tool in
                         Section(tool.id) {
-                            if tool.type == "rest" {
-                                // named ops grant by name (per-op picker); bare-verb passthrough
-                                // ops keep the (verb, path-glob) rule editor.
-                                ForEach(tool.ops.filter(\.isNamed)) { op in opRow(tool: tool, op: op) }
-                                if tool.ops.contains(where: { !$0.isNamed }) { restEditor(tool) }
-                            } else {
-                                ForEach(tool.ops) { op in opRow(tool: tool, op: op) }
-                            }
+                            ForEach(tool.ops) { op in opRow(tool: tool, op: op) }
                         }
                     }
                 }
@@ -519,9 +501,6 @@ struct PolicyEditor: View {
                 riskBadge(op.risk)
                 Spacer()
             }
-            if op.isNamed, let path = op.path {   // named op: show the pinned route
-                Text("\(op.verb ?? "") \(path)").font(.caption.monospaced()).foregroundStyle(.secondary)
-            }
             if !op.description.isEmpty {
                 Text(op.description).font(.caption).foregroundStyle(.secondary)
             }
@@ -531,40 +510,8 @@ struct PolicyEditor: View {
         }.padding(.vertical, 2)
     }
 
-    @ViewBuilder
-    private func restEditor(_ tool: ToolInfo) -> some View {
-        let verbs = tool.ops.filter { !$0.isNamed }.map(\.op)   // the bare passthrough verbs
-        Text("Passthrough path rules: most specific wins; a path matching no rule is denied.")
-            .font(.caption).foregroundStyle(.secondary)
-        ForEach(rulesBinding(tool.id)) { $rule in
-            HStack(spacing: 6) {
-                Picker("", selection: $rule.verb) {
-                    ForEach(verbs, id: \.self) { Text($0).tag($0) }
-                }.labelsHidden().frame(width: 92)
-                TextField("/path/**  (blank = any path)", text: $rule.pattern)
-                Picker("", selection: $rule.effect) {
-                    ForEach(Effect.allCases) { Text($0.rawValue.capitalized).tag($0) }
-                }.pickerStyle(.segmented).labelsHidden().frame(width: 170)
-                Button(role: .destructive) { removeRule(tool.id, rule.id) } label: { Image(systemName: "trash") }
-                    .buttonStyle(.borderless)
-            }
-        }
-        Button {
-            restRules[tool.id, default: []].append(
-                EditableRule(verb: verbs.first ?? "GET", pattern: "", effect: .allow))
-        } label: { Label("Add rule", systemImage: "plus") }.font(.caption)
-    }
-
     private func bind(_ key: String) -> Binding<Effect> {
         Binding(get: { effects[key] ?? .deny }, set: { effects[key] = $0 })
-    }
-
-    private func rulesBinding(_ tool: String) -> Binding<[EditableRule]> {
-        Binding(get: { restRules[tool] ?? [] }, set: { restRules[tool] = $0 })
-    }
-
-    private func removeRule(_ tool: String, _ id: UUID) {
-        restRules[tool]?.removeAll { $0.id == id }
     }
 
     private func setAll(_ effect: Effect) {
@@ -576,51 +523,20 @@ struct PolicyEditor: View {
         guard let resp = await model.loadPolicy(for: caller) else { loaded = true; return }
         enabled = Set(resp.enabled)
         var ops: [String: Effect] = [:]
-        var rules: [String: [EditableRule]] = [:]
         for tool in enabledTools {
-            if tool.type == "rest" {
-                // named ops grant by name (a bare-name key) -> per-op effect; everything else is a
-                // passthrough path rule ("<VERB>" or "<VERB> <path-glob>").
-                let namedKeys = Set(tool.ops.filter(\.isNamed).map(\.op))
-                for op in tool.ops where op.isNamed {
-                    ops["\(tool.id).\(op.op)"] = resp.policy.effect(tool: tool.id, op: op.op)
-                }
-                rules[tool.id] = (resp.policy.tools[tool.id] ?? [:]).compactMap { key, value -> EditableRule? in
-                    let parts = key.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
-                    let verb = String(parts[0])
-                    if namedKeys.contains(verb) { return nil }   // a named-op grant, handled above
-                    return EditableRule(verb: verb,
-                                        pattern: parts.count > 1 ? String(parts[1]) : "",
-                                        effect: Effect(rawValue: value) ?? .deny)
-                }.sorted { ($0.verb, $0.pattern) < ($1.verb, $1.pattern) }
-            } else {
-                for op in tool.ops { ops["\(tool.id).\(op.op)"] = resp.policy.effect(tool: tool.id, op: op.op) }
-            }
+            for op in tool.ops { ops["\(tool.id).\(op.op)"] = resp.policy.effect(tool: tool.id, op: op.op) }
         }
         effects = ops
-        restRules = rules
         loaded = true
     }
 
     private func save() async {
-        var allow: [String] = [], review: [String] = [], deny: [String] = []
-        // api/mcp ops: allow/review listed; deny == omitted (absent is denied)
+        var allow: [String] = [], review: [String] = []
+        // allow/review listed; deny == omitted (absent is denied)
         for (key, effect) in effects {
             if effect == .allow { allow.append(key) } else if effect == .review { review.append(key) }
         }
-        // rest path rules: "tool.VERB" or "tool.VERB pattern"; deny is explicit (a carve-out)
-        for (tool, rules) in restRules {
-            for rule in rules where !rule.verb.isEmpty {
-                let p = rule.pattern.trimmingCharacters(in: .whitespaces)
-                let spec = p.isEmpty ? "\(tool).\(rule.verb)" : "\(tool).\(rule.verb) \(p)"
-                switch rule.effect {
-                case .allow: allow.append(spec)
-                case .review: review.append(spec)
-                case .deny: deny.append(spec)
-                }
-            }
-        }
-        await model.savePolicy(caller: caller, allow: allow, review: review, deny: deny)
+        await model.savePolicy(caller: caller, allow: allow, review: review)
         dismiss()
     }
 }
@@ -982,14 +898,10 @@ struct AddToolSheet: View {
     }
 }
 
-/// A mutable operation row for the authoring form (→ a manifest `[[operations]]` entry). For a
-/// rest tool a non-empty `path` makes it a NAMED op (verb + path template); a blank path is the
-/// bare-verb passthrough.
+/// A mutable operation row for the authoring form (→ a manifest `[[operations]]` entry).
 struct EditableOp: Identifiable {
     let id = UUID()
     var name = ""
-    var verb = ""
-    var path = ""
     var risk = "read"
     var description = ""
     var args: [EditableArg] = []
@@ -1023,8 +935,7 @@ struct ToolAuthoringForm: View {
     @State private var saveError: String?
 
     private let risks = ["read", "write", "destructive"]   // matches admin RISK_CHOICES
-    private let toolTypes = ["api", "mcp", "rest"]          // matches admin TOOL_TYPES
-    private let restVerbs = ["GET", "POST", "PUT", "PATCH", "DELETE"]  // matches admin REST_VERBS
+    private let toolTypes = ["api", "mcp"]                  // matches admin TOOL_TYPES
     private let argTypes = ["string", "number", "integer", "boolean", "object", "array"]
 
     var body: some View {
@@ -1052,14 +963,9 @@ struct ToolAuthoringForm: View {
                 } header: { Text("Entrypoint") } footer: {
                     Text(entrypointHint).font(.caption)
                 }
-                Section {
+                Section("Operations") {
                     ForEach(operations) { op in opEditor(op) }
                     Button { operations.append(EditableOp()) } label: { Label("Add operation", systemImage: "plus") }
-                } header: { Text("Operations") } footer: {
-                    if type == "rest" {
-                        Text("Give a path to make a NAMED op (the agent calls it by name and fills the path's {params}); leave the path blank for a bare-verb passthrough (the op IS the verb). Risk is derived from the verb either way.")
-                            .font(.caption)
-                    }
                 }
                 Section("Secrets (optional)") {
                     ForEach(secrets) { sec in secretEditor(sec) }
@@ -1086,8 +992,6 @@ struct ToolAuthoringForm: View {
         switch type {
         case "mcp":
             return "An mcp tool is a streamable-HTTP MCP server: it serves /mcp on this port; the broker calls it via tools/call (op = MCP tool name)."
-        case "rest":
-            return "A rest tool is any HTTP service on this port; the broker forwards <verb> <path> straight through to it. Give a command (process) or image (docker)."
         default:
             return "Give a command (process) or an image (docker), plus the port the tool serves on."
         }
@@ -1095,34 +999,18 @@ struct ToolAuthoringForm: View {
 
     private func opEditor(_ op: EditableOp) -> some View {
         let b = opBinding(op)
-        let named = type == "rest" && !op.path.isEmpty   // a path makes it a named op
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
-                if type == "rest" {
-                    // Pick a verb and (optionally) a path. A path makes it a NAMED op (the agent
-                    // fills its {params}); a blank path is the passthrough verb (the op IS the verb).
-                    Picker("", selection: b.verb) {
-                        Text("verb...").tag("")
-                        ForEach(restVerbs, id: \.self) { Text($0).tag($0) }
-                    }.labelsHidden().frame(width: 92)
-                    TextField("/path/{id}  (blank = passthrough verb)", text: b.path).font(.caption)
-                } else {
-                    TextField("operation name", text: b.name)
-                    Picker("", selection: b.risk) { ForEach(risks, id: \.self) { Text($0).tag($0) } }
-                        .labelsHidden().frame(width: 96)
-                }
+                TextField("operation name", text: b.name)
+                Picker("", selection: b.risk) { ForEach(risks, id: \.self) { Text($0).tag($0) } }
+                    .labelsHidden().frame(width: 96)
                 Button(role: .destructive) { operations.removeAll { $0.id == op.id } } label: { Image(systemName: "trash") }
                     .buttonStyle(.borderless)
             }
-            if named {
-                TextField("op name (e.g. get_task)", text: b.name).font(.caption)
-            }
             TextField("description (optional)", text: b.description).font(.caption)
-            if type != "rest" || named {
-                ForEach(op.args) { arg in argEditor(op: op, arg: arg) }
-                Button { b.wrappedValue.args.append(EditableArg()) } label: { Label("Add argument", systemImage: "plus") }
-                    .font(.caption2)
-            }
+            ForEach(op.args) { arg in argEditor(op: op, arg: arg) }
+            Button { b.wrappedValue.args.append(EditableArg()) } label: { Label("Add argument", systemImage: "plus") }
+                .font(.caption2)
         }
         .padding(.vertical, 3)
     }
@@ -1186,19 +1074,10 @@ struct ToolAuthoringForm: View {
             "id": s(id), "type": s(type), "description": s(description),
             "command": s(command), "image": s(image), "port": Int(s(port)) ?? 0,
             "operations": operations.compactMap { op -> [String: Any]? in
-                let args = op.args.compactMap { a -> [String: Any]? in
-                    s(a.name).isEmpty ? nil : ["name": s(a.name), "type": a.type, "required": a.required] }
-                if s(type) == "rest" {
-                    let path = s(op.path)
-                    if path.isEmpty {   // passthrough: the op name IS the verb
-                        return op.verb.isEmpty ? nil : ["name": op.verb, "description": s(op.description)]
-                    }
-                    guard !s(op.name).isEmpty else { return nil }   // a named op needs a label
-                    return ["name": s(op.name), "verb": op.verb, "path": path,
-                            "description": s(op.description), "args": args]
-                }
                 guard !s(op.name).isEmpty else { return nil }
-                return ["name": s(op.name), "risk": op.risk, "description": s(op.description), "args": args]
+                return ["name": s(op.name), "risk": op.risk, "description": s(op.description),
+                        "args": op.args.compactMap { a -> [String: Any]? in
+                            s(a.name).isEmpty ? nil : ["name": s(a.name), "type": a.type, "required": a.required] }]
             },
             "secrets": secrets.compactMap { sec -> [String: Any]? in
                 guard !s(sec.name).isEmpty else { return nil }
