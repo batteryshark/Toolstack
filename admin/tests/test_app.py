@@ -26,14 +26,6 @@ from broker.store import Store
 PASSWORD = "hunter2-admin"
 
 
-def _has_yaml() -> bool:
-    try:
-        import yaml  # noqa: F401
-        return True
-    except ImportError:
-        return False
-
-
 def _csrf(html_text: str) -> str:
     m = re.search(r'name="_csrf" value="([^"]+)"', html_text)
     assert m, "no CSRF token in page"
@@ -147,48 +139,6 @@ class AdminApp(unittest.TestCase):
                          {"tools": {"echo": {"say": "review"}}, "enabled": ["echo"]})
         self.assertTrue(any(e["event_type"] == "policy_changed" for e in store.audit_events()))
         self.assertTrue(any(e["event_type"] == "tools_changed" for e in store.audit_events()))
-
-    def test_rest_tool_path_rule_editor_round_trip(self):
-        # a rest tool in the tools root gets the (verb, path, effect) rule editor, not op selects
-        kv = Path(self.tmp, "tools", "kv")
-        kv.mkdir(parents=True)
-        (kv / "toolyard.toml").write_text(
-            'id = "kv"\ntype = "rest"\n[entrypoint]\nport = 4621\ncommand = "x"\n'
-            '[[operations]]\nname = "GET"\nrisk = "read"\n'
-            '[[operations]]\nname = "DELETE"\nrisk = "destructive"\n', encoding="utf-8")
-        self._login()
-        csrf = _csrf(self.client.get("/").text)
-        self.client.post("/callers", data={"name": "hermes", "_csrf": csrf})
-        tools = self.client.get("/callers/hermes/tools")
-        self.client.post("/callers/hermes/tools",
-                         data={"tool__kv": "on", "_csrf": _csrf(tools.text)}, follow_redirects=False)
-
-        pol = self.client.get("/callers/hermes/policy")
-        self.assertIn("rules__kv", pol.text)        # the rule-row container
-        self.assertIn("POLICY_VERBS", pol.text)      # the JS seed
-        self.assertIn("path rules", pol.text)
-        self.assertNotIn("op__kv__GET", pol.text)    # NOT the verb-level selects
-
-        rules = json.dumps([
-            {"verb": "GET", "pattern": "/items/**", "effect": "allow"},
-            {"verb": "GET", "pattern": "/items/secret", "effect": "deny"},   # carve-out
-            {"verb": "DELETE", "pattern": "", "effect": "review"},           # bare verb = any path
-        ])
-        r = self.client.post("/callers/hermes/policy",
-                             data={"rest_rules__kv": rules, "_csrf": _csrf(pol.text)},
-                             follow_redirects=False)
-        self.assertEqual(r.status_code, 303)
-        store = self._store()
-        kvpol = store.policy_for(store.caller_by_name("hermes")["id"])["tools"]["kv"]
-        self.assertEqual(kvpol, {"GET /items/**": "allow", "GET /items/secret": "deny",
-                                 "DELETE": "review"})
-
-        # malformed rest_rules JSON (not JSON / non-list / non-dict elements) must degrade, not 500
-        for bad in ["not json", '{"x":1}', '["x", 5, null]']:
-            r = self.client.post("/callers/hermes/policy",
-                                 data={"rest_rules__kv": bad, "_csrf": _csrf(pol.text)},
-                                 follow_redirects=False)
-            self.assertEqual(r.status_code, 303)
 
     def test_revoke_token_via_panel(self):
         self._login()
@@ -336,95 +286,6 @@ class AdminApp(unittest.TestCase):
             "dir": str(newdir), "tool_json": json.dumps(bad), "_csrf": csrf})
         self.assertIn("id must", r.text)
         self.assertFalse((newdir / "toolyard.toml").exists())
-
-    def test_add_rest_tool_without_entrypoint_shows_error_not_500(self):
-        # validate() can't run the entrypoint check (it has no directory); write() does and raises.
-        # A rest tool with no command/image used to let that ValueError escape as a 500 on save.
-        self._login()
-        csrf = _csrf(self.client.get("/tools/new").text)
-        newdir = Path(self.tmp, "remoteapi")
-        newdir.mkdir()
-        tool = {"id": "remoteapi", "type": "rest", "command": "", "image": "", "port": 4640,
-                "operations": [{"name": "GET"}], "secrets": []}
-        r = self.client.post("/tools/new", data={
-            "dir": str(newdir), "tool_json": json.dumps(tool), "_csrf": csrf})
-        self.assertEqual(r.status_code, 200)                      # form re-rendered, NOT a 500
-        self.assertFalse((newdir / "toolyard.toml").exists())     # rejected before writing
-
-    def test_add_proxy_tool_emits_proxy_block_and_auto_assigns_port(self):
-        # proxy mode: no operator command/port; the admin auto-fills the wrapper command and a
-        # free loopback port, and emits the [proxy] block. This is the "external API" path.
-        self._login()
-        csrf = _csrf(self.client.get("/tools/new").text)
-        newdir = Path(self.tmp, "graphproxy")
-        newdir.mkdir()
-        tool = {"id": "graphproxy", "type": "rest", "command": "", "image": "",
-                "proxy": {"base_url": "https://graph.microsoft.com/v1.0",
-                          "inject": [{"into": "header", "name": "Authorization",
-                                      "value": "Bearer ${secret:tok}"}],
-                          "forward_headers": ["Prefer"]},
-                "operations": [{"name": "get_me", "verb": "GET", "path": "/me", "args": []}],
-                "secrets": [{"name": "tok", "field": "TOK", "writable": False}]}
-        r = self.client.post("/tools/new", data={
-            "dir": str(newdir), "tool_json": json.dumps(tool), "_csrf": csrf})
-        self.assertEqual(r.status_code, 200)
-        parsed = tomllib.loads((newdir / "toolyard.toml").read_text())
-        self.assertEqual(parsed["proxy"]["base_url"], "https://graph.microsoft.com/v1.0")
-        self.assertEqual(parsed["entrypoint"]["command"], "python3 -m toolyard.http_proxy")
-        self.assertTrue(1 <= parsed["entrypoint"]["port"] <= 65535)   # admin assigned a free port
-        self.assertEqual(parsed["proxy"]["inject"][0]["name"], "Authorization")
-
-    def test_add_proxy_tool_rejects_undeclared_secret_ref(self):
-        self._login()
-        csrf = _csrf(self.client.get("/tools/new").text)
-        newdir = Path(self.tmp, "badproxy")
-        newdir.mkdir()
-        tool = {"id": "badproxy", "type": "rest", "command": "", "image": "",
-                "proxy": {"base_url": "https://api.example.com/v1",
-                          "inject": [{"into": "header", "name": "Authorization",
-                                      "value": "Bearer ${secret:missing}"}]},
-                "operations": [{"name": "GET"}], "secrets": []}
-        r = self.client.post("/tools/new", data={
-            "dir": str(newdir), "tool_json": json.dumps(tool), "_csrf": csrf})
-        self.assertEqual(r.status_code, 200)
-        self.assertIn("no matching", r.text)                       # validation error, not a 500
-        self.assertFalse((newdir / "toolyard.toml").exists())
-
-    def test_parse_openapi_returns_selectable_ops(self):
-        self._login()
-        csrf = _csrf(self.client.get("/tools/new").text)
-        spec = {"openapi": "3.0.0", "info": {"title": "X"},
-                "servers": [{"url": "https://api.example.com/v1"}],
-                "components": {"securitySchemes": {"b": {"type": "http", "scheme": "bearer"}}},
-                "paths": {"/items/{id}": {"get": {"operationId": "getItem",
-                          "parameters": [{"name": "id", "in": "path", "required": True}]}}}}
-        r = self.client.post("/tools/parse-openapi", data={"spec": json.dumps(spec), "_csrf": csrf})
-        self.assertEqual(r.status_code, 200)
-        body = r.json()
-        self.assertEqual(body["base_url"], "https://api.example.com/v1")
-        self.assertEqual(body["operations"][0]["name"], "getItem")
-        self.assertEqual(body["operations"][0]["path"], "/items/{id}")
-        self.assertEqual(body["inject"][0]["name"], "Authorization")
-
-    def test_parse_openapi_rejects_bad_json(self):
-        self._login()
-        csrf = _csrf(self.client.get("/tools/new").text)
-        r = self.client.post("/tools/parse-openapi", data={"spec": "{not valid", "_csrf": csrf})
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("not valid", r.json()["error"].lower())
-
-    @unittest.skipUnless(_has_yaml(), "PyYAML not installed")
-    def test_parse_openapi_accepts_yaml(self):
-        self._login()
-        csrf = _csrf(self.client.get("/tools/new").text)
-        spec = ("openapi: 3.0.0\n"
-                "servers:\n  - url: https://api.example.com/v1\n"
-                "paths:\n  /items/{id}:\n    get:\n      operationId: getItem\n")
-        r = self.client.post("/tools/parse-openapi", data={"spec": spec, "_csrf": csrf})
-        self.assertEqual(r.status_code, 200)
-        body = r.json()
-        self.assertEqual(body["base_url"], "https://api.example.com/v1")
-        self.assertEqual(body["operations"][0]["name"], "getItem")
 
     def test_remove_tool_unregisters_but_keeps_files(self):
         self._login()

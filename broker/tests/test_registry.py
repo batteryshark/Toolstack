@@ -63,7 +63,7 @@ class FromToolsRoot(unittest.TestCase):
             self.assertNotIn(forbidden, blob)
 
     def test_list_ops_carries_tool_type(self):
-        # the policy editor branches on type (rest tools get a path-rule UI), so discovery exposes it
+        # the policy editor shows the transport, so discovery exposes it
         self.assertTrue(self.registry.list_ops())
         self.assertTrue(all(op["type"] == "api" for op in self.registry.list_ops()))
 
@@ -123,86 +123,6 @@ class McpType(unittest.TestCase):
         self.assertEqual(op.port, 4611)
 
 
-class RestType(unittest.TestCase):
-    """A type='rest' tool registers with its verbs as ops; the ToolOp carries type='rest'
-    so the runtime routes it through the verb-as-op passthrough."""
-
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        d = Path(self.tmp, "kv")
-        d.mkdir(parents=True)
-        (d / "toolyard.toml").write_text(
-            'id = "kv"\ntype = "rest"\n[entrypoint]\nport = 4621\ncommand = "x"\n'
-            '[[operations]]\nname = "GET"\nrisk = "read"\n'
-            '[[operations]]\nname = "DELETE"\nrisk = "destructive"\n')
-        self.registry = Registry.from_tools_root(self.tmp)
-
-    def test_lookup_carries_rest_type_and_verb_op(self):
-        op = self.registry.lookup("kv", "DELETE")
-        self.assertIsNotNone(op)
-        self.assertEqual(op.type, "rest")
-        self.assertEqual(op.risk, "destructive")
-        self.assertEqual(op.port, 4621)
-
-    def test_rest_risk_is_derived_from_the_verb_overriding_the_manifest(self):
-        # a hand-written rest toml that mislabels DELETE as "read" must not misrepresent risk
-        d = Path(self.tmp, "kv2")
-        d.mkdir(parents=True)
-        (d / "toolyard.toml").write_text(
-            'id = "kv2"\ntype = "rest"\n[entrypoint]\nport = 4622\ncommand = "x"\n'
-            '[[operations]]\nname = "DELETE"\nrisk = "read"\n')   # wrong on purpose
-        op = Registry.from_tools_root(self.tmp).lookup("kv2", "DELETE")
-        self.assertEqual(op.risk, "destructive")   # derived from the verb, not the manifest
-
-
-class NamedRestType(unittest.TestCase):
-    """A rest op may be a NAMED op (name + verb + path template) instead of a bare verb. The
-    ToolOp then carries the verb and the template, and risk still derives from the verb."""
-
-    def _registry(self, ops_toml: str):
-        self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        d = Path(self.tmp, "graph")
-        d.mkdir(parents=True)
-        (d / "toolyard.toml").write_text(
-            'id = "graph"\ntype = "rest"\n[entrypoint]\nport = 4640\ncommand = "x"\n' + ops_toml)
-        return Registry.from_tools_root(self.tmp)
-
-    def test_named_op_carries_verb_and_template_and_verb_risk(self):
-        reg = self._registry(
-            '[[operations]]\nname = "send_mail"\nverb = "post"\npath = "/me/sendMail"\n')
-        op = reg.lookup("graph", "send_mail")
-        self.assertIsNotNone(op)
-        self.assertEqual(op.verb, "POST")                    # upper-cased
-        self.assertEqual(op.path_template, "/me/sendMail")
-        self.assertEqual(op.risk, "write")                   # derived from the verb
-
-    def test_named_and_passthrough_ops_coexist(self):
-        reg = self._registry(
-            '[[operations]]\nname = "get_task"\nverb = "GET"\npath = "/lists/{list_id}/tasks/{id}"\n'
-            '[[operations]]\nname = "GET"\n')                 # bare-verb passthrough escape hatch
-        named = reg.lookup("graph", "get_task")
-        self.assertEqual(named.path_template, "/lists/{list_id}/tasks/{id}")
-        passthrough = reg.lookup("graph", "GET")
-        self.assertEqual(passthrough.verb, "GET")
-        self.assertIsNone(passthrough.path_template)         # caller supplies the path
-
-    def test_describe_exposes_verb_and_path_for_a_named_op(self):
-        reg = self._registry('[[operations]]\nname = "get_task"\nverb = "GET"\npath = "/lists/{id}"\n')
-        d = reg.describe("graph", "get_task")
-        self.assertEqual(d["verb"], "GET")
-        self.assertEqual(d["path"], "/lists/{id}")   # discovery shows the route + its {params}
-
-    def test_named_op_without_verb_is_rejected(self):
-        with self.assertRaises(ValueError):
-            self._registry('[[operations]]\nname = "bad"\npath = "/x"\n')
-
-    def test_named_op_path_must_be_absolute(self):
-        with self.assertRaises(ValueError):
-            self._registry('[[operations]]\nname = "bad"\nverb = "GET"\npath = "me/messages"\n')
-
-
 class PortValidation(unittest.TestCase):
     """An api or mcp tool with no/invalid port must fail at load, naming the file + tool;
     not register silently and 502 at call time."""
@@ -257,6 +177,12 @@ class PortValidation(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             self._load('id = "weather"\ntype = "mpc"\n[entrypoint]\nport = 4700\n'
                        '[[operations]]\nname = "today"\nrisk = "read"\n')
+        self.assertIn("unknown type", str(cm.exception))
+
+    def test_rest_type_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            self._load('id = "kv"\ntype = "rest"\n[entrypoint]\nport = 4621\n'
+                       '[[operations]]\nname = "GET"\nrisk = "read"\n')
         self.assertIn("unknown type", str(cm.exception))
 
 

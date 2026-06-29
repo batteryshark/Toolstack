@@ -52,8 +52,6 @@ pre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:aut
 .card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}
 .argrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
 .argrow input{min-width:120px;}
-.rule-row{display:flex;gap:8px;align-items:center;margin:6px 0;}
-.rule-row .r-pattern{flex:1;min-width:160px;}
 .sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}
 .sechead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 2px;}
 .secrow input{min-width:0;width:100%;}
@@ -121,8 +119,7 @@ _TOOL_EDITOR_JS = """
 (function(){
   var ARG_TYPES = ["string","number","integer","boolean","object","array"];
   var RISK_CHOICES = ["read","write","destructive"];
-  var TOOL_TYPES = ["api","mcp","rest"];   // matches admin TOOL_TYPES
-  var REST_VERBS = ["GET","POST","PUT","PATCH","DELETE"];   // matches admin REST_VERBS
+  var TOOL_TYPES = ["api","mcp"];   // matches admin TOOL_TYPES
   function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
   function opts(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+v+'</option>';}).join('');}
   function riskOpts(sel){return RISK_CHOICES.indexOf(sel)<0 ? [sel].concat(RISK_CHOICES) : RISK_CHOICES;}
@@ -147,15 +144,9 @@ _TOOL_EDITOR_JS = """
       + '<select class="op-risk">'+opts(riskOpts(o.risk||'read'), o.risk||'read')+'</select>'
       + '<input class="op-desc" placeholder="description">'
       + '<button type="button" class="rm">remove op</button></div>'
-      + '<div class="row op-rest">'
-      + '<select class="op-verb">'+opts(REST_VERBS, o.verb||'GET')+'</select>'
-      + '<input class="op-path" placeholder="/me/messages/{id}  (set a path = named op; blank = the op name IS the verb)">'
-      + '</div>'
       + '<div class="args"></div><button type="button" class="add-arg">add argument</button></div>');
     card.querySelector('.op-name').value = o.name||'';
     card.querySelector('.op-desc').value = o.description||'';
-    card.querySelector('.op-verb').value = o.verb||'GET';
-    card.querySelector('.op-path').value = o.path||'';
     var args = card.querySelector('.args');
     (o.args||[]).forEach(function(a){args.appendChild(argRow(a));});
     card.querySelector('.add-arg').onclick = function(){args.appendChild(argRow());};
@@ -178,26 +169,6 @@ _TOOL_EDITOR_JS = """
     row.querySelector('.rm').onclick = function(){row.remove();};
     return row;
   }
-  var INJECT_INTO = ["header","query","body"];
-  function injectRow(i){
-    i = i||{};
-    var row = mk('<div class="injectrow"><select class="inj-into">'+opts(INJECT_INTO, i.into||'header')+'</select>'
-      + '<input class="inj-name" placeholder="header / query / body key">'
-      + '<input class="inj-value" placeholder="value (use ${secret:NAME})">'
-      + '<button type="button" class="rm">remove</button></div>');
-    row.querySelector('.inj-into').value = i.into||'header';
-    row.querySelector('.inj-name').value = i.name||'';
-    row.querySelector('.inj-value').value = i.value||'';
-    row.querySelector('.rm').onclick = function(){row.remove();};
-    return row;
-  }
-  function fwdRow(h){
-    var row = mk('<div class="fwdrow"><input class="fwd-name" placeholder="header name (e.g. Prefer)">'
-      + '<button type="button" class="rm">remove</button></div>');
-    row.querySelector('.fwd-name').value = (h && h.name) || h || '';
-    row.querySelector('.rm').onclick = function(){row.remove();};
-    return row;
-  }
 
   var initial = window.TOOL_INITIAL || {};
   document.getElementById('f_id').value = initial.id||'';
@@ -210,87 +181,8 @@ _TOOL_EDITOR_JS = """
   (initial.operations && initial.operations.length ? initial.operations : [{}]).forEach(function(o){ops.appendChild(opCard(o));});
   var secs = document.getElementById('secrets');
   (initial.secrets||[]).forEach(function(s){secs.appendChild(secRow(s));});
-  var f_type = document.getElementById('f_type');
-  var injectList = document.getElementById('inject-list');
-  var forwardList = document.getElementById('forward-list');
-  var proxy = (initial.type === 'rest' && initial.proxy) ? initial.proxy : null;
-  if (proxy) {
-    document.querySelector('input[name=rest_mode][value=proxied]').checked = true;
-    document.getElementById('f_base_url').value = proxy.base_url||'';
-    (proxy.inject||[]).forEach(function(i){injectList.appendChild(injectRow(i));});
-    (proxy.forward_headers||[]).forEach(function(h){forwardList.appendChild(fwdRow(h));});
-  } else if (initial.type === 'rest') {
-    document.querySelector('input[name=rest_mode][value=local]').checked = true;
-  }
-  function restMode(){
-    var r = document.querySelector('input[name=rest_mode]:checked');
-    return r ? r.value : 'proxied';
-  }
-  function syncMode(){   // show the proxy panel for rest+proxied; the verb/path op row for any rest
-    var isRest = f_type.value === 'rest';
-    var proxied = isRest && restMode() === 'proxied';
-    document.getElementById('rest-mode').hidden = !isRest;
-    document.getElementById('proxy-panel').hidden = !proxied;
-    document.getElementById('entry-fields').hidden = proxied;
-    [].forEach.call(document.querySelectorAll('.op-rest'), function(el){el.style.display = isRest ? '' : 'none';});
-  }
-  document.getElementById('add-op').onclick = function(){ops.appendChild(opCard()); syncMode();};
+  document.getElementById('add-op').onclick = function(){ops.appendChild(opCard());};
   document.getElementById('add-secret').onclick = function(){secs.appendChild(secRow());};
-  document.getElementById('add-inject').onclick = function(){injectList.appendChild(injectRow());};
-  document.getElementById('add-forward').onclick = function(){forwardList.appendChild(fwdRow());};
-  f_type.addEventListener('change', syncMode);
-  [].forEach.call(document.querySelectorAll('input[name=rest_mode]'), function(r){r.addEventListener('change', syncMode);});
-  syncMode();
-
-  // OpenAPI import (new-tool mode): parse a pasted spec, pick a SUBSET of ops, pre-fill the form.
-  var oaiParse = document.getElementById('oai-parse');
-  if (oaiParse) {
-    var parsedSpec = null;
-    oaiParse.onclick = function(){
-      var err = document.getElementById('oai-error');
-      err.hidden = true;
-      // urlencoded (not FormData/multipart): the panel's read_form parses urlencoded bodies only
-      var body = new URLSearchParams();
-      body.append('spec', document.getElementById('oai-spec').value);
-      body.append('_csrf', document.querySelector('input[name=_csrf]').value);
-      fetch('/tools/parse-openapi', {method: 'POST', body: body})
-        .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, j: j}; }); })
-        .then(function(res){
-          if (!res.ok) { err.textContent = (res.j && res.j.error) || 'parse failed'; err.hidden = false; return; }
-          parsedSpec = res.j;
-          var box = document.getElementById('oai-ops');
-          box.innerHTML = '';
-          (parsedSpec.operations || []).forEach(function(op, idx){
-            var row = mk('<label class="oai-op"><input type="checkbox" data-i="'+idx+'"> '
-              + '<code></code> <b></b> <span class="muted"></span></label>');
-            row.querySelector('code').textContent = op.verb + ' ' + op.path;   // textContent: no HTML injection
-            row.querySelector('b').textContent = ' ' + op.name + ' ';
-            row.querySelector('.muted').textContent = op.description || '';
-            box.appendChild(row);
-          });
-          document.getElementById('oai-base').textContent = parsedSpec.base_url
-            ? ('Base URL: ' + parsedSpec.base_url)
-            : 'No server URL in the spec; set Base URL manually after importing.';
-          document.getElementById('oai-results').hidden = false;
-        })
-        .catch(function(){ err.textContent = 'parse failed'; err.hidden = false; });
-    };
-    document.getElementById('oai-add').onclick = function(){
-      if (!parsedSpec) return;
-      f_type.value = 'rest';
-      document.querySelector('input[name=rest_mode][value=proxied]').checked = true;
-      if (parsedSpec.base_url) document.getElementById('f_base_url').value = parsedSpec.base_url;
-      (parsedSpec.inject || []).forEach(function(i){ injectList.appendChild(injectRow(i)); });
-      (parsedSpec.secrets || []).forEach(function(s){ secs.appendChild(secRow(s)); });
-      [].forEach.call(document.querySelectorAll('#oai-ops input[type=checkbox]:checked'), function(c){
-        var op = parsedSpec.operations[+c.getAttribute('data-i')];
-        ops.appendChild(opCard({name: op.name, verb: op.verb, path: op.path,
-                                description: op.description, args: op.args}));
-      });
-      syncMode();
-      document.getElementById('import-openapi').open = false;
-    };
-  }
 
   document.getElementById('tool-form').addEventListener('submit', function(){
     var tool = {
@@ -304,8 +196,6 @@ _TOOL_EDITOR_JS = """
         return {name: card.querySelector('.op-name').value,
                 risk: card.querySelector('.op-risk').value,
                 description: card.querySelector('.op-desc').value,
-                verb: card.querySelector('.op-verb').value,
-                path: card.querySelector('.op-path').value,
                 args: [].map.call(card.querySelectorAll('.argrow'), function(r){
                   return {name: r.querySelector('.arg-name').value,
                           type: r.querySelector('.arg-type').value,
@@ -321,74 +211,10 @@ _TOOL_EDITOR_JS = """
                 writable: r.querySelector('.sec-writable').checked};
       })
     };
-    if (tool.type === 'rest' && restMode() === 'proxied') {
-      tool.command = 'python3 -m toolyard.http_proxy';   // the bundled wrapper; no operator code
-      tool.image = '';
-      delete tool.port;                                  // the admin assigns a free loopback port on save
-      tool.proxy = {
-        base_url: document.getElementById('f_base_url').value.trim(),
-        inject: [].map.call(injectList.querySelectorAll('.injectrow'), function(r){
-          return {into: r.querySelector('.inj-into').value,
-                  name: r.querySelector('.inj-name').value.trim(),
-                  value: r.querySelector('.inj-value').value};
-        }).filter(function(x){return x.name;}),
-        forward_headers: [].map.call(forwardList.querySelectorAll('.fwdrow'), function(r){
-          return r.querySelector('.fwd-name').value.trim();
-        }).filter(function(s){return s;})
-      };
-    }
     document.getElementById('tool_json').value = JSON.stringify(tool);
   });
 })();
 """
-
-# Policy editor: for a rest tool, builds (verb, path-glob, effect) rule rows from
-# window.POLICY_RULES, lets the operator add/remove them, and serializes each tool's rows to a
-# hidden `rest_rules__<tool>` field on submit. window.POLICY_VERBS gives each tool's verbs.
-_POLICY_RULES_JS = """
-(function(){
-  var RULES = window.POLICY_RULES || {};
-  var VERBS = window.POLICY_VERBS || {};
-  var EFFECTS = ["deny","review","allow"];
-  function he(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
-  function opt(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+he(v)+'</option>';}).join('');}
-  function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
-  function ruleRow(tool, r){
-    r = r || {};
-    var verbs = VERBS[tool] || [];
-    var row = mk('<div class="rule-row">'
-      + '<select class="r-verb">'+opt(verbs, r.verb||verbs[0])+'</select>'
-      + '<input class="r-pattern" placeholder="/path/** (blank = any path)">'
-      + '<select class="r-effect">'+opt(EFFECTS, r.effect||'allow')+'</select>'
-      + '<button type="button" class="rm">remove</button></div>');
-    row.querySelector('.r-pattern').value = r.pattern || '';
-    row.querySelector('.rm').onclick = function(){row.remove();};
-    return row;
-  }
-  Object.keys(VERBS).forEach(function(tool){
-    var box = document.getElementById('rules__'+tool);
-    if(!box) return;
-    (RULES[tool]||[]).forEach(function(r){box.appendChild(ruleRow(tool, r));});
-    var add = document.getElementById('addrule__'+tool);
-    if(add) add.onclick = function(){box.appendChild(ruleRow(tool));};
-  });
-  var form = document.getElementById('policy-form');
-  if(form) form.addEventListener('submit', function(){
-    Object.keys(VERBS).forEach(function(tool){
-      var box = document.getElementById('rules__'+tool);
-      if(!box) return;
-      var rules = [].map.call(box.querySelectorAll('.rule-row'), function(row){
-        return {verb: row.querySelector('.r-verb').value,
-                pattern: row.querySelector('.r-pattern').value,
-                effect: row.querySelector('.r-effect').value};
-      });
-      var hidden = document.getElementById('rest_rules__'+tool);
-      if(hidden) hidden.value = JSON.stringify(rules);
-    });
-  });
-})();
-"""
-
 
 def esc(value: Any) -> str:
     return html.escape(str(value), quote=True)
@@ -739,61 +565,6 @@ def caller_tools_view(*, user, csrf, caller, all_tools, enabled, error=None) -> 
     return page(f"Tools · {caller}", body, user=user, csrf=csrf)
 
 
-def _op_effect_table(tool: str, ops: list, current_ops: dict, *, subtitle: str = "") -> str:
-    """A per-op effect table (allow / review / deny), used for api / mcp ops and for NAMED rest
-    ops (which grant by op name). For a named rest op the route (verb + path template) is shown."""
-    show_route = any(o.get("path") for o in ops)
-    op_rows = []
-    for op in ops:
-        name = op["op"]
-        effect = current_ops.get(name, "deny")
-        select = (f"<select name='op__{esc(tool)}__{esc(name)}'>"
-                  + "".join(f"<option value='{v}'{' selected' if effect == v else ''}>{v.title()}</option>"
-                            for v in ("allow", "review", "deny"))
-                  + "</select>")
-        route = f"<td><code>{esc(op.get('verb') or '')} {esc(op.get('path') or '')}</code></td>" if show_route else ""
-        op_rows.append(
-            "<tr>"
-            f"<td>{esc(name)}</td>"
-            f"<td><span class='risk {esc(op['risk'])}'>{esc(op['risk'])}</span></td>"
-            f"{route}"
-            f"<td>{esc(op.get('description', ''))}</td>"
-            f"<td>{select}</td>"
-            "</tr>"
-        )
-    sub = f" <span class='muted'>({esc(subtitle)})</span>" if subtitle else ""
-    route_h = "<th>Route</th>" if show_route else ""
-    return (
-        "<section><div class='row'>"
-        f"<h2>{esc(tool)}{sub}</h2>"
-        f"<button type='button' onclick=\"setTool('{esc(tool)}','allow')\">Allow all</button>"
-        f"<button type='button' onclick=\"setTool('{esc(tool)}','review')\">Review all</button>"
-        f"<button type='button' onclick=\"setTool('{esc(tool)}','deny')\">Deny all</button>"
-        "</div>"
-        f"<table><thead><tr><th>Operation</th><th>Risk</th>{route_h}<th>Description</th><th>Effect</th></tr></thead>"
-        f"<tbody>{''.join(op_rows)}</tbody></table></section>"
-    )
-
-
-def _rest_rule_section(tool: str) -> str:
-    """The (verb, path-glob, effect) rule editor for a rest tool's bare-verb passthrough ops."""
-    return (
-        "<section>"
-        f"<h2>{esc(tool)} <span class='muted'>(rest passthrough: path rules)</span></h2>"
-        "<p class='muted'>For the bare HTTP verbs (the passthrough escape hatch). Most specific "
-        "wins (most literal characters, then fewest wildcards; a genuine tie resolves to the most "
-        "restrictive). A path matching no rule is <strong>denied</strong>. Blank pattern = any "
-        "path; an explicit deny carves a hole inside a broader allow.</p>"
-        "<p class='muted'><strong>Specificity warning:</strong> a broad <code>allow</code> "
-        "(e.g. <code>/**</code>) grants every sub-path you didn't separately deny; prefer narrow "
-        "allows. For tighter scoping, declare a named op instead.</p>"
-        f"<div id='rules__{esc(tool)}' class='rules'></div>"
-        f"<button type='button' id='addrule__{esc(tool)}'>Add rule</button>"
-        f"<input type='hidden' id='rest_rules__{esc(tool)}' name='rest_rules__{esc(tool)}'>"
-        "</section>"
-    )
-
-
 def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, error=None) -> str:
     err = f"<div class='error'>{esc(error)}</div>" if error else ""
     tool_policies = current.get("tools", {})
@@ -818,35 +589,36 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, err
             msg = ("No tools found in the configured tools root. Start the broker with a "
                    "valid tools root to manage policy.")
         sections.append(f"<section><p class='muted'>{msg}</p></section>")
-    rest_rules: dict = {}   # tool -> [{verb, pattern, effect}] (seeds the JS rule rows)
-    rest_verbs: dict = {}   # tool -> [verb, ...] (the passthrough verbs the tool exposes)
     for tool, ops in sorted(ops_by_tool.items()):
         current_ops = tool_policies.get(tool, {})
-        if ops and ops[0].get("type") == "rest":
-            # A rest tool can carry both shapes. Named ops (with a path template) grant by name,
-            # like api ops; bare-verb passthrough ops grant via path-glob rules. Render whichever
-            # the tool has.
-            passthrough_verbs = [op["op"] for op in ops if not op.get("path")]
-            named = [op for op in ops if op.get("path")]
-            if named:
-                sections.append(_op_effect_table(tool, named, current_ops, subtitle="named ops"))
-            if passthrough_verbs:
-                rest_verbs[tool] = passthrough_verbs
-                rules = []
-                for key, effect in current_ops.items():
-                    verb, _, pattern = key.partition(" ")
-                    if verb in passthrough_verbs:   # a named-op key (bare name) is not a path rule
-                        rules.append({"verb": verb, "pattern": pattern, "effect": effect})
-                rest_rules[tool] = rules
-                sections.append(_rest_rule_section(tool))
-            continue
-        sections.append(_op_effect_table(tool, ops, current_ops))
+        op_rows = []
+        for op in ops:
+            name = op["op"]
+            effect = current_ops.get(name, "deny")
+            select = (f"<select name='op__{esc(tool)}__{esc(name)}'>"
+                      + "".join(
+                          f"<option value='{v}'{' selected' if effect == v else ''}>{v.title()}</option>"
+                          for v in ("allow", "review", "deny"))
+                      + "</select>")
+            op_rows.append(
+                "<tr>"
+                f"<td>{esc(name)}</td>"
+                f"<td><span class='risk {esc(op['risk'])}'>{esc(op['risk'])}</span></td>"
+                f"<td>{esc(op.get('description', ''))}</td>"
+                f"<td>{select}</td>"
+                "</tr>"
+            )
+        sections.append(
+            "<section><div class='row'>"
+            f"<h2>{esc(tool)}</h2>"
+            f"<button type='button' onclick=\"setTool('{esc(tool)}','allow')\">Allow all</button>"
+            f"<button type='button' onclick=\"setTool('{esc(tool)}','review')\">Review all</button>"
+            f"<button type='button' onclick=\"setTool('{esc(tool)}','deny')\">Deny all</button>"
+            "</div>"
+            "<table><thead><tr><th>Operation</th><th>Risk</th><th>Description</th><th>Effect</th></tr></thead>"
+            f"<tbody>{''.join(op_rows)}</tbody></table></section>"
+        )
     sections.append("</form>")
-    if rest_verbs:  # seed + wire the rule-row editor for the rest tools on this page
-        rules_js = json.dumps(rest_rules).replace("</", "<\\/")
-        verbs_js = json.dumps(rest_verbs).replace("</", "<\\/")
-        sections.append(f"<script>window.POLICY_RULES={rules_js};window.POLICY_VERBS={verbs_js};</script>"
-                        f"<script>{_POLICY_RULES_JS}</script>")
     return page(f"Policy · {caller}", "".join(sections), user=user, csrf=csrf)
 
 
@@ -930,56 +702,24 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
                      f"<p class='muted'>Directory: <code>{esc(dir_value)}</code></p>")
         id_attr = " readonly"  # renaming a tool would orphan its caller policies
     initial = json.dumps(tool).replace("</", "<\\/")  # safe to embed in <script>
-    import_section = ""
-    if mode == "new":
-        import_section = (
-            "<details id='import-openapi'><summary>Import from an OpenAPI / Swagger spec</summary>"
-            "<p class='muted'>Paste a spec, parse it, then check the operations you want "
-            "(a subset, not the whole spec). The selected ops, the base URL, and an auth scaffold "
-            "pre-fill the form below; review and save.</p>"
-            "<textarea id='oai-spec' rows='6' placeholder='paste OpenAPI / Swagger spec (JSON or YAML)'></textarea>"
-            "<div class='row'><button type='button' id='oai-parse'>Parse spec</button></div>"
-            "<div id='oai-error' class='error' hidden></div>"
-            "<div id='oai-results' hidden><p class='muted' id='oai-base'></p>"
-            "<div id='oai-ops'></div>"
-            "<button type='button' id='oai-add'>Add selected operations</button></div>"
-            "</details>")
     body = (
         f"{err}<section><div class='row'><a class='button' href='/tools'>Back</a>"
         f"<h2>{'Add tool' if mode == 'new' else 'Edit tool: ' + esc(tool.get('id', ''))}</h2></div>"
-        f"{import_section}"
         f"<form id='tool-form' method='post' action='{action}'>"
         f"{_csrf_field(csrf)}{dir_field}"
         f"<label class='field'>id <input id='f_id' placeholder='weather'{id_attr} required></label>"
         "<label class='field'>transport <span class='muted'>(api = POST /v1/actions; "
-        "mcp = streamable-HTTP MCP server; rest = verb-as-op passthrough)</span>"
+        "mcp = streamable-HTTP MCP server)</span>"
         "<select id='f_type'></select></label>"
-        "<div id='rest-mode' class='field' hidden><span class='muted'>REST tool:</span> "
-        "<label><input type='radio' name='rest_mode' value='proxied' checked> Proxied "
-        "(forward to an external API URL)</label> "
-        "<label><input type='radio' name='rest_mode' value='local'> Local "
-        "(a process on a loopback port)</label></div>"
         "<label class='field'>description <span class='muted'>(optional)</span>"
         "<textarea id='f_description' rows='2' placeholder='what this tool does'></textarea></label>"
-        "<div id='entry-fields'>"
         "<label class='field'>entrypoint command <span class='muted'>(process backend)</span>"
         "<input id='f_command' placeholder='python3 app.py'></label>"
         "<label class='field'>image <span class='muted'>(docker backend)</span>"
         "<input id='f_image' placeholder='ghcr.io/owner/tool:tag'></label>"
         "<p class='muted'>Leave both blank for a docker tool that builds the "
         "<code>Dockerfile</code> in its own directory.</p>"
-        "<label class='field'>port <input id='f_port' type='number' placeholder='4700'></label>"
-        "</div>"
-        "<div id='proxy-panel' hidden>"
-        "<label class='field'>Base URL <input id='f_base_url' placeholder='https://api.example.com/v1'></label>"
-        "<h3>Inject <span class='muted'>(values added to the upstream request; "
-        "value may use <code>${secret:NAME}</code>)</span></h3>"
-        "<div id='inject-list'></div><button type='button' id='add-inject'>Add inject</button>"
-        "<h3>Forwarded headers <span class='muted'>(caller headers passed through; "
-        "reserved headers are always blocked)</span></h3>"
-        "<div id='forward-list'></div><button type='button' id='add-forward'>Add forwarded header</button>"
-        "<p class='muted'>The loopback port is assigned automatically when you save.</p>"
-        "</div>"
+        "<label class='field'>port <input id='f_port' type='number' placeholder='4700' required></label>"
         "<h3>Operations</h3><div id='ops'></div>"
         "<button type='button' id='add-op'>Add operation</button>"
         "<h3>Secrets <span class='muted'>(declarations only; values stay in the secret backend)</span></h3>"

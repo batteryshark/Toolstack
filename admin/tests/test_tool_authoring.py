@@ -22,17 +22,6 @@ FULL = {
     "secrets": [{"name": "api_key", "field": "API_KEY", "writable": False}],
 }
 
-REST_FIXTURE = {
-    "id": "kv", "type": "rest", "command": "python3 app.py", "image": "",
-    "description": "KV store", "port": 4621,
-    "operations": [
-        {"name": "get", "risk": "read", "description": "read a key", "args": []},  # lowercased -> GET
-        {"name": "DELETE", "risk": "read", "description": "", "args": []},          # wrong risk -> derived
-    ],
-    "secrets": [],
-}
-
-
 class Serialize(unittest.TestCase):
     def test_to_toml_parses_back(self):
         parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(FULL)))
@@ -131,90 +120,11 @@ class Validate(unittest.TestCase):
         # mcp is an authorable transport (same entrypoint form, broker calls it over MCP)
         self.assertEqual(self._errs(type="mcp"), [])
 
+    def test_rest_type_rejected(self):
+        self.assertTrue(any("type must be one of" in e for e in self._errs(type="rest")))
+
     def test_unknown_type_rejected(self):
         self.assertTrue(any("type must be one of" in e for e in self._errs(type="banana")))
-
-
-class RestAuthoring(unittest.TestCase):
-    """A rest tool's ops are HTTP verbs: normalize uppercases them, derives risk from the
-    verb, and gives them the fixed {path, body, query} shape; validate rejects non-verbs."""
-
-    def test_normalize_uppercases_verbs_derives_risk_and_sets_args(self):
-        norm = tool_authoring.normalize(REST_FIXTURE)
-        ops = {o["name"]: o for o in norm["operations"]}
-        self.assertEqual(set(ops), {"GET", "DELETE"})            # "get" -> "GET"
-        self.assertEqual(ops["GET"]["risk"], "read")
-        self.assertEqual(ops["DELETE"]["risk"], "destructive")   # derived, not the "read" we passed
-        self.assertEqual([a["name"] for a in ops["GET"]["args"]], ["path", "body", "query", "headers"])
-
-    def test_validate_accepts_verb_ops(self):
-        self.assertEqual(tool_authoring.validate(tool_authoring.normalize(REST_FIXTURE)), [])
-
-    def test_validate_rejects_a_non_verb_op(self):
-        bad = {**REST_FIXTURE, "operations": [{"name": "frobnicate", "risk": "read", "args": []}]}
-        errs = tool_authoring.validate(tool_authoring.normalize(bad))
-        self.assertTrue(any("HTTP verb" in e for e in errs))
-
-    def test_written_rest_tool_is_consumable_by_broker_and_toolyard(self):
-        tmp = tempfile.mkdtemp(prefix="admin-rest-")
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        tool_authoring.write(tmp, tool_authoring.normalize(REST_FIXTURE))
-        op = Registry.from_sources(None, [tmp]).lookup("kv", "DELETE")
-        self.assertEqual((op.type, op.risk), ("rest", "destructive"))
-        self.assertEqual(load_tool(Path(tmp, "toolyard.toml")).type, "rest")
-
-
-NAMED_REST_FIXTURE = {
-    "id": "graph", "type": "rest", "command": "python3 -m toolyard.http_proxy", "image": "",
-    "description": "Graph", "port": 4640,
-    "operations": [
-        {"name": "get_task", "verb": "get",   # lowercase verb -> uppercased
-         "path": "/me/todo/lists/{list_id}/tasks/{task_id}", "description": "Get a task",
-         "args": [{"name": "list_id", "type": "string", "required": True, "description": "list id"},
-                  {"name": "task_id", "type": "string", "required": True, "description": "task id"}]},
-        {"name": "GET"},   # a bare-verb passthrough alongside the named op
-    ],
-    "secrets": [],
-}
-
-
-class NamedRestAuthoring(unittest.TestCase):
-    """A rest op may be NAMED (name + verb + path template) instead of a bare verb. normalize keeps
-    the verb + path, derives risk from the verb, and the pair round-trips through write/read."""
-
-    def test_normalize_keeps_named_op_and_derives_risk(self):
-        ops = {o["name"]: o for o in tool_authoring.normalize(NAMED_REST_FIXTURE)["operations"]}
-        self.assertEqual(ops["get_task"]["verb"], "GET")                       # uppercased
-        self.assertEqual(ops["get_task"]["path"], "/me/todo/lists/{list_id}/tasks/{task_id}")
-        self.assertEqual(ops["get_task"]["risk"], "read")                      # derived from GET
-        self.assertEqual([a["name"] for a in ops["get_task"]["args"]], ["list_id", "task_id"])
-        self.assertIsNone(ops["GET"].get("path"))                             # passthrough still works
-
-    def test_validate_accepts_named_op(self):
-        self.assertEqual(tool_authoring.validate(tool_authoring.normalize(NAMED_REST_FIXTURE)), [])
-
-    def test_validate_rejects_named_op_without_verb(self):
-        bad = {**NAMED_REST_FIXTURE, "operations": [{"name": "get_task", "path": "/x/{id}"}]}
-        self.assertTrue(any("needs a verb" in e for e in
-                            tool_authoring.validate(tool_authoring.normalize(bad))))
-
-    def test_validate_rejects_named_op_with_relative_path(self):
-        bad = {**NAMED_REST_FIXTURE,
-               "operations": [{"name": "get_task", "verb": "GET", "path": "me/messages"}]}
-        self.assertTrue(any("must start with '/'" in e for e in
-                            tool_authoring.validate(tool_authoring.normalize(bad))))
-
-    def test_named_op_round_trips_and_broker_reads_it(self):
-        tmp = tempfile.mkdtemp(prefix="admin-named-")
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        tool_authoring.write(tmp, tool_authoring.normalize(NAMED_REST_FIXTURE))
-        op = Registry.from_sources(None, [tmp]).lookup("graph", "get_task")   # broker reads the named op
-        self.assertEqual((op.verb, op.path_template, op.risk),
-                         ("GET", "/me/todo/lists/{list_id}/tasks/{task_id}", "read"))
-        again = {o["name"]: o for o in tool_authoring.read(tmp)["operations"]}  # editor reads it back
-        self.assertEqual(again["get_task"]["verb"], "GET")
-        self.assertEqual(again["get_task"]["path"], "/me/todo/lists/{list_id}/tasks/{task_id}")
-        self.assertEqual([a["name"] for a in again["get_task"]["args"]], ["list_id", "task_id"])
 
 
 class ReadWrite(unittest.TestCase):
@@ -284,9 +194,9 @@ class ReadWrite(unittest.TestCase):
 
 class BundledSampleTools(unittest.TestCase):
     """Guard against the recurring 'sample shipped without a Dockerfile' redeploy failure
-    (echo_mcp, then rest_kv): every tool bundled under <repo>/tools must be startable by the
-    docker runner, i.e. carry an `image` or a `Dockerfile` (a process `command` alone won't
-    build). Caught here at test time instead of at `redeploy` time."""
+    (echo_mcp was the original catch): every tool bundled under <repo>/tools must be
+    startable by the docker runner, i.e. carry an `image` or a `Dockerfile` (a process
+    `command` alone won't build). Caught here at test time instead of at `redeploy` time."""
 
     def test_every_bundled_tool_is_docker_startable(self):
         tools_root = Path(__file__).resolve().parents[2] / "tools"
@@ -300,84 +210,6 @@ class BundledSampleTools(unittest.TestCase):
                     tool_authoring.entrypoint_error(data, tool_dir, runner="docker"),
                     f"{tool_dir.name} can't start under the docker runner: add a Dockerfile "
                     f"or set an image in its toolyard.toml")
-
-
-PROXY_FIXTURE = {
-    "id": "graph", "type": "rest", "command": "", "image": "", "port": 4640,
-    "description": "Graph proxy",
-    "proxy": {
-        "base_url": "https://graph.microsoft.com/v1.0",
-        "inject": [{"into": "header", "name": "Authorization", "value": "Bearer ${secret:graph_token}"}],
-        "forward_headers": ["Prefer", "If-Match"],
-        "rotatable": ["graph_token"],
-    },
-    "operations": [{"name": "get_me", "verb": "GET", "path": "/me", "args": []}, {"name": "GET"}],
-    "secrets": [{"name": "graph_token", "field": "GRAPH_TOKEN", "writable": True}],
-}
-
-
-class ProxyAuthoring(unittest.TestCase):
-    """A proxied rest tool (external API): the operator fills a [proxy] block; the command is
-    auto-set to the bundled http_proxy and the entrypoint check is satisfied without a command."""
-
-    def _bad_proxy(self, **over):
-        return {**PROXY_FIXTURE, "proxy": {**PROXY_FIXTURE["proxy"], **over}}
-
-    def test_normalize_autofills_command_and_carries_proxy(self):
-        norm = tool_authoring.normalize(PROXY_FIXTURE)
-        self.assertEqual(norm["command"], "python3 -m toolyard.http_proxy")
-        self.assertEqual(norm["proxy"]["base_url"], "https://graph.microsoft.com/v1.0")
-        self.assertEqual(norm["proxy"]["inject"][0]["name"], "Authorization")
-
-    def test_validate_accepts_full_proxy(self):
-        self.assertEqual(tool_authoring.validate(tool_authoring.normalize(PROXY_FIXTURE)), [])
-
-    def test_entrypoint_satisfied_in_proxy_mode_without_command(self):
-        norm = tool_authoring.normalize(PROXY_FIXTURE)
-        self.assertIsNone(tool_authoring.entrypoint_error(norm, ".", runner="docker"))  # even docker
-
-    def test_validate_rejects_inject_into_invalid(self):
-        bad = self._bad_proxy(inject=[{"into": "cookie", "name": "X", "value": "y"}])
-        self.assertTrue(any("header/query/body" in e
-                            for e in tool_authoring.validate(tool_authoring.normalize(bad))))
-
-    def test_validate_rejects_inject_secret_without_declaration(self):
-        bad = {**PROXY_FIXTURE, "secrets": [], "proxy": {**PROXY_FIXTURE["proxy"], "rotatable": []}}
-        self.assertTrue(any("no matching" in e
-                            for e in tool_authoring.validate(tool_authoring.normalize(bad))))
-
-    def test_validate_requires_secret_for_base_url_ref(self):
-        bad = self._bad_proxy(base_url="https://api.example.com/${secret:tenant}/v1")
-        errs = tool_authoring.validate(tool_authoring.normalize(bad))
-        self.assertTrue(any("tenant" in e and "no matching" in e for e in errs))
-
-    def test_validate_rejects_reserved_forward_header(self):
-        bad = self._bad_proxy(forward_headers=["Authorization"])
-        self.assertTrue(any("reserved" in e
-                            for e in tool_authoring.validate(tool_authoring.normalize(bad))))
-
-    def test_validate_rejects_rotatable_not_writable(self):
-        bad = {**PROXY_FIXTURE, "secrets": [{"name": "graph_token", "field": "GRAPH_TOKEN", "writable": False}]}
-        self.assertTrue(any("writable" in e
-                            for e in tool_authoring.validate(tool_authoring.normalize(bad))))
-
-    def test_to_toml_emits_proxy_block(self):
-        parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(PROXY_FIXTURE)))
-        self.assertEqual(parsed["proxy"]["base_url"], "https://graph.microsoft.com/v1.0")
-        self.assertEqual(parsed["proxy"]["inject"][0]["into"], "header")
-        self.assertEqual(parsed["proxy"]["forward_headers"], ["Prefer", "If-Match"])
-        self.assertEqual(parsed["proxy"]["rotatable"], ["graph_token"])
-
-    def test_written_proxy_tool_round_trips_and_broker_reads_it(self):
-        tmp = tempfile.mkdtemp(prefix="admin-proxy-")
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        tool_authoring.write(tmp, tool_authoring.normalize(PROXY_FIXTURE))  # entrypoint ok (proxy)
-        reg = Registry.from_sources(None, [tmp])
-        self.assertEqual(reg.lookup("graph", "get_me").path_template, "/me")  # registry ignores [proxy]
-        again = tool_authoring.read(tmp)                                      # editor reads it back
-        self.assertEqual(again["proxy"]["base_url"], "https://graph.microsoft.com/v1.0")
-        self.assertEqual(again["proxy"]["forward_headers"], ["Prefer", "If-Match"])
-        self.assertEqual(again["command"], "python3 -m toolyard.http_proxy")
 
 
 if __name__ == "__main__":

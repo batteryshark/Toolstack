@@ -22,11 +22,10 @@ from .store import Store
 
 
 def build_policy(allow, review, deny=None) -> dict:
-    """Build a caller policy from ``allow`` / ``review`` / ``deny`` op specs (e.g.
-    ``"echo.say"``, or for a rest tool a path-scoped ``"kv.GET /items/**"``).
+    """Build a caller policy from ``allow`` / ``review`` / ``deny`` op specs, e.g.
+    ``"echo.say"``.
 
-    A later list wins for the same key, applied review -> allow -> deny, so an explicit
-    ``deny`` carves a hole inside a broader grant. The shape matches what
+    A later list wins for the same key, applied review -> allow -> deny. The shape matches what
     :meth:`broker.store.Store.set_policy` expects and the policy engine reads.
     """
     tools: dict[str, dict[str, str]] = {}
@@ -35,25 +34,6 @@ def build_policy(allow, review, deny=None) -> dict:
             tool, _, op = spec.partition(".")
             tools.setdefault(tool, {})[op] = effect
     return {"tools": tools}
-
-
-def path_scoped_keys(policy: dict) -> set:
-    """The path-scoped op keys in a policy, as ``"<tool>.<key>"`` (a rest key scopes by
-    path, so its op part contains a space, e.g. ``"GET /items/**"``)."""
-    return {f"{tool}.{key}" for tool, ops in policy.get("tools", {}).items()
-            for key in ops if " " in key}
-
-
-def coarse_update_drops_scope(store: Store, name: str, allow, review, deny=None) -> set:
-    """Return the path-scoped keys that a coarse allow/review/deny update would DROP for this
-    caller (empty == safe). A path-blind client (the web policy editor) can't express path
-    rules, so saving one over a caller that has them would silently flatten them; that entry
-    point calls this to refuse. A path-aware client (the macapp, which renders + manages the
-    rules) declares itself and is trusted to send the full picture; brokerctl is unguarded."""
-    caller = require_caller(store, name)
-    prior = path_scoped_keys(store.policy_for(caller["id"]))
-    incoming = path_scoped_keys(build_policy(allow, review, deny))
-    return prior - incoming
 
 
 def enabled_tools(policy: dict) -> list[str]:

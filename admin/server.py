@@ -10,10 +10,8 @@ here at all.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import socket
 import sqlite3
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -23,7 +21,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from broker import operations
 from broker.registry import Registry
-from toolyard import openapi_import
 
 from . import (api, auth, broker_config, loginguard, settings, supervisor,
                tool_authoring, tool_sources, toolyard_ops, views)
@@ -345,23 +342,6 @@ def create_app() -> FastAPI:
                     allow.append(spec)
                 elif value == "review":
                     review.append(spec)
-            elif key.startswith("rest_rules__"):  # rest: a JSON array of {verb, pattern, effect}
-                tool = key[len("rest_rules__"):]
-                try:
-                    rules = json.loads(value) if value else []
-                except (json.JSONDecodeError, TypeError):
-                    rules = []
-                for rule in rules if isinstance(rules, list) else []:
-                    if not isinstance(rule, dict):
-                        continue
-                    verb = str(rule.get("verb", "")).strip()
-                    if not verb:
-                        continue
-                    pattern = str(rule.get("pattern", "")).strip()
-                    spec = f"{tool}.{verb}" if not pattern else f"{tool}.{verb} {pattern}"
-                    bucket = {"allow": allow, "review": review, "deny": deny}.get(rule.get("effect"))
-                    if bucket is not None:
-                        bucket.append(spec)
         try:
             with open_store(config) as store:
                 operations.set_policy(store, name, allow, review, user, deny=deny)
@@ -459,39 +439,6 @@ def create_app() -> FastAPI:
         return HTMLResponse(views.tool_editor_view(
             user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool={}, dir_value=""))
 
-    @app.post("/tools/parse-openapi")
-    async def parse_openapi(request: Request):
-        """Parse a pasted OpenAPI/Swagger spec into {base_url, inject, secrets, operations} so the
-        editor can offer a SELECTABLE import (the operator picks a subset). Read-only: parses and
-        returns, writes nothing."""
-        if not current_user(request):
-            return JSONResponse({"error": "auth"}, status_code=401)
-        data = await read_form(request)
-        if not csrf_ok(request, data):
-            return JSONResponse({"error": "invalid CSRF token"}, status_code=400)
-        raw = (data.get("spec") or "").strip()
-        if not raw:
-            return JSONResponse({"error": "the spec is empty"}, status_code=400)
-        try:
-            spec = json.loads(raw)   # JSON first (a YAML spec falls through to PyYAML below)
-        except json.JSONDecodeError:
-            try:
-                import yaml   # an admin dependency; the toolyard stays stdlib-only and dict-based
-            except ImportError:
-                return JSONResponse({"error": "the spec is not valid JSON; install PyYAML for YAML"},
-                                    status_code=400)
-            try:
-                spec = yaml.safe_load(raw)
-            except yaml.YAMLError as exc:
-                return JSONResponse({"error": f"the spec is not valid JSON or YAML: {exc}"},
-                                    status_code=400)
-        if not isinstance(spec, dict):
-            return JSONResponse({"error": "the spec must be a JSON or YAML object"}, status_code=400)
-        try:
-            return JSONResponse(openapi_import.parse_spec(spec))
-        except Exception as exc:  # a malformed spec must not 500 the panel
-            return JSONResponse({"error": f"could not parse spec: {type(exc).__name__}"}, status_code=400)
-
     @app.post("/tools/new")
     async def create_tool(request: Request):
         user = current_user(request)
@@ -501,7 +448,6 @@ def create_app() -> FastAPI:
         config = broker_config.load()
         dir_path = (data.get("dir") or "").strip()
         tool = _tool_from_form(data)
-        _assign_proxy_port(tool)   # proxy mode: allocate a free loopback port (no operator field)
         if not csrf_ok(request, data):
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool=tool,
@@ -520,14 +466,7 @@ def create_app() -> FastAPI:
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool=tool,
                 dir_value=dir_path, error="; ".join(errors)))
-        try:
-            # write() runs the entrypoint check that validate() can't (it needs the directory and
-            # the runner); surface its ValueError as a form error, not an opaque 500.
-            tool_authoring.write(dir_path, tool)
-        except ValueError as exc:
-            return HTMLResponse(views.tool_editor_view(
-                user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool=tool,
-                dir_value=dir_path, error=str(exc)))
+        tool_authoring.write(dir_path, tool)
         norm_dir = str(Path(dir_path))  # normalize so the later removable check matches
         if norm_dir not in config.tool_dirs:
             config.tool_dirs = [*config.tool_dirs, norm_dir]
@@ -575,7 +514,6 @@ def create_app() -> FastAPI:
             return render_dashboard(request, user, error=f"no such tool: {tool_id}")
         dir_path = tools[tool_id]["path"]
         tool = _tool_from_form(data)
-        _assign_proxy_port(tool, dir_path)   # proxy mode: reuse the existing port, else allocate
         if not csrf_ok(request, data):
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="edit", tool=tool,
@@ -585,14 +523,7 @@ def create_app() -> FastAPI:
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="edit", tool=tool,
                 dir_value=dir_path, error="; ".join(errors)))
-        try:
-            # write() runs the entrypoint check that validate() can't; surface its ValueError as a
-            # form error, not an opaque 500.
-            tool_authoring.write(dir_path, tool)
-        except ValueError as exc:
-            return HTMLResponse(views.tool_editor_view(
-                user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="edit", tool=tool,
-                dir_value=dir_path, error=str(exc)))
+        tool_authoring.write(dir_path, tool)
         with open_store(config) as store:
             operations.record_admin_event(store, user, "tool_edited", {"tool": tool["id"], "dir": dir_path})
         return render_dashboard(request, user, banner=(
@@ -718,32 +649,6 @@ def _tool_from_form(data: dict) -> dict:
         return tool_authoring.from_json(data.get("tool_json") or "{}")
     except Exception:
         return tool_authoring.normalize({})
-
-
-def _assign_proxy_port(tool: dict, dir_path: str | None = None) -> None:
-    """A proxied rest tool has no operator-supplied port; give it a free loopback port so it's an
-    ordinary fixed-port rest tool. On edit, reuse the existing port (read from the current manifest)
-    so it doesn't churn. The TOCTOU window is the same any fixed-port tool already has; the
-    toolyard's start-time port check catches a collision."""
-    if not tool.get("proxy"):
-        return
-    port = tool.get("port")
-    if isinstance(port, int) and 1 <= port <= 65535:
-        return
-    if dir_path:
-        try:
-            existing = tool_authoring.read(dir_path).get("port")
-        except Exception:
-            existing = None
-        if isinstance(existing, int) and 1 <= existing <= 65535:
-            tool["port"] = existing
-            return
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind(("127.0.0.1", 0))
-        tool["port"] = s.getsockname()[1]
-    finally:
-        s.close()
 
 
 def _config_from_form(data: dict, current) -> "broker_config.BrokerRunConfig":

@@ -107,8 +107,8 @@ class NodSurface:
         md = []
         if card.justification:
             md.append(f"**Agent's reason:** {card.justification}")
-        if card.details:  # the redacted request the agent sent (no resolved secrets; the tool
-            md.append(f"**Request the agent sent:**\n```json\n{card.details}\n```")  # injects those
+        if card.details:
+            md.append(f"**Request the agent sent:**\n```json\n{card.details}\n```")
         if md:
             payload["body_markdown"] = "\n\n".join(md)
         result = self._call("POST", "/api/v1/requests", payload)

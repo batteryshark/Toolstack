@@ -31,14 +31,14 @@ class RedactRequest(unittest.TestCase):
         self.assertIsNone(redact_request({}))
         self.assertIsNone(redact_request(None))
 
-    def test_renders_the_body_so_two_calls_differ(self):
-        a = redact_request({"path": "/me/todo/lists/1", "body": {"dueDate": "2026-07-01"}})
-        b = redact_request({"path": "/me/todo/lists/1", "body": {"assignedTo": "bob"}})
+    def test_renders_arguments_so_two_calls_differ(self):
+        a = redact_request({"body": {"dueDate": "2026-07-01"}})
+        b = redact_request({"body": {"assignedTo": "bob"}})
         self.assertIn("2026-07-01", a)
         self.assertIn("bob", b)
-        self.assertNotEqual(a, b)            # the human can tell the two PATCHes apart
+        self.assertNotEqual(a, b)
 
-    def test_masks_a_token_like_value_in_the_body(self):
+    def test_masks_a_token_like_value(self):
         out = redact_request({"body": {"token": "sk_live_" + "a" * 40}})
         self.assertIn("[redacted]", out)
         self.assertNotIn("a" * 40, out)

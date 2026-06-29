@@ -190,7 +190,6 @@ def main() -> None:
     p.add_argument("--name", required=True)
     p.add_argument("--allow", action="append", metavar="TOOL.OP")
     p.add_argument("--review", action="append", metavar="TOOL.OP")
-    # for a rest tool, OP may be path-scoped, e.g. --deny "kv.GET /admin/**"
     p.add_argument("--deny", action="append", metavar="TOOL.OP")
     p.set_defaults(func=set_policy)
 

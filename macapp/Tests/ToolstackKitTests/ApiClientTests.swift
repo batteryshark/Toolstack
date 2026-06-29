@@ -391,15 +391,14 @@ final class ApiClientTests: XCTestCase {
         StubURLProtocol.handler = { _ in
             (200, [:], Data(#"{"name":"hermes","policy":{"tools":{}},"enabled":[]}"#.utf8))
         }
-        // path-scoped specs + an explicit deny carve-out ride through unchanged
+        // allow/review/deny specs ride through unchanged
         _ = try await makeClient(token: "t").setPolicy(
-            caller: "hermes", allow: ["kv.GET /items/**"], review: [], deny: ["kv.GET /items/secret"])
+            caller: "hermes", allow: ["echo.say"], review: ["echo.shout"], deny: ["echo.delete"])
         XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "PUT")
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/callers/hermes/policy")
-        XCTAssertEqual(try bodyJSON()["allow"] as? [String], ["kv.GET /items/**"])
-        XCTAssertEqual(try bodyJSON()["deny"] as? [String], ["kv.GET /items/secret"])
-        // declares itself path-aware so the broker won't refuse an intentional rule removal
-        XCTAssertEqual(try bodyJSON()["manages_path_rules"] as? Bool, true)
+        XCTAssertEqual(try bodyJSON()["allow"] as? [String], ["echo.say"])
+        XCTAssertEqual(try bodyJSON()["review"] as? [String], ["echo.shout"])
+        XCTAssertEqual(try bodyJSON()["deny"] as? [String], ["echo.delete"])
     }
 
     func testListCallersDecodesSnakeCase() async throws {

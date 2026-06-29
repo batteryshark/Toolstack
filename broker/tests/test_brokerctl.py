@@ -65,13 +65,14 @@ class Brokerctl(unittest.TestCase):
         self.assertIn("echo", shown)
         self.assertIn("review", shown)
 
-    def test_set_policy_with_path_scoped_deny(self):
+    def test_set_policy_with_explicit_deny(self):
         self._run(brokerctl.create_caller, name="hermes", allow=None, review=None)
         self._run(brokerctl.set_policy, name="hermes",
-                  allow=["kv.GET /items/**"], review=None, deny=["kv.GET /items/secret"])
+                  allow=["echo.say"], review=None, deny=["echo.delete"])
         shown = self._run(brokerctl.show_policy, name="hermes")
-        self.assertIn("GET /items/**", shown)   # path-scoped key round-trips
-        self.assertIn("deny", shown)            # explicit deny carve-out stored
+        self.assertIn("echo", shown)
+        self.assertIn("delete", shown)
+        self.assertIn("deny", shown)
 
     def test_audit_command_shows_admin_events(self):
         self._run(brokerctl.create_caller, name="hermes", allow=["echo.say"], review=None)

@@ -36,9 +36,8 @@ name = "api_key"             # the tool reads $TOOLSTACK_SECRETS_DIR/api_key
 field = "API_KEY"            # looked up in the secret backend
 ```
 
-A tool's `type` is one of `api` / `mcp` / `rest`, the three transports; see
-[../tools/README.md](../tools/README.md) for choosing one. A sample of each lives in
-[../tools/](../tools/).
+A tool's `type` is one of `api` / `mcp`; see [../tools/README.md](../tools/README.md)
+for choosing one. Samples live in [../tools/](../tools/).
 
 ## Secrets
 

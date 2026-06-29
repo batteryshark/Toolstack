@@ -113,11 +113,11 @@ def _route(method, path, headers, body, ctx, correlation_id) -> Response:
         return _action(path, body, ctx, caller, correlation_id)
 
     if method == "POST" and path == MCP_PATH:
-        # Same authority as REST: authenticated above; policy/approval/audit and rate
+        # Same authority as the action API: authenticated above; policy/approval/audit and rate
         # limiting live inside mcp.handle (rate limiting applies to tools/call only, not
         # the initialize/list/ping handshake, mirroring GET /v1/tools, which is unmetered).
         # mcp.handle returns the HTTP status so a throttle (429) / internal error (500)
-        # audits with the right outcome via _AUDIT_OUTCOME, exactly like the REST path.
+        # audits with the right outcome via _AUDIT_OUTCOME.
         status, mcp_body = mcp.handle(body, ctx, caller, correlation_id)
         return Response(status, mcp_body, correlation_id)
 

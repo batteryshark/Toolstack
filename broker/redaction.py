@@ -12,7 +12,7 @@ import json
 import re
 
 _MAX = 280
-_MAX_REQUEST = 2000   # a request rendering on a card may be longer than a one-line reason
+_MAX_REQUEST = 2000
 # Crude secret-ish runs: a bearer token, or any long opaque token (>=32 chars).
 _SECRETISH = re.compile(r"(?i)bearer\s+\S+|[A-Za-z0-9_\-]{32,}")
 
@@ -27,12 +27,7 @@ def redact(text, limit: int = _MAX) -> str | None:
 
 
 def redact_request(arguments, limit: int = _MAX_REQUEST) -> str | None:
-    """A compact, secret-masked rendering of the arguments the agent sent, for an approval card.
-
-    The broker is never on the secret path: the tool injects credentials downstream, so what the
-    broker holds here is the agent's OWN input (placeholders at most, never a resolved secret).
-    The approver owns the bot and may see what it submitted; ``redact()`` additionally masks any
-    token-like run as defense in depth. Returns None for empty arguments."""
+    """A compact, secret-masked rendering of the arguments the agent submitted."""
     if not arguments:
         return None
     try:

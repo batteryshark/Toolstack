@@ -57,20 +57,15 @@ class FakeSurface:
 
 def make_registry(tools: dict | None = None, port: int = 4600, tool_type: str = "api") -> Registry:
     """Build a Registry from the friendly shape {tool: {op: risk}}. ``tool_type`` sets the
-    transport for all tools (use "rest" to exercise the verb-as-op passthrough). For a named
-    rest op, give the op a dict value instead of a risk string: ``{"verb": "GET", "path":
-    "/x/{id}", "risk": "read"}``; the ToolOp then carries the verb + path template."""
+    transport for all tools."""
     catalog = {}
     for tool, ops in (tools or {}).items():
-        op_entries = {}
-        for op, spec in ops.items():
-            if isinstance(spec, dict):   # named rest op
-                op_entries[op] = {"risk": spec.get("risk", "read"), "description": "", "args": [],
-                                  "verb": spec["verb"], "template": spec["path"]}
-            else:                        # risk string: api/mcp op, or a rest verb-passthrough
-                op_entries[op] = {"risk": spec, "description": "", "args": [],
-                                  "verb": op if tool_type == "rest" else None, "template": None}
-        catalog[tool] = {"port": port, "type": tool_type, "ops": op_entries}
+        catalog[tool] = {
+            "port": port,
+            "type": tool_type,
+            "ops": {op: {"risk": risk, "description": "", "args": []}
+                    for op, risk in ops.items()},
+        }
     return Registry(catalog)
 
 

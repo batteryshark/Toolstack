@@ -43,13 +43,13 @@ GET  /v1/requests/<id>           poll a request (owner only) -> status + result 
 - Audit: `gateway.request_received`, `gateway.response_returned`.
 - Security: arguments and `reason` are redacted before audit. The broker never inspects or materializes secrets.
 - MCP is available two ways over the **same** authority. (1) A **client-side adapter**
-  (`client/mcp_server.py`): a stdio bridge that translates MCP to the REST endpoints above
+  (`client/mcp_server.py`): a stdio bridge that translates MCP to the HTTP endpoints above
   and blocks per-process until approval resolves. (2) A **broker-native** `POST /mcp` route
   (`broker/mcp.py`) that terminates JSON-RPC (MCP) frames at the broker itself: stateless,
   non-blocking (a review op returns `pending_approval` + a request id, polled via
-  `GET /v1/requests/<id>` exactly like REST), and bound by the same token auth. Both apply
+  `GET /v1/requests/<id>`), and bound by the same token auth. Both apply
   identical policy / approval / audit; over `/mcp` a denied or unknown op reads as
-  `unknown tool` to the caller (least privilege) yet is audited exactly as on the REST path,
+  `unknown tool` to the caller (least privilege) yet is audited through the same lifecycle,
   auth failure is HTTP 401, and a per-caller throttle is HTTP 429. There is **no** approval
   callback route; resolution is poll-only by design (nod's callbacks are unauthenticated, so
   a receiver would be forgeable).
@@ -60,10 +60,10 @@ GET  /v1/requests/<id>           poll a request (owner only) -> status + result 
 POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
 ```
 
-- Both ingress framings converge here: whether a call arrived as REST `/v1/actions` or as a
+- Both ingress framings converge here: whether a call arrived as HTTP `/v1/actions` or as a
   native MCP `tools/call` on `POST /mcp`, the broker terminates the agent-facing frame, checks
-  policy, and makes this **one** REST call to the tool. Frames are never relayed verbatim to a
-  tool; tools speak REST.
+  policy, and makes one transport-specific call to the tool. Frames are never relayed verbatim to
+  a tool.
 - The broker adds `broker_request_id` and `caller: {"name": "..."}`.
 - **Optional per-tool shared secret (defense in depth, opt-in).** The broker may send an
   `X-Toolstack-Secret: <value>` header so the tool can verify the call came from the broker,
@@ -105,7 +105,7 @@ broker's timeout wins).
 
 ### 6. Admin → operator clients (JSON API)
 
-Distinct from the **agent-facing** broker REST (§1, bearer = a caller's broker token): the
+Distinct from the **agent-facing** broker API (§1, bearer = a caller's broker token): the
 admin also exposes an **operator** JSON API under `POST/GET /api/*` (`admin/api.py`) for native
 / automation clients, the same surface as the HTML panel (broker control, callers / policies /
 tokens, observe), JSON in/out. Auth is `POST /api/login {password}` → a signed-session bearer

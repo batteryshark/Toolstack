@@ -32,7 +32,6 @@ from toolyard.runner import DockerRunner, ProcessRunner
 REPO = Path(__file__).resolve().parents[2]
 TOOL_TOML = REPO / "tools" / "echo_api" / "toolyard.toml"
 TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
-TOOL_REST_TOML = REPO / "tools" / "rest_kv" / "toolyard.toml"
 SECRET = "dev-secret-123"
 
 
@@ -71,21 +70,6 @@ def _wait_for_mcp_tool(port: int, tries: int = 80) -> bool:
     for _ in range(tries):
         try:
             _mcp_call(port, "say", {})
-            return True
-        except Exception:
-            time.sleep(0.25)
-    return False
-
-
-def _rest_call(port, verb, arguments, request_id=1, caller="hermes"):
-    return HttpRuntime().execute(ToolOp("kv", verb, "read", port, "rest"),
-                                 arguments, request_id, caller)
-
-
-def _wait_for_rest_tool(port: int, tries: int = 80) -> bool:
-    for _ in range(tries):
-        try:
-            _rest_call(port, "GET", {"path": "/items"})
             return True
         except Exception:
             time.sleep(0.25)
@@ -170,7 +154,7 @@ class SharedSecretE2E(unittest.TestCase):
 class McpOverHttpE2E(unittest.TestCase):
     """T-021 AC#4: a real MCP JSON-RPC frame over HTTP -> real broker (/mcp) -> real echo
     tool process -> response. The broker terminates MCP, applies policy/audit, and forwards
-    through the same REST runtime that the /v1/actions path uses. No Docker needed."""
+    through the same request lifecycle that the /v1/actions path uses. No Docker needed."""
 
     def setUp(self):
         self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
@@ -241,37 +225,6 @@ class McpProcessRunnerE2E(unittest.TestCase):
         who = result["structuredContent"]
         self.assertEqual(who["caller"], "hermes")
         self.assertEqual(who["broker_request_id"], 99)
-
-
-class RestProcessRunnerE2E(unittest.TestCase):
-    """The rest transport end-to-end: the runner starts the real kv tool and the broker's
-    verb-as-op passthrough drives a full CRUD cycle through HttpRuntime.execute, including a
-    404 that passes through as data rather than raising. No Docker."""
-
-    def setUp(self):
-        self.tool = dataclasses.replace(load(TOOL_REST_TOML), port=_free_port())
-        self.runner = ProcessRunner()
-        self.running = self.runner.start(self.tool, {})  # kv ships with no secrets
-        self.addCleanup(self.runner.stop, self.running)
-        if not _wait_for_rest_tool(self.tool.port):
-            self.fail("kv tool did not start")
-
-    def _call(self, verb, arguments):
-        return _rest_call(self.tool.port, verb, arguments)
-
-    def test_crud_cycle_through_the_passthrough(self):
-        self.assertEqual(self._call("POST", {"path": "/items", "body": {"key": "x", "value": 1}})["status"], 201)
-        got = self._call("GET", {"path": "/items/x"})
-        self.assertEqual((got["status"], got["body"]), (200, {"key": "x", "value": 1}))
-        self._call("PUT", {"path": "/items/x", "body": {"value": 2}})
-        self.assertEqual(self._call("GET", {"path": "/items/x"})["body"]["value"], 2)
-        self.assertEqual(self._call("DELETE", {"path": "/items/x"})["status"], 200)
-        self.assertEqual(self._call("GET", {"path": "/items/x"})["status"], 404)  # gone now
-
-    def test_missing_resource_404_passes_through_as_data(self):
-        result = self._call("GET", {"path": "/items/ghost"})
-        self.assertEqual(result["status"], 404)
-        self.assertEqual(result["body"]["error"], "not_found")
 
 
 class ProcessRunnerHardening(unittest.TestCase):

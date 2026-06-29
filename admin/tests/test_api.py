@@ -167,29 +167,6 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(put.status_code, 200)
         self.assertEqual(put.json()["policy"]["tools"]["echo"]["shout"], "review")
 
-    def test_coarse_policy_put_refuses_to_flatten_path_scoped_rules(self):
-        self._create("hermes")
-        self.client.put("/api/callers/hermes/policy", headers=self._auth(),
-                        json={"allow": ["kv.GET /items/**"]})
-        # a path-blind PUT (no manages_path_rules flag) omitting it is refused (409)
-        resp = self.client.put("/api/callers/hermes/policy", headers=self._auth(),
-                               json={"allow": ["kv.GET"]})
-        self.assertEqual(resp.status_code, 409)
-        got = self.client.get("/api/callers/hermes/policy", headers=self._auth()).json()
-        self.assertIn("GET /items/**", got["policy"]["tools"]["kv"])  # rule survived
-
-    def test_path_aware_client_may_remove_a_path_rule(self):
-        self._create("hermes")
-        self.client.put("/api/callers/hermes/policy", headers=self._auth(),
-                        json={"allow": ["kv.GET /items/**"], "manages_path_rules": True})
-        # the path-aware client (macapp) declares the flag and may intentionally drop the rule
-        resp = self.client.put("/api/callers/hermes/policy", headers=self._auth(),
-                               json={"allow": ["kv.GET /other/**"], "manages_path_rules": True})
-        self.assertEqual(resp.status_code, 200)
-        kv = resp.json()["policy"]["tools"]["kv"]
-        self.assertIn("GET /other/**", kv)
-        self.assertNotIn("GET /items/**", kv)  # the old rule was removed, as intended
-
     def test_policy_missing_caller_404(self):
         self.assertEqual(self.client.get("/api/callers/ghost/policy", headers=self._auth()).status_code, 404)
 

@@ -1,9 +1,9 @@
 """Broker-native MCP endpoint (POST /mcp): JSON-RPC framing terminated at the broker,
-routed through the SAME auth / policy / approval / audit as the REST /v1/actions path.
+routed through the SAME auth / policy / approval / audit as the HTTP /v1/actions path.
 
 These go through the real gateway `handle(...)` so they prove the whole ingress: a bearer
 token is required, discovery is policy-filtered, an allow op executes end to end, and a
-review op parks (non-blocking) and resolves through the same poll the REST caller uses.
+review op parks (non-blocking) and resolves through the same request poll.
 """
 
 import json
@@ -35,7 +35,7 @@ def _tool_result(response):
 
 class Auth(BrokerTestCase):
     def test_unauthenticated_mcp_is_401(self):
-        # Same boundary as REST: only GET /v1/health is open; /mcp needs a token.
+        # Same boundary as the action API: only GET /v1/health is open; /mcp needs a token.
         r = handle("POST", "/mcp", {}, {"jsonrpc": "2.0", "id": 1, "method": "ping"}, self.make_ctx())
         self.assertEqual(r.status, 401)
 
@@ -127,24 +127,24 @@ class ToolsCall(BrokerTestCase):
         self.assertEqual(body["result"], {"echoed": {"m": "hi"}})
         self.assertEqual(self.ctx.runtime.calls[0][:3], ("echo", "say", {"m": "hi"}))
 
-    def test_allow_emits_same_terminal_audit_as_rest(self):
+    def test_allow_emits_terminal_audit(self):
         self._call("echo__say", {"m": "hi"})
         terminal = [e for e in self.ctx.audit.events()
                     if e["component"] == "request" and e["event_type"] == "completed"]
-        self.assertEqual(len(terminal), 1)  # one request.completed, exactly like REST
+        self.assertEqual(len(terminal), 1)
 
     def test_unknown_tool_is_error_result_and_is_audited(self):
         result = self._call("echo__ghost").body["result"]
         self.assertTrue(result["isError"])
         self.assertIn("unknown tool", result["content"][0]["text"])
-        # the probe is audited like REST's registry.tool_lookup_failed (not silently dropped)
+        # the probe is audited as registry.tool_lookup_failed (not silently dropped)
         pairs = [(e["component"], e["event_type"]) for e in self.ctx.audit.events()]
         self.assertIn(("registry", "tool_lookup_failed"), pairs)
 
-    def test_denied_op_is_hidden_in_result_but_audited_like_rest(self):
+    def test_denied_op_is_hidden_in_result_but_audited(self):
         # echo.secret is registered but not granted. Least privilege hides "denied" from the
         # caller (reads as "unknown"), but the denial is still recorded; the same
-        # policy.decision_deny + request.denied trail REST writes, so a probe stays queryable.
+        # policy.decision_deny + request.denied trail stays queryable.
         result = self._call("echo__secret").body["result"]
         self.assertTrue(result["isError"])
         self.assertIn("unknown tool", result["content"][0]["text"])
@@ -157,7 +157,7 @@ class ToolsCall(BrokerTestCase):
         self._call("echo__say", {"m": "hi", "_reason": "because"})
         self.assertEqual(self.ctx.runtime.calls[0][2], {"m": "hi"})
 
-    def test_review_parks_nonblocking_then_resolves_like_rest(self):
+    def test_review_parks_nonblocking_then_resolves(self):
         surface = FakeSurface(approval.PENDING)
         ctx = self.make_ctx(catalog={"echo": {"shout": "high"}}, surface=surface)
         token = seed_caller(ctx.store, "hermes", review=["echo.shout"])
@@ -171,10 +171,10 @@ class ToolsCall(BrokerTestCase):
         rid = body["request_id"]
         self.assertEqual(ctx.runtime.calls, [])  # tool has NOT run yet
 
-        # the agent's reason rode to the human approver (redacted), as on the REST path
+        # the agent's reason rode to the human approver (redacted)
         self.assertIn("please review", surface.opened[0].justification)
 
-        # resolution uses the very same poll a REST caller uses
+        # resolution uses the regular request poll
         surface.set(approval.APPROVED, approver="owner")
         poll = handle("GET", f"/v1/requests/{rid}", _bearer(token), {}, ctx)
         self.assertEqual(poll.body["status"], "ok")
@@ -192,11 +192,11 @@ class RateLimit(BrokerTestCase):
         self.assertEqual(first.status, 200)
         self.assertFalse(first.body["result"]["isError"])
 
-        # over the limit -> HTTP 429 (like REST), a JSON-RPC error rather than a tool result
+        # over the limit -> HTTP 429, a JSON-RPC error rather than a tool result
         second = _mcp(ctx, token, "tools/call", {"name": "echo__say", "arguments": {}})
         self.assertEqual(second.status, 429)
         self.assertIn("rate_limited", second.body["error"]["message"])
-        # the throttle is queryable in audit with the real outcome (parity with REST's 429)
+        # the throttle is queryable in audit with the real outcome
         outcomes = [(e["component"], e["event_type"], e["outcome"]) for e in ctx.audit.events()]
         self.assertIn(("gateway", "response_returned", "rate_limited"), outcomes)
 

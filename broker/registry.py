@@ -17,16 +17,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Tool transports the broker knows how to route. "api" -> POST /v1/actions/<op>; "mcp" ->
-# streamable-HTTP MCP client; "rest" -> verb-as-op passthrough (see broker/runtime.py). An
-# unknown type is rejected at load. Mirrors toolyard/config.py and admin/tool_authoring.py
-# (independent packages, so the set is duplicated, not shared).
-TOOL_TYPES = ("api", "mcp", "rest")
-
-# For a "rest" tool the risk is DEFINED by the verb, not the manifest, so the broker derives
-# it here; the approval card and discovery then show the right risk even for a hand-written
-# toolyard.toml. Mirrors admin/tool_authoring.REST_VERB_RISK (independent package, duplicated).
-REST_VERB_RISK = {"GET": "read", "POST": "write", "PUT": "write",
-                  "PATCH": "write", "DELETE": "destructive"}
+# streamable-HTTP MCP client. An unknown type is rejected at load. Mirrors toolyard/config.py
+# and admin/tool_authoring.py (independent packages, so the set is duplicated, not shared).
+TOOL_TYPES = ("api", "mcp")
 
 # A tool id is the routing key and a directory name; it must match this charset, and crucially
 # must NOT contain a dot. A policy spec is split on the FIRST dot into (tool, op) (see
@@ -42,10 +35,6 @@ class ToolOp:
     risk: str
     port: int
     type: str
-    verb: str | None = None           # rest: the HTTP method (a named op's `verb`, or the op-as-verb
-    #                                   for a bare-verb passthrough); None for api / mcp.
-    path_template: str | None = None  # rest *named* op: the RFC 6570-style path template the broker
-    #                                   fills from the caller's params; None = passthrough / api / mcp.
 
 
 class Registry:
@@ -90,35 +79,10 @@ class Registry:
             )
         ops = {}
         for o in data.get("operations", []):
-            risk = o.get("risk", "unknown")
-            verb, template = None, None
-            if tool_type == "rest":
-                template = o.get("path")
-                if template is not None:
-                    # named op: `name` is a label, `verb` is the method, `path` is the template the
-                    # broker fills from the caller's params (so the caller picks a named op + fills
-                    # blanks, never constructs a free path). risk derives from the verb.
-                    verb = str(o.get("verb", "")).upper()
-                    if verb not in REST_VERB_RISK:
-                        raise ValueError(
-                            f"{toml_path}: rest op {o['name']!r} declares a path, so it needs a "
-                            f"verb (one of {', '.join(REST_VERB_RISK)})")
-                    if not (isinstance(template, str) and template.startswith("/")):
-                        raise ValueError(
-                            f"{toml_path}: rest op {o['name']!r} path must start with '/'")
-                else:
-                    # bare-verb passthrough (the escape hatch): the name IS the verb, the caller
-                    # supplies the path, and policy globs it. risk still derives from the verb.
-                    verb = o["name"].upper()
-                # the verb defines the risk; override the manifest (case-insensitively) so a
-                # mislabelled or hand-written rest op can't misrepresent risk on the approval card
-                risk = REST_VERB_RISK.get(verb, risk)
             ops[o["name"]] = {
-                "risk": risk,
+                "risk": o.get("risk", "unknown"),
                 "description": o.get("description", ""),
                 "args": o.get("args", []),
-                "verb": verb,
-                "template": template,
             }
         # NOTE: data["secrets"] is deliberately never read here.
         catalog[tool_id] = {"port": port, "type": tool_type, "ops": ops}
@@ -150,26 +114,20 @@ class Registry:
         entry = self._catalog.get(tool)
         if entry is None or op not in entry["ops"]:
             return None
-        meta = entry["ops"][op]
-        return ToolOp(tool, op, meta["risk"], entry["port"], entry["type"],
-                      verb=meta.get("verb"), path_template=meta.get("template"))
+        return ToolOp(tool, op, entry["ops"][op]["risk"], entry["port"], entry["type"])
 
     def describe(self, tool: str, op: str) -> dict | None:
         entry = self._catalog.get(tool)
         if entry is None or op not in entry["ops"]:
             return None
         meta = entry["ops"][op]
-        # verb + path are set for a rest tool (a named op carries its template; a passthrough op
-        # carries its verb and a null path). They're absent (null) for api / mcp ops.
         return {"tool": tool, "op": op, "risk": meta["risk"],
-                "description": meta["description"], "args": meta["args"],
-                "verb": meta.get("verb"), "path": meta.get("template")}
+                "description": meta["description"], "args": meta["args"]}
 
     def list_ops(self) -> list[dict]:
         ops = []
         for tool, entry in self._catalog.items():
             for op, meta in entry["ops"].items():
                 ops.append({"tool": tool, "op": op, "type": entry["type"], "risk": meta["risk"],
-                            "description": meta["description"],
-                            "verb": meta.get("verb"), "path": meta.get("template")})
+                            "description": meta["description"]})
         return ops
