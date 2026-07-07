@@ -122,14 +122,17 @@ public struct RemovedTool: Codable, Sendable {
     public let removed: String
 }
 
-/// The active secret backend (deployment-wide). `path` (file/vault) or `host`/`environment`/
-/// `defaultVault` (Infisical) are present depending on `name`.
+/// The active secret backend (deployment-wide). `path` (file/vault) or
+/// `host`/`environment`/`defaultVault`/`identityConfigured` (Infisical) are present
+/// depending on `name`.
 public struct SecretBackend: Codable, Sendable {
     public let name: String   // "file" | "vault" | "infisical"
     public let path: String?
     public let host: String?
     public let environment: String?
     public let defaultVault: String?
+    public let organizationSlug: String?
+    public let identityConfigured: Bool?
 }
 
 public struct ToolsResponse: Codable, Sendable {

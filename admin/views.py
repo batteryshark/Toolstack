@@ -715,12 +715,15 @@ def _secret_backend_note(backend: dict | None) -> str:
         return ""
     if backend["name"] == "infisical":
         dv = esc(backend.get("default_vault") or "(unset)")
+        identity = "configured" if backend.get("identity_configured") else "missing"
         return ("<p class='muted'>Secret backend: <strong>Infisical</strong> "
                 f"(host <code>{esc(backend.get('host', ''))}</code>, "
-                f"env <code>{esc(backend.get('environment', ''))}</code>). Each secret resolves "
+                f"env <code>{esc(backend.get('environment', ''))}</code>, "
+                f"identity <code>{identity}</code>). Each secret resolves "
                 "from <em>vault</em> / <em>item</em> / <em>field</em>. Leave <em>vault</em> blank to "
                 f"use the default project <code>{dv}</code>; leave <em>item</em> blank to use the "
-                "tool id. The per-item machine identity must have a matching credentials file.</p>")
+                "tool id. Toolstack logs in once with the deployment's Infisical machine "
+                "identity; tools and callers never receive that credential.</p>")
     if backend["name"] == "vault":
         return ("<p class='muted'>Secret backend: <strong>local vault</strong> (encrypted, "
                 f"<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "

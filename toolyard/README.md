@@ -67,9 +67,10 @@ hands the values to the tool, never to the broker.
 - **Production (shipped):** `InfisicalBackend` resolves each secret from Infisical
   over its HTTP API (stdlib only, no added dependency). A `[[secrets]]` entry adds
   `vault` (Infisical project) and `item` (secret path; defaults to the tool id) next
-  to `field` (the secret key). Each tool authenticates with its own machine identity
-  read from `<credentials_dir>/<item>.env`. Configure with `TOOLSTACK_INFISICAL_HOST`
-  / `_ENVIRONMENT` / `_CREDENTIALS_DIR` / `_VAULT`.
+  to `field` (the secret key). Toolstack authenticates once with the deployment's
+  machine identity (`TOOLSTACK_INFISICAL_CLIENT_ID` / `_CLIENT_SECRET`, or the
+  unprefixed Infisical names). Configure with `TOOLSTACK_INFISICAL_HOST` /
+  `_ENVIRONMENT` / `_VAULT`.
 - **Backend selection:** `get_backend(name)` picks `file` (default), `vault`, or `infisical`;
   the CLI exposes `--secret-backend` and honors `$TOOLSTACK_SECRET_BACKEND`.
 - SOPS can follow behind the same `resolve()` interface.

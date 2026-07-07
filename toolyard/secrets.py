@@ -271,44 +271,39 @@ class InfisicalCredentials:
     client_secret: str
 
 
-def _load_infisical_credentials(path: Path) -> InfisicalCredentials:
-    """Read a machine-identity credentials file (`KEY=value`, `#` comments)."""
-    values: dict[str, str] = {}
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[len("export "):].strip()
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        values[key.strip().lower()] = value
-    client_id = values.get("infisical_client_id") or values.get("client_id")
-    client_secret = values.get("infisical_client_secret") or values.get("client_secret")
+def _infisical_credentials_from_env() -> InfisicalCredentials:
+    """Read the Toolstack-wide Infisical machine identity from the process env."""
+    client_id = (
+        os.environ.get("TOOLSTACK_INFISICAL_CLIENT_ID")
+        or os.environ.get("INFISICAL_CLIENT_ID")
+    )
+    client_secret = (
+        os.environ.get("TOOLSTACK_INFISICAL_CLIENT_SECRET")
+        or os.environ.get("INFISICAL_CLIENT_SECRET")
+    )
     if not client_id or not client_secret:
-        raise ValueError(f"{path}: missing INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET")
+        raise ValueError(
+            "infisical backend needs TOOLSTACK_INFISICAL_CLIENT_ID / "
+            "TOOLSTACK_INFISICAL_CLIENT_SECRET"
+        )
     return InfisicalCredentials(client_id, client_secret)
 
 
 class InfisicalBackend:
     """Resolve secrets from Infisical via its HTTP API (stdlib `urllib` only).
 
-    Each tool authenticates with its own machine identity: a credentials file
-    `<credentials_dir>/<item>.env` holding `INFISICAL_CLIENT_ID` /
-    `INFISICAL_CLIENT_SECRET`. A `[[secrets]]` entry maps to an Infisical lookup of
-    `vault` (project) / `item` (secret path) / `field` (secret key). `item` defaults
-    to the tool id; `vault` falls back to `$TOOLSTACK_INFISICAL_VAULT`.
+    Toolstack authenticates once with the deployment's Infisical machine identity.
+    A `[[secrets]]` entry maps to an Infisical lookup of `vault` (project) / `item`
+    (secret path) / `field` (secret key). `item` defaults to the tool id; `vault`
+    falls back to `$TOOLSTACK_INFISICAL_VAULT`.
     """
 
     def __init__(
         self,
         *,
         host: str,
-        credentials_dir: str | Path,
+        client_id: str,
+        client_secret: str,
         environment: str = "prod",
         organization_slug: str | None = None,
         default_vault: str | None = None,
@@ -316,14 +311,16 @@ class InfisicalBackend:
     ) -> None:
         if not host:
             raise ValueError("InfisicalBackend requires a host")
+        if not client_id or not client_secret:
+            raise ValueError("InfisicalBackend requires client_id and client_secret")
         self.host = host.rstrip("/")
-        self.credentials_dir = Path(credentials_dir)
+        self.credentials = InfisicalCredentials(client_id, client_secret)
         self.environment = environment
         self.organization_slug = organization_slug
         self.default_vault = default_vault
         self.timeout = timeout
-        self._tokens: dict[str, tuple[str, float]] = {}
-        self._project_ids: dict[tuple[str, str], str] = {}
+        self._token: tuple[str, float] | None = None
+        self._project_ids: dict[str, str] = {}
 
     @classmethod
     def from_env(cls) -> "InfisicalBackend":
@@ -334,13 +331,11 @@ class InfisicalBackend:
         host = env("HOST")
         if not host:
             raise ValueError("infisical backend needs TOOLSTACK_INFISICAL_HOST")
-        creds_dir = env("CREDENTIALS_DIR") or str(
-            Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-            / "toolstack" / "infisical"
-        )
+        creds = _infisical_credentials_from_env()
         return cls(
             host=host,
-            credentials_dir=creds_dir,
+            client_id=creds.client_id,
+            client_secret=creds.client_secret,
             environment=env("ENVIRONMENT", "prod"),
             organization_slug=env("ORGANIZATION_SLUG"),
             default_vault=env("VAULT"),
@@ -366,13 +361,12 @@ class InfisicalBackend:
         if not vault:
             raise ValueError(f"{tool_def.id}.{name}: no vault for write-back")
         item = spec.item or tool_def.id
-        creds = self._credentials_for(item)
-        project_id = self._project_id(creds, vault)
+        project_id = self._project_id(vault)
         path = "/" + item.strip("/") if item.strip("/") else "/"
         self._request(
             "PATCH",
             f"{self.host}/api/v4/secrets/{urllib.parse.quote(spec.field, safe='')}",
-            self._auth(creds),
+            self._auth(),
             {
                 "projectId": project_id,
                 "environment": self.environment,
@@ -384,8 +378,7 @@ class InfisicalBackend:
 
     # --- Infisical API ----------------------------------------------------------
     def _resolve_one(self, vault: str, item: str, field: str) -> str:
-        creds = self._credentials_for(item)
-        project_id = self._project_id(creds, vault)
+        project_id = self._project_id(vault)
         path = "/" + item.strip("/") if item.strip("/") else "/"
         params = {
             "projectId": project_id,
@@ -395,7 +388,7 @@ class InfisicalBackend:
             "expandSecretReferences": "true",
             "includeImports": "true",
         }
-        payload = self._get("/api/v4/secrets", self._auth(creds), params)
+        payload = self._get("/api/v4/secrets", self._auth(), params)
         for secret in self._iter_secrets(payload):
             if secret.get("secretKey") == field:
                 value = secret.get("secretValue")
@@ -416,19 +409,15 @@ class InfisicalBackend:
                 if isinstance(secret, dict):
                     yield secret
 
-    def _credentials_for(self, item: str) -> InfisicalCredentials:
-        stem = (item.strip("/") or "root").replace("/", "__")
-        path = self.credentials_dir / f"{stem}.env"
-        if not path.exists():
-            raise FileNotFoundError(f"missing Infisical credentials for {item!r}: expected {path}")
-        return _load_infisical_credentials(path)
-
-    def _access_token(self, creds: InfisicalCredentials) -> str:
+    def _access_token(self) -> str:
         now = time.time()
-        cached = self._tokens.get(creds.client_id)
+        cached = self._token
         if cached and now < cached[1] - 30:
             return cached[0]
-        body = {"clientId": creds.client_id, "clientSecret": creds.client_secret}
+        body = {
+            "clientId": self.credentials.client_id,
+            "clientSecret": self.credentials.client_secret,
+        }
         if self.organization_slug:
             body["organizationSlug"] = self.organization_slug
         payload = self._post("/api/v1/auth/universal-auth/login", {}, body)
@@ -437,17 +426,16 @@ class InfisicalBackend:
             raise ValueError("Infisical login response did not include accessToken")
         ttl = payload.get("expiresIn")
         ttl = float(ttl) if isinstance(ttl, (int, float)) else 600.0
-        self._tokens[creds.client_id] = (token, now + ttl)
+        self._token = (token, now + ttl)
         return token
 
-    def _auth(self, creds: InfisicalCredentials) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._access_token(creds)}"}
+    def _auth(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._access_token()}"}
 
-    def _project_id(self, creds: InfisicalCredentials, vault: str) -> str:
-        key = (creds.client_id, vault)
-        if key in self._project_ids:
-            return self._project_ids[key]
-        payload = self._get("/api/v1/projects", self._auth(creds), {})
+    def _project_id(self, vault: str) -> str:
+        if vault in self._project_ids:
+            return self._project_ids[vault]
+        payload = self._get("/api/v1/projects", self._auth(), {})
         for project in payload.get("projects") or []:
             if not isinstance(project, dict):
                 continue
@@ -456,7 +444,7 @@ class InfisicalBackend:
                 pid = project.get("id") or project.get("_id")
                 if not isinstance(pid, str) or not pid:
                     raise ValueError(f"Infisical project {vault!r} has no id")
-                self._project_ids[key] = pid
+                self._project_ids[vault] = pid
                 return pid
         raise KeyError(f"Infisical project {vault!r} not found")
 
@@ -489,7 +477,7 @@ class InfisicalBackend:
                 exc.close()  # release the response; otherwise it leaks (ResourceWarning)
                 if code in (401, 403):
                     raise RuntimeError(f"Infisical {method} {path}: HTTP {code}, auth failed "
-                                       "(check the machine-identity credentials)") from exc
+                                       "(check the Toolstack Infisical machine identity)") from exc
                 if code != 429 and code < 500:
                     raise RuntimeError(f"Infisical {method} {path}: HTTP {code}") from exc
                 transient = RuntimeError(f"Infisical {method} {path}: HTTP {code} (transient)")

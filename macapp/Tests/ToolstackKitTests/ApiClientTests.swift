@@ -218,10 +218,15 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testSecretBackendDecodes() async throws {
-        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"name":"vault","path":"/data/vault.json"}"#.utf8)) }
+        StubURLProtocol.handler = { _ in
+            (200, [:], Data(#"{"name":"infisical","host":"https://infisical.example.test","default_vault":"ToolServer","organization_slug":"org","identity_configured":true}"#.utf8))
+        }
         let backend = try await makeClient(token: "t").secretBackend()
-        XCTAssertEqual(backend.name, "vault")
-        XCTAssertEqual(backend.path, "/data/vault.json")
+        XCTAssertEqual(backend.name, "infisical")
+        XCTAssertEqual(backend.host, "https://infisical.example.test")
+        XCTAssertEqual(backend.defaultVault, "ToolServer")
+        XCTAssertEqual(backend.organizationSlug, "org")
+        XCTAssertEqual(backend.identityConfigured, true)
     }
 
     func testAddToolPostsSource() async throws {
