@@ -437,8 +437,8 @@ struct ToolsPane: View {
                 Text("writable").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
                     .background(.orange.opacity(0.2), in: .capsule)
             }
-            if let vault = secret.vault, !vault.isEmpty {
-                Text(vault).font(.caption2).foregroundStyle(.secondary)
+            if let item = secret.item, !item.isEmpty {
+                Text(item).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
         }
@@ -668,8 +668,7 @@ struct ToolEditor: View {
                     .buttonStyle(.borderless)
             }
             HStack {
-                TextField("vault (Infisical, optional)", text: sec.vault)
-                TextField("item (Infisical, optional)", text: sec.item)
+                TextField("path (Infisical, optional)", text: sec.item)
             }
             .font(.caption).foregroundStyle(.secondary)
         }
@@ -690,12 +689,10 @@ struct ToolEditor: View {
         let decls: [SecretDecl] = secrets.compactMap { row in
             let name = row.name.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return nil }   // a blank row is dropped, mirroring the server
-            let vault = row.vault.trimmingCharacters(in: .whitespaces)
             let item = row.item.trimmingCharacters(in: .whitespaces)
             return SecretDecl(name: name,
                               field: row.field.trimmingCharacters(in: .whitespaces),
                               writable: row.writable,
-                              vault: vault.isEmpty ? nil : vault,
                               item: item.isEmpty ? nil : item)
         }
         await model.updateTool(id: tool.id, description: description, secrets: decls)
@@ -711,15 +708,14 @@ struct EditableSecret: Identifiable {
     var name: String
     var field: String
     var writable: Bool
-    var vault: String
     var item: String
 
     init(from decl: SecretDecl) {
         name = decl.name; field = decl.field; writable = decl.writable
-        vault = decl.vault ?? ""; item = decl.item ?? ""
+        item = decl.item ?? ""
     }
 
-    init() { name = ""; field = ""; writable = false; vault = ""; item = "" }
+    init() { name = ""; field = ""; writable = false; item = "" }
 }
 
 /// Provision a tool's secret VALUES into the local vault. Values are write-only: typed into a
@@ -1126,7 +1122,6 @@ struct ToolAuthoringForm: View {
             "secrets": secrets.compactMap { sec -> [String: Any]? in
                 guard !s(sec.name).isEmpty else { return nil }
                 var d: [String: Any] = ["name": s(sec.name), "field": s(sec.field), "writable": sec.writable]
-                if !s(sec.vault).isEmpty { d["vault"] = s(sec.vault) }
                 if !s(sec.item).isEmpty { d["item"] = s(sec.item) }
                 return d
             },

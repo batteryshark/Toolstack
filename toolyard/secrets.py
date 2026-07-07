@@ -293,9 +293,9 @@ class InfisicalBackend:
     """Resolve secrets from Infisical via its HTTP API (stdlib `urllib` only).
 
     Toolstack authenticates once with the deployment's Infisical machine identity.
-    A `[[secrets]]` entry maps to an Infisical lookup of `vault` (project) / `item`
-    (secret path) / `field` (secret key). `item` defaults to the tool id; `vault`
-    falls back to `$TOOLSTACK_INFISICAL_VAULT`.
+    The Infisical project/vault is deployment config (`$TOOLSTACK_INFISICAL_VAULT`).
+    A `[[secrets]]` entry maps to an Infisical lookup of `item` (secret path) /
+    `field` (secret key). `item` defaults to the tool id.
     """
 
     def __init__(
@@ -342,14 +342,11 @@ class InfisicalBackend:
         )
 
     def resolve(self, tool_def: ToolDef) -> dict[str, str]:
+        if not tool_def.secrets:
+            return {}
+        vault = self._vault()
         resolved: dict[str, str] = {}
         for spec in tool_def.secrets:
-            vault = spec.vault or self.default_vault
-            if not vault:
-                raise ValueError(
-                    f"{tool_def.id}.{spec.name}: no vault (set [[secrets]].vault "
-                    "or $TOOLSTACK_INFISICAL_VAULT)"
-                )
             item = spec.item or tool_def.id
             resolved[spec.name] = self._resolve_one(vault, item, spec.field)
         return resolved
@@ -357,9 +354,7 @@ class InfisicalBackend:
     def update(self, tool_def: ToolDef, name: str, value: str) -> None:
         """Patch a writable field back to Infisical (message-contracts §4)."""
         spec = writable_spec(tool_def, name)
-        vault = spec.vault or self.default_vault
-        if not vault:
-            raise ValueError(f"{tool_def.id}.{name}: no vault for write-back")
+        vault = self._vault()
         item = spec.item or tool_def.id
         project_id = self._project_id(vault)
         path = "/" + item.strip("/") if item.strip("/") else "/"
@@ -377,6 +372,11 @@ class InfisicalBackend:
         )
 
     # --- Infisical API ----------------------------------------------------------
+    def _vault(self) -> str:
+        if not self.default_vault:
+            raise ValueError("infisical backend needs TOOLSTACK_INFISICAL_VAULT")
+        return self.default_vault
+
     def _resolve_one(self, vault: str, item: str, field: str) -> str:
         project_id = self._project_id(vault)
         path = "/" + item.strip("/") if item.strip("/") else "/"

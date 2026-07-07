@@ -47,19 +47,17 @@ public struct OpInfo: Codable, Sendable, Identifiable, Equatable {
 }
 
 /// A tool's secret DECLARATION (not a value): the file the tool reads (`name`), the backend
-/// `field` it resolves from, whether the tool may write it back, and the Infisical vault/item.
+/// `field` it resolves from, whether the tool may write it back, and the Infisical path.
 public struct SecretDecl: Codable, Sendable, Identifiable, Equatable {
     public let name: String
     public let field: String
     public let writable: Bool
-    public let vault: String?
     public let item: String?
     public var id: String { name }
 
-    public init(name: String, field: String, writable: Bool,
-                vault: String? = nil, item: String? = nil) {
+    public init(name: String, field: String, writable: Bool, item: String? = nil) {
         self.name = name; self.field = field; self.writable = writable
-        self.vault = vault; self.item = item
+        self.item = item
     }
 }
 

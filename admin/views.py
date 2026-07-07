@@ -52,7 +52,7 @@ pre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:aut
 .card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}
 .argrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
 .argrow input{min-width:120px;}
-.sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}
+.sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}
 .sechead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 2px;}
 .secrow input{min-width:0;width:100%;}
 .colcenter{justify-self:center;text-align:center;}
@@ -172,13 +172,11 @@ _TOOL_EDITOR_JS = """
     s = s||{};
     var row = mk('<div class="secrow"><input class="sec-name" placeholder="e.g. api_key">'
       + '<input class="sec-field" placeholder="e.g. API_KEY">'
-      + '<input class="sec-vault" placeholder="default">'
-      + '<input class="sec-item" placeholder="tool id">'
+      + '<input class="sec-item" placeholder="tool id or path">'
       + '<span class="colcenter"><input type="checkbox" class="sec-writable"></span>'
       + '<button type="button" class="rm">remove</button></div>');
     row.querySelector('.sec-name').value = s.name||'';
     row.querySelector('.sec-field').value = s.field||'';
-    row.querySelector('.sec-vault').value = s.vault||'';
     row.querySelector('.sec-item').value = s.item||'';
     row.querySelector('.sec-writable').checked = !!s.writable;
     row.querySelector('.rm').onclick = function(){row.remove();};
@@ -291,7 +289,6 @@ _TOOL_EDITOR_JS = """
       secrets: [].map.call(secs.querySelectorAll('.secrow'), function(r){
         return {name: r.querySelector('.sec-name').value,
                 field: r.querySelector('.sec-field').value,
-                vault: r.querySelector('.sec-vault').value,
                 item: r.querySelector('.sec-item').value,
                 writable: r.querySelector('.sec-writable').checked};
       })
@@ -709,8 +706,8 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, err
 
 def _secret_backend_note(backend: dict | None) -> str:
     """A muted line telling the operator where secrets resolve from, so they can see at a
-    glance whether a tool's secrets live in Infisical (and which project) and what the
-    vault/item fields mean for the active backend."""
+    glance whether a tool's secrets live in Infisical and what the path field means for
+    the active backend."""
     if not backend:
         return ""
     if backend["name"] == "infisical":
@@ -720,18 +717,18 @@ def _secret_backend_note(backend: dict | None) -> str:
                 f"(host <code>{esc(backend.get('host', ''))}</code>, "
                 f"env <code>{esc(backend.get('environment', ''))}</code>, "
                 f"identity <code>{identity}</code>). Each secret resolves "
-                "from <em>vault</em> / <em>item</em> / <em>field</em>. Leave <em>vault</em> blank to "
-                f"use the default project <code>{dv}</code>; leave <em>item</em> blank to use the "
-                "tool id. Toolstack logs in once with the deployment's Infisical machine "
-                "identity; tools and callers never receive that credential.</p>")
+                f"inside project <code>{dv}</code> from <em>path</em> / <em>field</em>. Leave "
+                "<em>path</em> blank to use the tool id. Toolstack logs in once with the "
+                "deployment's Infisical machine identity; tools and callers never receive "
+                "that credential.</p>")
     if backend["name"] == "vault":
         return ("<p class='muted'>Secret backend: <strong>local vault</strong> (encrypted, "
-                f"<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "
-                "fields are ignored; only <em>field</em> (the key under <code>[tool_id]</code>) is "
+                f"<code>{esc(backend.get('path', ''))}</code>). The <em>path</em> "
+                "field is ignored; only <em>field</em> (the key under <code>[tool_id]</code>) is "
                 "used. Provision values with <code>toolyard vault-set</code>.</p>")
     return ("<p class='muted'>Secret backend: <strong>file</strong> "
-            f"(<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "
-            "fields are ignored by this backend; only <em>field</em> (the key under "
+            f"(<code>{esc(backend.get('path', ''))}</code>). The <em>path</em> field is "
+            "ignored by this backend; only <em>field</em> (the key under "
             "<code>[tool_id]</code>) is used.</p>")
 
 
@@ -833,8 +830,7 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         "<div class='sechead'>"
         "<span>Name <span class='muted'>(file the tool reads)</span></span>"
         "<span>Field <span class='muted'>(backend key)</span></span>"
-        "<span>Vault <span class='muted'>(project)</span></span>"
-        "<span>Item <span class='muted'>(path)</span></span>"
+        "<span>Path <span class='muted'>(Infisical)</span></span>"
         "<span class='colcenter'>Writable</span><span></span></div>"
         "<div id='secrets'></div><button type='button' id='add-secret'>Add secret</button>"
         "<input type='hidden' name='tool_json' id='tool_json'>"

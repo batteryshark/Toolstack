@@ -238,7 +238,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         except Exception as exc:
             log.warning("could not read tool ops for the policy editor: %s", exc)
             # tools still listed (without ops) if the registry can't be read
-        # attach each tool's secret DECLARATIONS (name/field/writable/vault/item) for display.
+        # attach each tool's secret DECLARATIONS (name/field/writable/item) for display.
         # The broker registry ignores [[secrets]], but the admin (control plane) may show them;
         # these are declarations, never values.
         try:
@@ -251,7 +251,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             td = defs.get(tool["id"])
             tool["description"] = td.description if td else ""
             tool["secrets"] = [
-                {"name": s.name, "field": s.field, "writable": s.writable, "vault": s.vault, "item": s.item}
+                {"name": s.name, "field": s.field, "writable": s.writable, "item": s.item}
                 for s in (td.secrets if td else ())
             ]
             tool["source"] = tool_sources.read_source(tool["path"])  # sidecar (path/github) or null

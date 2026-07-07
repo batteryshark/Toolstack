@@ -40,7 +40,6 @@ FORWARDER_COMMAND = "python3 -m toolstack_forwarder"
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
 _NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")             # operation / argument names
 _SECRET_RE = re.compile(r"^[A-Za-z0-9_.-]+$")         # also used as a filename
-_VAULT_RE = re.compile(r"^[A-Za-z0-9 _.-]+$")         # Infisical project name/slug/id
 _ITEM_RE = re.compile(r"^[A-Za-z0-9_./-]+$")          # Infisical secret path (may have /)
 _HEADER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _TEMPLATE_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -106,12 +105,10 @@ def normalize(data: dict) -> dict:
         nm = s(sec.get("name"))
         if not nm:
             continue
-        # vault/item are the Infisical coordinates (blank -> backend defaults: vault from
-        # $TOOLSTACK_INFISICAL_VAULT, item from the tool id). Ignored by the file backend.
+        # item is the Infisical secret path (blank -> tool id). Ignored by the file backend.
         secrets.append({
             "name": nm,
             "field": s(sec.get("field")),
-            "vault": s(sec.get("vault")),
             "item": s(sec.get("item")),
             "writable": bool(sec.get("writable")),
         })
@@ -119,7 +116,6 @@ def normalize(data: dict) -> dict:
         secrets.insert(0, {
             "name": "broker_channel",
             "field": _default_broker_channel_field(tool_id),
-            "vault": "",
             "item": "",
             "writable": False,
         })
@@ -276,10 +272,8 @@ def validate(data: dict) -> list[str]:
             errors.append(f"secret name '{sec['name']}' has invalid characters")
         if not sec["field"]:
             errors.append(f"secret '{sec['name']}' needs a backend field")
-        if sec.get("vault") and not _VAULT_RE.match(sec["vault"]):
-            errors.append(f"secret '{sec['name']}' vault has invalid characters")
         if sec.get("item") and not _ITEM_RE.match(sec["item"]):
-            errors.append(f"secret '{sec['name']}' item has invalid characters")
+            errors.append(f"secret '{sec['name']}' path has invalid characters")
     if data["type"] == "rest":
         if "broker_channel" not in {sec["name"] for sec in data["secrets"]}:
             errors.append("rest tools must declare a broker_channel secret")
@@ -386,8 +380,6 @@ def to_toml(data: dict) -> str:
                     _rule_inline(r) for r in o["secret_update_rules"]) + " ]")
     for sec in data["secrets"]:
         out += ["", "[[secrets]]", f"name = {_s(sec['name'])}", f"field = {_s(sec['field'])}"]
-        if sec.get("vault"):
-            out.append(f"vault = {_s(sec['vault'])}")
         if sec.get("item"):
             out.append(f"item = {_s(sec['item'])}")
         if sec["writable"]:
