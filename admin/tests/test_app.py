@@ -351,6 +351,19 @@ class AdminApp(unittest.TestCase):
         self.assertIn("data-filter-sel='audit-table'", html)       # audit outcome dropdown
         self.assertIn("data-filter-for='requests-table'", html)    # requests text filter
         self.assertIn("All statuses", html)
+        self.assertIn("Clear audit", html)
+        self.assertIn("<th>Time</th>", html)
+
+    def test_clear_audit_route_removes_events(self):
+        self._login()
+        csrf = _csrf(self.client.get("/").text)
+        store = self._store()
+        self.addCleanup(store.close)
+        store.append_audit(123, "admin", "thing_happened", "ok", "corr", None, {})
+        self.assertTrue(store.recent_audit())
+        r = self.client.post("/audit/clear", data={"_csrf": csrf})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(store.recent_audit(), [])
 
     def test_remove_root_tool_deletes_its_folder(self):
         self._login()

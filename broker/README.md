@@ -34,8 +34,8 @@ The authority boundary: the only address an agent can reach. See [../plan.md](..
   with persisted request state and an append-only **audit log in SQLite**.
 - **REST forwarder tools**: `type = "rest"` tools are named operations backed by the
   generic `toolstack_forwarder` process. The broker calls `/sendrequest` with a JSON
-  envelope and a required `X-Toolstack-Secret`; approval/audit show endpoint templates,
-  never hydrated values or bodies.
+  envelope and the same optional `X-Toolstack-Secret` used for api / mcp tools;
+  approval/audit show endpoint templates, never hydrated values or bodies.
 - **Approval**: a `review` operation opens a nod decision via the `NodSurface`
   adapter and parks the request; the broker executes only on a **confirmed
   approval**, denies on rejection, and **fails closed on its own timeout** (poll is

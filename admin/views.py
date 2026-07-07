@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html
 import json
+import time
 from typing import Any
 
 _CSS = """
@@ -50,8 +51,10 @@ pre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:aut
 .risk.write{background:#fff6df;color:#7a5100;}
 .risk.destructive{background:#ffe8e8;color:#8c1f1f;}
 .card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}
-.argrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
-.argrow input{min-width:120px;}
+.argrow,.headerrow,.rulerow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
+.argrow input,.headerrow input{min-width:120px;}
+.rulerow input,.rulerow select{min-width:130px;}
+.rest-sub{display:grid;gap:6px;margin-top:8px;}
 .sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}
 .sechead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 2px;}
 .secrow input{min-width:0;width:100%;}
@@ -69,6 +72,7 @@ nav.appnav a.active{background:rgba(255,255,255,.16);color:#fff;}
 .filterbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
 .filterbar input[type=search]{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}
 .filterbar select{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}
+.audit-latest{background:#fff9df;}
 """
 
 _JS = """
@@ -122,9 +126,26 @@ _TOOL_EDITOR_JS = """
   var TOOL_TYPES = ["api","mcp","rest"];   // matches admin TOOL_TYPES
   var REST_VERBS = ["GET","POST","PUT","PATCH","DELETE"];
   var REST_BODY_KINDS = ["none","text","binary"];
+  var REST_RULE_RESPONSE_TYPES = ["json","xml","form","plaintext"];
   function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
   function opts(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+v+'</option>';}).join('');}
   function riskOpts(sel){return RISK_CHOICES.indexOf(sel)<0 ? [sel].concat(RISK_CHOICES) : RISK_CHOICES;}
+  function currentSecretNames(){
+    return [].map.call(document.querySelectorAll('#secrets .sec-name'), function(n){return n.value.trim();}).filter(Boolean);
+  }
+  function secretOpts(sel){
+    var values = currentSecretNames();
+    if (sel && values.indexOf(sel) < 0) values.unshift(sel);
+    if (!values.length) values = [""];
+    return opts(values, sel||values[0]||"");
+  }
+  function refreshRuleSecretOptions(){
+    [].forEach.call(document.querySelectorAll('.rule-secret'), function(sel){
+      var chosen = sel.value || sel.getAttribute('data-selected') || '';
+      sel.innerHTML = secretOpts(chosen);
+      if (chosen) sel.value = chosen;
+    });
+  }
 
   function argRow(a){
     a = a||{};
@@ -139,6 +160,29 @@ _TOOL_EDITOR_JS = """
     row.querySelector('.rm').onclick = function(){row.remove();};
     return row;
   }
+  function headerRow(h){
+    var row = mk('<div class="headerrow"><input class="header-name" placeholder="Header-Name">'
+      + '<button type="button" class="rm">remove</button></div>');
+    row.querySelector('.header-name').value = h||'';
+    row.querySelector('.rm').onclick = function(){row.remove();};
+    return row;
+  }
+  function ruleRow(r){
+    r = r||{};
+    var row = mk('<div class="rulerow">'
+      + '<select class="rule-secret"></select>'
+      + '<select class="rule-response-type">'+opts(REST_RULE_RESPONSE_TYPES, r.response_type||'json')+'</select>'
+      + '<input class="rule-extract-path" placeholder="extract path">'
+      + '<input class="rule-match-status" placeholder="2xx or 200">'
+      + '<button type="button" class="rm">remove</button></div>');
+    row.querySelector('.rule-secret').setAttribute('data-selected', r.secret_name||'');
+    row.querySelector('.rule-secret').innerHTML = secretOpts(r.secret_name||'');
+    if (r.secret_name) row.querySelector('.rule-secret').value = r.secret_name;
+    row.querySelector('.rule-extract-path').value = r.extract_path||'';
+    row.querySelector('.rule-match-status').value = r.match_status||'2xx';
+    row.querySelector('.rm').onclick = function(){row.remove();};
+    return row;
+  }
   function opCard(o){
     o = o||{};
     var card = mk('<div class="card opcard"><div class="row">'
@@ -149,22 +193,29 @@ _TOOL_EDITOR_JS = """
       + '<div class="row op-rest">'
       + '<select class="op-verb">'+opts(REST_VERBS, o.verb||'GET')+'</select>'
       + '<input class="op-path" placeholder="/items/{item_id}">'
-      + '<input class="op-headers" placeholder="allowed headers, comma separated">'
       + '<select class="op-body-kind">'+opts(REST_BODY_KINDS, o.body_kind||'none')+'</select>'
       + '<input class="op-body-content-type" placeholder="body content type"></div>'
+      + '<div class="op-rest rest-sub"><strong>Allowed headers</strong><div class="headers"></div>'
+      + '<button type="button" class="add-header">add header</button></div>'
+      + '<div class="op-rest rest-sub"><strong>Secret writeback rules</strong><div class="rules"></div>'
+      + '<button type="button" class="add-rule">add rule</button></div>'
       + '<div class="args"></div><button type="button" class="add-arg">add argument</button></div>');
     card.querySelector('.op-name').value = o.name||'';
     card.querySelector('.op-desc').value = o.description||'';
     card.querySelector('.op-verb').value = o.verb||'GET';
     card.querySelector('.op-path').value = o.path||'';
-    card.querySelector('.op-headers').value = (o.allowed_headers||[]).join(', ');
     card.querySelector('.op-body-kind').value = o.body_kind||'none';
     card.querySelector('.op-body-content-type').value = o.body_content_type||'';
-    card._secret_update_rules = o.secret_update_rules || [];
     card._body_substitution = o.body_substitution;
     var args = card.querySelector('.args');
+    var headers = card.querySelector('.headers');
+    var rules = card.querySelector('.rules');
     (o.args||[]).forEach(function(a){args.appendChild(argRow(a));});
+    (o.allowed_headers||[]).forEach(function(h){headers.appendChild(headerRow(h));});
+    (o.secret_update_rules||[]).forEach(function(r){rules.appendChild(ruleRow(r));});
     card.querySelector('.add-arg').onclick = function(){args.appendChild(argRow());};
+    card.querySelector('.add-header').onclick = function(){headers.appendChild(headerRow());};
+    card.querySelector('.add-rule').onclick = function(){rules.appendChild(ruleRow()); refreshRuleSecretOptions();};
     card.querySelector('.rm').onclick = function(){card.remove();};
     return card;
   }
@@ -179,7 +230,8 @@ _TOOL_EDITOR_JS = """
     row.querySelector('.sec-field').value = s.field||'';
     row.querySelector('.sec-item').value = s.item||'';
     row.querySelector('.sec-writable').checked = !!s.writable;
-    row.querySelector('.rm').onclick = function(){row.remove();};
+    row.querySelector('.sec-name').addEventListener('input', refreshRuleSecretOptions);
+    row.querySelector('.rm').onclick = function(){row.remove(); refreshRuleSecretOptions();};
     return row;
   }
 
@@ -195,8 +247,9 @@ _TOOL_EDITOR_JS = """
   (initial.operations && initial.operations.length ? initial.operations : [{}]).forEach(function(o){ops.appendChild(opCard(o));});
   var secs = document.getElementById('secrets');
   (initial.secrets||[]).forEach(function(s){secs.appendChild(secRow(s));});
+  refreshRuleSecretOptions();
   document.getElementById('add-op').onclick = function(){ops.appendChild(opCard()); syncType();};
-  document.getElementById('add-secret').onclick = function(){secs.appendChild(secRow());};
+  document.getElementById('add-secret').onclick = function(){secs.appendChild(secRow()); refreshRuleSecretOptions();};
   var f_type = document.getElementById('f_type');
 
   function syncType(){
@@ -268,7 +321,13 @@ _TOOL_EDITOR_JS = """
       image: document.getElementById('f_image').value,
       port: document.getElementById('f_port').value,
       operations: [].map.call(ops.querySelectorAll('.opcard'), function(card){
-        var headers = card.querySelector('.op-headers').value.split(',').map(function(h){return h.trim();}).filter(Boolean);
+        var headers = [].map.call(card.querySelectorAll('.headerrow .header-name'), function(h){return h.value.trim();}).filter(Boolean);
+        var rules = [].map.call(card.querySelectorAll('.rulerow'), function(r){
+          return {secret_name: r.querySelector('.rule-secret').value,
+                  response_type: r.querySelector('.rule-response-type').value,
+                  extract_path: r.querySelector('.rule-extract-path').value,
+                  match_status: r.querySelector('.rule-match-status').value};
+        }).filter(function(r){return r.secret_name || r.extract_path;});
         return {name: card.querySelector('.op-name').value,
                 risk: card.querySelector('.op-risk').value,
                 description: card.querySelector('.op-desc').value,
@@ -278,7 +337,7 @@ _TOOL_EDITOR_JS = """
                 body_kind: card.querySelector('.op-body-kind').value,
                 body_content_type: card.querySelector('.op-body-content-type').value,
                 body_substitution: card._body_substitution,
-                secret_update_rules: card._secret_update_rules || [],
+                secret_update_rules: rules,
                 args: [].map.call(card.querySelectorAll('.argrow'), function(r){
                   return {name: r.querySelector('.arg-name').value,
                           type: r.querySelector('.arg-type').value,
@@ -374,8 +433,8 @@ def _broker_section(broker: dict, log_tail: str, config: dict, csrf: str) -> str
                 + btn("restart", "Restart", not running))
     cfg_rows = "".join(f"<tr><td>{esc(k)}</td><td><code>{esc(v)}</code></td></tr>"
                        for k, v in config.items())
-    log_html = (f"<details><summary>Broker log</summary><pre>{esc(log_tail)}</pre></details>"
-                if log_tail else "")
+    log_body = log_tail if log_tail else "No broker log yet."
+    log_html = f"<details><summary>Broker log</summary><pre>{esc(log_body)}</pre></details>"
     return (
         "<section><h2>Broker</h2>"
         f"<p>{status}</p>"
@@ -479,20 +538,32 @@ def _requests_section(requests, caller_names) -> str:
             f"<tbody>{rows}</tbody></table></section>")
 
 
-def _audit_section(events) -> str:
+def _fmt_at(ts) -> str:
+    try:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(ts)))
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+def _audit_section(events, csrf: str) -> str:
+    latest = max((e["id"] for e in events), default=None)
     rows = "".join(
-        f"<tr data-row data-key=\"{esc(e['outcome'])}\">"
+        f"<tr data-row data-key=\"{esc(e['outcome'])}\" class=\"{'audit-latest' if e['id'] == latest else ''}\">"
+        f"<td>{esc(_fmt_at(e.get('at')))}</td>"
         f"<td>{esc(e['component'])}.{esc(e['event_type'])}</td>"
         f"<td>{esc(e['outcome'])}</td>"
         f"<td>{esc(e['request_id'] if e['request_id'] is not None else '')}</td>"
         f"<td><code>{esc(json.dumps(e['details']))}</code></td>"
         "</tr>"
         for e in events
-    ) or "<tr><td colspan='4' class='muted'>No audit events yet.</td></tr>"
+    ) or "<tr><td colspan='5' class='muted'>No audit events yet.</td></tr>"
     bar = _filterbar("audit-table", "Filter by caller / tool / event...", "All outcomes",
                      sorted({e["outcome"] for e in events}))
-    return ("<section><h2>Audit</h2>" + bar +
-            "<table id='audit-table'><thead><tr><th>Event</th><th>Outcome</th><th>Req</th><th>Details</th></tr></thead>"
+    clear = ("<form method='post' action='/audit/clear' class='inline-form' "
+             "onsubmit=\"return confirm('Clear the audit log?')\">"
+             f"{_csrf_field(csrf)}<button type='submit'>Clear audit</button></form>")
+    return ("<section><div class='toolbar'><h2>Audit</h2>" + clear + "</div>" + bar +
+            "<table id='audit-table'><thead><tr><th>Time</th><th>Event</th><th>Outcome</th><th>Req</th><th>Details</th></tr></thead>"
             f"<tbody>{rows}</tbody></table></section>")
 
 
@@ -503,7 +574,7 @@ def dashboard_view(*, user, csrf, broker, log_tail, config, callers, tokens,
         ("callers", "Callers", _callers_section(callers, csrf)),
         ("tokens", "Tokens", _tokens_section(tokens, csrf)),
         ("requests", "Requests", _requests_section(requests, caller_names)),
-        ("audit", "Audit", _audit_section(audit)),
+        ("audit", "Audit", _audit_section(audit, csrf)),
     ]
     bar = "".join(
         f"<button class='tab-button{' active' if i == 0 else ''}' type='button' "

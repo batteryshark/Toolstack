@@ -296,6 +296,18 @@ def create_app() -> FastAPI:
                                     surface=config.build_surface())
         return redirect("/")
 
+    @app.post("/audit/clear")
+    async def clear_audit(request: Request):
+        user = current_user(request)
+        if not user:
+            return redirect("/login")
+        data = await read_form(request)
+        if not csrf_ok(request, data):
+            return render_dashboard(request, user, error="Invalid CSRF token.")
+        with open_store(broker_config.load()) as store:
+            store.clear_audit()
+        return redirect("/#audit")
+
     # --- policy ---------------------------------------------------------------
     @app.get("/callers/{name}/policy")
     async def edit_policy(request: Request, name: str):

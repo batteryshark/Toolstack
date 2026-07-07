@@ -150,13 +150,11 @@ class Validate(unittest.TestCase):
 
 
 class RestAuthoring(unittest.TestCase):
-    def test_normalize_defaults_forwarder_and_broker_channel(self):
+    def test_normalize_defaults_forwarder_without_broker_channel(self):
         data = tool_authoring.normalize(REST_FULL)
         self.assertEqual(data["command"], "python3 -m toolstack_forwarder")
         self.assertEqual(data["operations"][0]["risk"], "read")  # derived from GET
-        self.assertIn("broker_channel", {s["name"] for s in data["secrets"]})
-        broker = next(s for s in data["secrets"] if s["name"] == "broker_channel")
-        self.assertEqual(broker["field"], "TOOLSTACK_TOOL_SECRET_JIRA")
+        self.assertNotIn("broker_channel", {s["name"] for s in data["secrets"]})
 
     def test_to_toml_writes_forwarder_contract_shape(self):
         parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(REST_FULL)))
@@ -180,6 +178,12 @@ class RestAuthoring(unittest.TestCase):
         errs = tool_authoring.validate(tool_authoring.normalize(bad))
         self.assertTrue(any("path must" in e for e in errs))
         self.assertTrue(any("allowed header" in e for e in errs))
+
+    def test_allows_query_text_in_rest_path(self):
+        data = tool_authoring.normalize({**REST_FULL, "operations": [
+            {**REST_FULL["operations"][0], "path": "/users?email={email}"}
+        ]})
+        self.assertEqual(tool_authoring.validate(data), [])
 
     def test_rejects_secret_update_to_non_writable_secret(self):
         bad = {**REST_FULL, "secrets": [{"name": "auth_token", "field": "AUTH_TOKEN", "writable": False}]}

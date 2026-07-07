@@ -91,9 +91,6 @@ def load_config(toml_path: str | Path) -> RestConfig:
     _validate_base_url(path, base_url)
 
     secrets = _load_secrets(path, data.get("secrets", []))
-    if "broker_channel" not in secrets:
-        raise _err(path, "secrets", "rest tools must declare a broker_channel secret")
-
     operations = _load_operations(path, data.get("operations", []), secrets)
     if not operations:
         raise _err(path, "operations", "rest tools must declare at least one operation")
@@ -230,10 +227,11 @@ def _validate_base_url(path: Path, value: str) -> None:
 
 
 def _validate_path_template(path: Path, field: str, value: str) -> None:
-    if not value.startswith("/") or value.startswith("//"):
+    path_part, _, _query = value.partition("?")
+    if not path_part.startswith("/") or path_part.startswith("//"):
         raise _err(path, field, "must start with a single /")
-    if "?" in value or "#" in value:
-        raise _err(path, field, "must not include query or fragment text")
+    if "#" in value:
+        raise _err(path, field, "must not include fragment text")
     if any(not (0x21 <= ord(c) <= 0x7e) for c in value):
         raise _err(path, field, "must be printable ASCII without spaces")
     stripped = _TEMPLATE_VAR.sub("", value)

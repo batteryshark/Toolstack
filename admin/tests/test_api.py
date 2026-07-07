@@ -185,6 +185,14 @@ class JsonApi(unittest.TestCase):
         self.assertIn(("admin", "caller_created"), pairs)
         self.assertIn("requests", body)
 
+    def test_clear_audit_removes_events(self):
+        authz = self._auth()
+        self._create("hermes")
+        self.assertTrue(self.client.get("/api/audit", headers=authz).json()["audit"])
+        r = self.client.delete("/api/audit", headers=authz)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.client.get("/api/audit", headers=authz).json()["audit"], [])
+
     def test_tools_config_secret_backend(self):
         tools = self.client.get("/api/tools", headers=self._auth())
         self.assertEqual(tools.status_code, 200)

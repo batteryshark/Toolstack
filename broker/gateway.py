@@ -236,6 +236,8 @@ def _outcome_body(outcome) -> dict:
         body["reason"] = outcome.reason
     if outcome.error is not None:
         body["error"] = outcome.error
+    if getattr(outcome, "detail", None) is not None:
+        body["detail"] = outcome.detail
     if outcome.approver is not None:
         body["approver"] = outcome.approver
     if outcome.note is not None:

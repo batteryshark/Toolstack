@@ -53,6 +53,7 @@ class Submit(BrokerTestCase):
         out = lifecycle.submit(ctx, caller, "boom", "now", {}, CID)
         self.assertEqual(out.status, lifecycle.FAILED)
         self.assertEqual(out.error, "tool_failed")
+        self.assertIn("RuntimeError", out.detail)
         self.assertEqual(ctx.store.request(out.request_id)["status"], "failed")
 
     def test_unreachable_tool_maps_to_tool_unreachable(self):
@@ -62,6 +63,7 @@ class Submit(BrokerTestCase):
         out = lifecycle.submit(ctx, caller, "down", "now", {}, CID)
         self.assertEqual(out.status, lifecycle.FAILED)
         self.assertEqual(out.error, "tool_unreachable")
+        self.assertIn("ToolUnreachable", out.detail)
 
     def test_arguments_never_appear_in_audit(self):
         ctx, caller = self._setup(catalog={"echo": {"say": "low"}}, allow=["echo.say"])

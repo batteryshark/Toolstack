@@ -102,6 +102,12 @@ public actor ApiClient {
         try await send("GET", "/api/audit", query: [URLQueryItem(name: "limit", value: String(limit))])
     }
 
+    @discardableResult
+    public func clearAudit() async throws -> Bool {
+        let result: OkResult = try await send("DELETE", "/api/audit")
+        return result.ok
+    }
+
     public func listTools() async throws -> [ToolInfo] {
         let response: ToolsResponse = try await send("GET", "/api/tools")
         return response.tools

@@ -40,9 +40,11 @@ verb = "POST"
 path = "/files/{file_id}"
 body_kind = "binary"
 
-[[secrets]]
-name = "broker_channel"
-field = "TOOLSTACK_TOOL_SECRET_JIRA"
+[[operations]]
+name = "search"
+risk = "read"
+verb = "GET"
+path = "/search?q={query}&tenant={tenant}"
 
 [[secrets]]
 name = "auth_token"
@@ -71,6 +73,10 @@ class RequestBuilder(unittest.TestCase):
         self.assertEqual(req.url, "https://api.example.test/v1/users/u%2B42")
         self.assertEqual(req.headers["X-Trace"], "abc")
         self.assertIsNone(req.body)
+
+    def test_hydrates_query_variables_and_preserves_query_string(self):
+        req = self.build("search", {"variables": {"query": "a/b+c", "tenant": "acme"}})
+        self.assertEqual(req.url, "https://api.example.test/v1/search?q=a%2Fb%2Bc&tenant=acme")
 
     def test_rejects_variable_slash_dot_whitespace_non_ascii_and_encoded_dot(self):
         bad = ["a/b", "a.b", "u 42", "caf\xe9", "%2E"]

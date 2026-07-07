@@ -198,6 +198,13 @@ final class AppModel: ObservableObject {
         await run { self.audit = try await self.client.audit(limit: 100) }
     }
 
+    func clearAudit() async {
+        await run {
+            _ = try await self.client.clearAudit()
+            await self.refreshAudit()
+        }
+    }
+
     /// Load a tool's secret set/unset status (returns it rather than storing, used by the sheet).
     func secretStatus(toolId: String) async -> SecretStatus? {
         await run { try await self.client.secretStatus(toolId: toolId) }

@@ -119,7 +119,7 @@ class RestForward(unittest.TestCase):
         return ToolOp("jira", "get_user", "read", self.port, "rest",
                       "GET", "/users/{user_id}", "api.example.test", "none")
 
-    def test_posts_sendrequest_with_context_and_required_secret(self):
+    def test_posts_sendrequest_with_context_and_configured_secret(self):
         rt = HttpRuntime(tool_secret=lambda tool_id: "chan" if tool_id == "jira" else None)
         result = rt.execute(self._op(), {"variables": {"user_id": "u42"}}, 7, "hermes")
         self.assertEqual(result, {"status": 200, "headers": {"content-type": "text/plain"}, "body": "ok"})
@@ -131,12 +131,11 @@ class RestForward(unittest.TestCase):
         self.assertEqual(sent["broker_request_id"], 7)
         self.assertEqual(sent["caller"], {"name": "hermes"})
 
-    def test_missing_channel_secret_refuses_dispatch(self):
+    def test_missing_shared_secret_dispatches_without_header(self):
         rt = HttpRuntime(tool_secret=lambda tool_id: None)
-        with self.assertRaises(RuntimeError) as cm:
-            rt.execute(self._op(), {}, 1, "hermes")
-        self.assertIn("channel secret", str(cm.exception))
-        self.assertIsNone(_FakeRestForwarder.received)
+        rt.execute(self._op(), {}, 1, "hermes")
+        self.assertEqual(_FakeRestForwarder.received["path"], "/sendrequest")
+        self.assertIsNone(_FakeRestForwarder.received["shared_secret"])
 
     def test_outbound_unreachable_error_maps_to_tool_unreachable(self):
         _FakeRestForwarder.status = 502

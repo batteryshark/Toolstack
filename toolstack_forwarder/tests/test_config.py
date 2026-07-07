@@ -22,10 +22,6 @@ risk = "read"
 verb = "GET"
 path = "/users/{user_id}"
 allowed_headers = ["X-Trace"]
-
-[[secrets]]
-name = "broker_channel"
-field = "TOOLSTACK_TOOL_SECRET_JIRA"
 """
 
 
@@ -87,10 +83,9 @@ body_substitution = true
         self.assertIn("base_url", str(cm.exception))
         self.assertIn("credentials", str(cm.exception))
 
-    def test_requires_broker_channel_secret(self):
-        with self.assertRaises(ConfigError) as cm:
-            load_config(self._write(BASE.replace('name = "broker_channel"', 'name = "auth_token"')))
-        self.assertIn("broker_channel", str(cm.exception))
+    def test_allows_query_text_in_operation_path(self):
+        cfg = load_config(self._write(BASE.replace("/users/{user_id}", "/users?email={email}")))
+        self.assertEqual(cfg.operations["get_user"].path, "/users?email={email}")
 
     def test_rejects_rule_target_without_writable_secret(self):
         with self.assertRaises(ConfigError) as cm:

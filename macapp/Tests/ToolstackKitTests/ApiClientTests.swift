@@ -347,6 +347,14 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.query, "limit=100")   // query support works
     }
 
+    func testClearAuditSendsDelete() async throws {
+        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"ok":true}"#.utf8)) }
+        let ok = try await makeClient(token: "t").clearAudit()
+        XCTAssertTrue(ok)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "DELETE")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/audit")
+    }
+
     func testResyncToolPostsToUpdatePath() async throws {
         let json = #"{"id":"weather","type":"api","description":"wx","path":"/data/tools/weather"}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }

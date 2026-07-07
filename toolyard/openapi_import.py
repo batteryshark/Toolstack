@@ -37,11 +37,6 @@ def _inline(d: dict) -> str:
     return "{ " + ", ".join(parts) + " }"
 
 
-def _default_broker_channel_field(tool_id: str) -> str:
-    key = re.sub(r"[^A-Za-z0-9]+", "_", tool_id).strip("_").upper()
-    return f"TOOLSTACK_TOOL_SECRET_{key or 'REST'}"
-
-
 def _resolve_ref(spec: dict, node):
     if isinstance(node, dict) and isinstance(node.get("$ref"), str) and node["$ref"].startswith("#/"):
         target = spec
@@ -245,10 +240,8 @@ def build_toolyard_toml(spec: dict, *, tool_id: str, port: int) -> str:
             lines.append(f"body_content_type = {_q(op['body_content_type'])}")
         lines.append("")
 
-    secrets = [{"name": "broker_channel", "field": _default_broker_channel_field(tool_id)}]
-    secrets.extend(parsed["secrets"])
     seen = set()
-    for secret in secrets:
+    for secret in parsed["secrets"]:
         if secret["name"] in seen:
             continue
         seen.add(secret["name"])

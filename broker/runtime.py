@@ -15,7 +15,7 @@ Two tool transports share this seam, dispatched on ``ToolOp.type``:
 * **rest**: the broker POSTs ``/sendrequest`` to a generic rest forwarder
   process. The forwarder owns outbound HTTP construction, workload secrets, and
   secret-update rules; the broker only supplies the op, arguments, request id,
-  caller, and required channel secret.
+  caller, and optional channel secret.
 The broker attaches NO workload secrets; the tool already has its own, resolved
 by the toolyard at container start. The broker adds ``broker_request_id`` and the
 caller name so the tool has request context (in the api body; in MCP under the
@@ -153,8 +153,6 @@ class HttpRuntime:
     # -- rest transport: POST /sendrequest to the generic forwarder --------------
     def _execute_rest(self, tool_op: ToolOp, arguments: dict, request_id: int, caller_name: str) -> dict:
         secret = self._tool_secret(tool_op.tool)
-        if not secret:
-            raise RuntimeError(f"rest tool {tool_op.tool!r} has no configured channel secret")
         url = f"http://127.0.0.1:{tool_op.port}/sendrequest"
         payload = json.dumps(
             {
@@ -164,12 +162,10 @@ class HttpRuntime:
                 "caller": {"name": caller_name},
             }
         ).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            headers={"Content-Type": "application/json", "X-Toolstack-Secret": secret},
-            method="POST",
-        )
+        headers = {"Content-Type": "application/json"}
+        if secret:
+            headers["X-Toolstack-Secret"] = secret
+        req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
         try:
             with _OPENER.open(req, timeout=self._timeout) as resp:
                 body = resp.read()
@@ -191,7 +187,9 @@ class HttpRuntime:
         if parsed.get("error") == "outbound_unreachable":
             raise ToolUnreachable(f"tool outbound unreachable: {parsed.get('reason', '')}")
         if "error" in parsed:
-            raise RuntimeError(f"tool forwarder error: {parsed.get('error')}")
+            detail = parsed.get("detail") or parsed.get("reason") or parsed.get("name") or ""
+            suffix = f": {detail}" if detail else ""
+            raise RuntimeError(f"tool forwarder error: {parsed.get('error')}{suffix}")
         raise RuntimeError("tool returned an invalid envelope")
 
     # -- mcp transport: streamable-HTTP MCP client at /mcp -----------------------

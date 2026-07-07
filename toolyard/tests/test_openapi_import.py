@@ -81,8 +81,7 @@ class RoundTrip(unittest.TestCase):
         self.assertEqual(parsed["base_url"], "https://graph.microsoft.com/v1.0")
         self.assertNotIn("proxy", parsed)
         self.assertEqual(parsed["entrypoint"]["command"], "python3 -m toolstack_forwarder")
-        self.assertEqual(parsed["secrets"][0]["name"], "broker_channel")
-        self.assertEqual(parsed["secrets"][1]["name"], "api_token")
+        self.assertEqual(parsed["secrets"][0]["name"], "api_token")
 
     def test_generated_tool_loads_in_registry_and_forwarder(self):
         _, tool_dir = self._write_generated()

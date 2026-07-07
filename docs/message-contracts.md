@@ -83,10 +83,9 @@ rest: POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/sendrequest
 - Security: the broker attaches **no workload** secrets. The tool already holds its own; the
   only thing the broker may add is the optional channel shared secret above.
 
-For `type = "rest"` the channel secret is required, not optional. The broker reads
-`TOOLSTACK_TOOL_SECRET_<TOOL>` and sends it as `X-Toolstack-Secret`; the forwarder reads
-`$TOOLSTACK_SECRETS_DIR/broker_channel` and rejects missing/mismatched values. The
-forwarder request body is:
+For `type = "rest"` the broker uses the same optional channel secret described
+above. The forwarder verifies `X-Toolstack-Secret` only when
+`$TOOLSTACK_SECRETS_DIR/broker_secret` exists. The forwarder request body is:
 
 ```json
 {

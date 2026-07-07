@@ -72,11 +72,11 @@ def _handler(config: RestConfig, secrets_dir: Path, timeout: float, max_body: in
 
         def _verify_channel_secret(self) -> tuple[bool, str]:
             try:
-                expected = read_secret(secrets_dir, "broker_channel")
+                expected = read_secret(secrets_dir, "broker_secret")
             except RequestBuildError:
-                return False, "channel_secret_missing"
+                return True, ""
             if not expected:
-                return False, "channel_secret_missing"
+                return True, ""
             presented = (self.headers.get("X-Toolstack-Secret") or "").strip()
             if not hmac.compare_digest(presented, expected):
                 return False, "channel_secret_mismatch"

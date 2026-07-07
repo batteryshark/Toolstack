@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 # loopback port. An unknown type is rejected at load; never accepted silently. Mirrors
 # broker/registry.py and admin/tool_authoring.py (independent packages, duplicated).
 TOOL_TYPES = ("api", "mcp", "rest")
+RULE_RESPONSE_TYPES = {"json", "xml", "form", "plaintext"}
 
 # A tool id is the routing key and a directory name; it must match this charset, and must NOT
 # contain a dot, since the broker splits a policy spec on the FIRST dot into (tool, op), so a
@@ -116,18 +117,14 @@ def _validate_rest(path: Path, data: dict) -> None:
     secrets = data.get("secrets", [])
     if not isinstance(secrets, list):
         raise ValueError(f"{path}: rest [[secrets]] must be a list")
-    secret_names = set()
     writable = set()
     for item in secrets:
         if not isinstance(item, dict):
             raise ValueError(f"{path}: rest [[secrets]] entries must be tables")
         name = item.get("name")
         if isinstance(name, str):
-            secret_names.add(name)
             if item.get("writable", False) is True:
                 writable.add(name)
-    if "broker_channel" not in secret_names:
-        raise ValueError(f"{path}: rest tools must declare a broker_channel secret")
     for op in data.get("operations", []):
         if not isinstance(op, dict):
             continue
@@ -136,6 +133,14 @@ def _validate_rest(path: Path, data: dict) -> None:
                 raise ValueError(
                     f"{path}: rest secret_update_rule targets non-writable secret {rule.get('secret_name')!r}"
                 )
+            if isinstance(rule, dict) and rule.get("response_type") not in RULE_RESPONSE_TYPES:
+                raise ValueError(
+                    f"{path}: rest secret_update_rule has invalid response_type {rule.get('response_type')!r}"
+                )
+            if isinstance(rule, dict) and not rule.get("extract_path"):
+                raise ValueError(f"{path}: rest secret_update_rule needs extract_path")
+            if isinstance(rule, dict) and not rule.get("match_status"):
+                raise ValueError(f"{path}: rest secret_update_rule needs match_status")
 
 
 def discover(root: str | Path) -> list[ToolDef]:

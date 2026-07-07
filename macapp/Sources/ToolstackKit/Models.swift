@@ -39,6 +39,10 @@ public struct RevokeResult: Codable, Sendable {
     public let name: String   // the revoke response is otherwise ignored
 }
 
+public struct OkResult: Codable, Sendable {
+    public let ok: Bool
+}
+
 public struct OpInfo: Codable, Sendable, Identifiable, Equatable {
     public let op: String
     public let risk: String

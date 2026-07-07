@@ -35,6 +35,7 @@ REST_VERB_RISK = {
     "DELETE": "destructive",
 }
 REST_BODY_KINDS = ("none", "text", "binary")
+RULE_RESPONSE_TYPES = ("json", "xml", "form", "plaintext")
 FORWARDER_COMMAND = "python3 -m toolstack_forwarder"
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
@@ -112,14 +113,6 @@ def normalize(data: dict) -> dict:
             "item": s(sec.get("item")),
             "writable": bool(sec.get("writable")),
         })
-    if tool_type == "rest" and "broker_channel" not in {sec["name"] for sec in secrets} and tool_id:
-        secrets.insert(0, {
-            "name": "broker_channel",
-            "field": _default_broker_channel_field(tool_id),
-            "item": "",
-            "writable": False,
-        })
-
     try:
         port = int(data.get("port"))
     except (TypeError, ValueError):
@@ -205,11 +198,6 @@ def _rest_envelope_args(path_template: str, allowed_headers: list[str], body_kin
     return args
 
 
-def _default_broker_channel_field(tool_id: str) -> str:
-    key = re.sub(r"[^A-Za-z0-9]+", "_", tool_id).strip("_").upper()
-    return f"TOOLSTACK_TOOL_SECRET_{key or 'REST'}"
-
-
 def validate(data: dict) -> list[str]:
     """Return a list of human-readable problems (empty == valid). Uniqueness of the
     id across other tools is the caller's job (it needs the registry)."""
@@ -252,10 +240,11 @@ def validate(data: dict) -> list[str]:
             if verb not in REST_VERBS:
                 errors.append(f"rest operation '{o['name']}' verb must be one of {', '.join(REST_VERBS)}")
             path_template = o.get("path")
-            if not isinstance(path_template, str) or not path_template.startswith("/") or path_template.startswith("//"):
+            path_part = path_template.partition("?")[0] if isinstance(path_template, str) else path_template
+            if not isinstance(path_template, str) or not path_part.startswith("/") or path_part.startswith("//"):
                 errors.append(f"rest operation '{o['name']}' path must start with a single '/'")
-            elif "?" in path_template or "#" in path_template:
-                errors.append(f"rest operation '{o['name']}' path must not include query or fragment text")
+            elif "#" in path_template:
+                errors.append(f"rest operation '{o['name']}' path must not include fragment text")
             elif any(not (0x21 <= ord(c) <= 0x7e) for c in path_template):
                 errors.append(f"rest operation '{o['name']}' path must be printable ASCII without spaces")
             if o.get("body_kind") not in REST_BODY_KINDS:
@@ -275,8 +264,6 @@ def validate(data: dict) -> list[str]:
         if sec.get("item") and not _ITEM_RE.match(sec["item"]):
             errors.append(f"secret '{sec['name']}' path has invalid characters")
     if data["type"] == "rest":
-        if "broker_channel" not in {sec["name"] for sec in data["secrets"]}:
-            errors.append("rest tools must declare a broker_channel secret")
         for o in data["operations"]:
             for rule in o.get("secret_update_rules", []):
                 if rule.get("secret_name") not in writable:
@@ -284,6 +271,15 @@ def validate(data: dict) -> list[str]:
                         f"rest operation '{o['name']}' secret_update_rule targets non-writable "
                         f"secret '{rule.get('secret_name')}'"
                     )
+                if rule.get("response_type") not in RULE_RESPONSE_TYPES:
+                    errors.append(
+                        f"rest operation '{o['name']}' secret_update_rule response_type must be one of "
+                        f"{', '.join(RULE_RESPONSE_TYPES)}"
+                    )
+                if not rule.get("extract_path"):
+                    errors.append(f"rest operation '{o['name']}' secret_update_rule needs an extract_path")
+                if not rule.get("match_status"):
+                    errors.append(f"rest operation '{o['name']}' secret_update_rule needs a match_status")
     return errors
 
 
