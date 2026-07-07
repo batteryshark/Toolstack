@@ -55,26 +55,28 @@ class FakeSurface:
         self._state = SurfaceState(outcome, approver, note, decided_at)
 
 
-def make_registry(tools: dict | None = None, port: int = 4600, tool_type: str = "api") -> Registry:
+def make_registry(tools: dict | None = None, port: int = 4600, tool_type: str = "api",
+                  rest_meta: dict | None = None) -> Registry:
     """Build a Registry from the friendly shape {tool: {op: risk}}. ``tool_type`` sets the
     transport for all tools."""
     catalog = {}
     for tool, ops in (tools or {}).items():
+        meta = rest_meta or {}
         catalog[tool] = {
             "port": port,
             "type": tool_type,
-            "ops": {op: {"risk": risk, "description": "", "args": []}
+            "ops": {op: {"risk": risk, "description": "", "args": [], **meta}
                     for op, risk in ops.items()},
         }
     return Registry(catalog)
 
 
 def make_ctx(catalog=None, runtime=None, surface=_DEFAULT_SURFACE, approval_ttl=3600.0,
-             tool_type="api") -> BrokerContext:
+             tool_type="api", rest_meta: dict | None = None) -> BrokerContext:
     store = Store(":memory:")
     return BrokerContext(
         store=store,
-        registry=make_registry(catalog, tool_type=tool_type),
+        registry=make_registry(catalog, tool_type=tool_type, rest_meta=rest_meta),
         runtime=runtime or FakeRuntime(),
         audit=AuditLog(store, sink=None),  # quiet during tests
         surface=FakeSurface() if surface is _DEFAULT_SURFACE else surface,
@@ -86,9 +88,9 @@ class BrokerTestCase(unittest.TestCase):
     """Base case whose make_ctx closes the in-memory store after each test."""
 
     def make_ctx(self, catalog=None, runtime=None, surface=_DEFAULT_SURFACE, approval_ttl=3600.0,
-                 tool_type="api"):
+                 tool_type="api", rest_meta: dict | None = None):
         ctx = make_ctx(catalog=catalog, runtime=runtime, surface=surface,
-                       approval_ttl=approval_ttl, tool_type=tool_type)
+                       approval_ttl=approval_ttl, tool_type=tool_type, rest_meta=rest_meta)
         self.addCleanup(ctx.store.close)
         return ctx
 

@@ -29,6 +29,7 @@ class OperationCard:
     reason: str  # why policy routed this to review
     justification: str | None = None  # the agent's (redacted) reason, shown to the human
     details: str | None = None  # redacted arguments, shown so similar calls are distinguishable
+    endpoint: str | None = None  # rest tools: "VERB host /path/{template}", never hydrated values
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ class SurfaceState:
 
 def build_card(request_id: int, caller: str, tool: str, op: str, risk: str,
                reason: str, justification: str | None = None,
-               details: str | None = None) -> OperationCard:
+               details: str | None = None, endpoint: str | None = None) -> OperationCard:
     label = f"{tool}.{op}"
     return OperationCard(
         request_id=request_id,
@@ -53,4 +54,5 @@ def build_card(request_id: int, caller: str, tool: str, op: str, risk: str,
         reason=reason,
         justification=justification,
         details=details,
+        endpoint=endpoint,
     )

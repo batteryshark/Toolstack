@@ -14,12 +14,14 @@ Covers the full operator surface: auth, broker status/control, callers/policies/
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 
 from broker import operations
 from broker.registry import Registry
+from toolyard import openapi_import
 
 from . import (auth, broker_config, secret_values, settings, supervisor,
                tool_authoring, tool_sources, toolyard_ops)
@@ -293,6 +295,19 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             operations.record_admin_event(store, user, "tool_created", {"tool": tool["id"], "dir": tool["path"]})
         return tool
 
+    @app.post("/api/tools/parse-openapi")
+    async def api_parse_openapi(request: Request, user: str = Depends(require_user)):
+        data = await _json_object(request)
+        if "spec" not in data:
+            raise HTTPException(status_code=400, detail="spec is required")
+        try:
+            return openapi_import.parse_spec(_parse_openapi_value(data["spec"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            log.warning("could not parse OpenAPI spec: %s", exc)
+            raise HTTPException(status_code=400, detail=f"could not parse spec: {type(exc).__name__}")
+
     @app.post("/api/tools/{tool_id}")
     async def api_edit_tool(tool_id: str, request: Request, user: str = Depends(require_user)):
         """Edit a tool's description and/or secret DECLARATIONS, preserving its operations and
@@ -514,3 +529,25 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
     @app.get("/api/secret-backend")
     async def api_secret_backend(user: str = Depends(require_user)):
         return settings.secret_backend_info()
+
+
+def _parse_openapi_value(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("spec must be an object or a non-empty string")
+    text = value.strip()
+    try:
+        spec = json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            import yaml
+        except ImportError:
+            raise ValueError("the spec is not valid JSON; install PyYAML for YAML")
+        try:
+            spec = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"the spec is not valid JSON or YAML: {exc}")
+    if not isinstance(spec, dict):
+        raise ValueError("the spec must be a JSON or YAML object")
+    return spec

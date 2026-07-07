@@ -32,6 +32,10 @@ The authority boundary: the only address an agent can reach. See [../plan.md](..
 - **Request lifecycle**: registry lookup → policy → **forward to the tool** on
   `127.0.0.1:<port>` (adding `broker_request_id` + caller name, never secrets),
   with persisted request state and an append-only **audit log in SQLite**.
+- **REST forwarder tools**: `type = "rest"` tools are named operations backed by the
+  generic `toolstack_forwarder` process. The broker calls `/sendrequest` with a JSON
+  envelope and a required `X-Toolstack-Secret`; approval/audit show endpoint templates,
+  never hydrated values or bodies.
 - **Approval**: a `review` operation opens a nod decision via the `NodSurface`
   adapter and parks the request; the broker executes only on a **confirmed
   approval**, denies on rejection, and **fails closed on its own timeout** (poll is
@@ -81,6 +85,7 @@ Configuration (env vars):
   the approval surface (unset = no surface; `review` ops return `503`).
 - `TOOLSTACK_APPROVAL_TTL`: broker-side approval timeout in seconds (default `3600`).
 - `TOOLSTACK_RATE_LIMIT`: action submissions per caller per minute (default `120`; `0` = off).
+- `TOOLSTACK_REST_BODY_MAX`: max REST outbound body bytes (default `20971520`).
 
 ## Operator (brokerctl)
 
@@ -96,6 +101,7 @@ python3 -m broker.brokerctl revoke-token --prefix <hash-prefix>   # see list-tok
 python3 -m broker.brokerctl revoke-caller --name hermes
 python3 -m broker.brokerctl list-requests --status pending_approval
 python3 -m broker.brokerctl audit --request-id <N>   # answers the four audit questions
+python3 -m broker.brokerctl reload                   # SIGHUP: rebuild the in-memory registry
 ```
 
 ## Test it
@@ -115,9 +121,11 @@ One process, internal modules (not separate services):
 - `gateway.py`: ingress/egress, routing, correlation ids, body validation.
 - `identity.py`: callers + hashed bearer tokens; fail-closed `authenticate`.
 - `policy.py`: `allow` / `review` / `deny`, default-deny (pure).
-- `registry.py`: reads `toolyard.toml` for tool/op/risk/port; ignores `[[secrets]]`.
+- `registry.py`: reads `toolyard.toml` for tool/op/risk/port and REST endpoint templates;
+  ignores `[[secrets]]`.
 - `runtime.py`, forwards an approved call to the tool on `127.0.0.1:<port>`, dispatching the
-  tool's transport: `api` (POST /v1/actions/<op>) or `mcp` (broker is the MCP *client*).
+  tool's transport: `api` (POST /v1/actions/<op>), `mcp` (broker is the MCP *client*), or
+  `rest` (POST /sendrequest to the generic forwarder).
 - `request_lifecycle.py`: the orchestration across the above (incl. approval resolution).
 - `approval.py`: the operation card + normalized surface state (the adapter contract).
 - `mcp.py`, the **`POST /mcp` ingress**: the broker as an MCP *server*, terminating JSON-RPC

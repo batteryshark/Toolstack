@@ -43,6 +43,21 @@ class RedactRequest(unittest.TestCase):
         self.assertIn("[redacted]", out)
         self.assertNotIn("a" * 40, out)
 
+    def test_masks_jwt_in_body(self):
+        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature"
+        out = redact_request({"body": jwt})
+        self.assertIn("[redacted]", out)
+        self.assertNotIn(jwt, out)
+
+    def test_masks_bearer_header(self):
+        out = redact_request({"headers": {"Authorization": "Bearer abc.def.ghi"}})
+        self.assertIn("[redacted]", out)
+        self.assertNotIn("abc.def.ghi", out)
+
+    def test_plain_body_stays_useful(self):
+        out = redact_request({"body": "plain diagnostic text"})
+        self.assertIn("plain diagnostic text", out)
+
 
 if __name__ == "__main__":
     unittest.main()

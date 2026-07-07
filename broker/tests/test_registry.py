@@ -123,6 +123,51 @@ class McpType(unittest.TestCase):
         self.assertEqual(op.port, 4611)
 
 
+class RestType(unittest.TestCase):
+    """A type='rest' tool registers named ops with endpoint metadata while the broker
+    remains secret-unaware and never stores base_url path/query text."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _load(self, base_url='https://api.example.test/v1?debug=1'):
+        d = Path(self.tmp, "kv")
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "toolyard.toml").write_text(
+            f'id = "kv"\ntype = "rest"\nbase_url = "{base_url}"\n[entrypoint]\nport = 4621\n'
+            '[[operations]]\nname = "get_item"\nrisk = "read"\nverb = "GET"\npath = "/items/{item_id}"\n'
+            'body_kind = "none"\n'
+            '[[secrets]]\nname = "broker_channel"\nfield = "TOOLSTACK_TOOL_SECRET_KV"\n'
+            '[[secrets]]\nname = "api_token"\nfield = "SUPER_SECRET_VALUE"\n'
+        )
+        return Registry.from_tools_root(self.tmp)
+
+    def test_lookup_carries_rest_metadata_and_strips_base_url_to_host(self):
+        op = self._load().lookup("kv", "get_item")
+        self.assertIsNotNone(op)
+        self.assertEqual(op.type, "rest")
+        self.assertEqual(op.verb, "GET")
+        self.assertEqual(op.path_template, "/items/{item_id}")
+        self.assertEqual(op.base_url_host, "api.example.test")
+        self.assertEqual(op.body_kind, "none")
+
+    def test_credentialed_base_url_is_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            self._load("https://user:pass@api.example.test/v1")
+        self.assertIn("credentials", str(cm.exception))
+
+    def test_base_url_host_with_invalid_characters_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self._load("https://api_example.test/v1")
+
+    def test_registry_is_secret_and_base_url_path_unaware(self):
+        reg = self._load("https://api.example.test/tenant/secret-path?debug=1")
+        blob = repr(reg._catalog)
+        for forbidden in ("SUPER_SECRET_VALUE", "api_token", "tenant", "secret-path", "debug=1"):
+            self.assertNotIn(forbidden, blob)
+
+
 class PortValidation(unittest.TestCase):
     """An api or mcp tool with no/invalid port must fail at load, naming the file + tool;
     not register silently and 502 at call time."""
@@ -179,11 +224,11 @@ class PortValidation(unittest.TestCase):
                        '[[operations]]\nname = "today"\nrisk = "read"\n')
         self.assertIn("unknown type", str(cm.exception))
 
-    def test_rest_type_rejected(self):
-        with self.assertRaises(ValueError) as cm:
-            self._load('id = "kv"\ntype = "rest"\n[entrypoint]\nport = 4621\n'
-                       '[[operations]]\nname = "GET"\nrisk = "read"\n')
-        self.assertIn("unknown type", str(cm.exception))
+    def test_rest_type_loads_with_valid_port(self):
+        reg = self._load('id = "kv"\ntype = "rest"\nbase_url = "https://api.example.test"\n'
+                         '[entrypoint]\nport = 4621\n'
+                         '[[operations]]\nname = "get_item"\nrisk = "read"\nverb = "GET"\npath = "/items/{id}"\n')
+        self.assertEqual(reg.lookup("kv", "get_item").port, 4621)
 
 
 class IdValidation(unittest.TestCase):

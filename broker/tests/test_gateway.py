@@ -104,6 +104,59 @@ class Actions(BrokerTestCase):
         self.assertNotIn(self.token, blob)
 
 
+class RestEnvelopeValidation(BrokerTestCase):
+    def setUp(self):
+        self.meta = {
+            "verb": "POST",
+            "path_template": "/login",
+            "base_url_host": "api.example.test",
+            "body_kind": "text",
+        }
+        self.ctx = self.make_ctx(catalog={"jira": {"login": "write"}}, tool_type="rest",
+                                 rest_meta=self.meta)
+        self.token = seed_caller(self.ctx.store, "hermes", allow=["jira.login"])
+
+    def _post(self, arguments):
+        return handle("POST", "/v1/actions/jira.login", _bearer(self.token),
+                      {"arguments": arguments}, self.ctx)
+
+    def test_text_body_required_and_must_be_string(self):
+        self.assertEqual(self._post({}).status, 400)
+        r = self._post({"body": {"not": "string"}})
+        self.assertEqual(r.status, 400)
+        self.assertEqual(r.body["error"], "invalid_envelope")
+
+    def test_variables_and_headers_must_be_string_maps(self):
+        for arguments in (
+            {"variables": [], "body": "{}"},
+            {"variables": {"id": 7}, "body": "{}"},
+            {"headers": {"X": 1}, "body": "{}"},
+        ):
+            with self.subTest(arguments=arguments):
+                self.assertEqual(self._post(arguments).status, 400)
+
+    def test_valid_text_envelope_submits(self):
+        r = self._post({"variables": {"id": "u42"}, "headers": {"X": "y"}, "body": "{}"})
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.body["status"], "ok")
+
+    def test_none_body_rejects_present_body(self):
+        ctx = self.make_ctx(catalog={"jira": {"get_user": "read"}}, tool_type="rest",
+                            rest_meta={**self.meta, "body_kind": "none"})
+        token = seed_caller(ctx.store, "hermes", allow=["jira.get_user"])
+        r = handle("POST", "/v1/actions/jira.get_user", _bearer(token),
+                   {"arguments": {"body": ""}}, ctx)
+        self.assertEqual(r.status, 400)
+
+    def test_binary_body_must_be_base64(self):
+        ctx = self.make_ctx(catalog={"jira": {"upload": "write"}}, tool_type="rest",
+                            rest_meta={**self.meta, "body_kind": "binary"})
+        token = seed_caller(ctx.store, "hermes", allow=["jira.upload"])
+        r = handle("POST", "/v1/actions/jira.upload", _bearer(token),
+                   {"arguments": {"body": "not base64"}}, ctx)
+        self.assertEqual(r.status, 400)
+
+
 class RequestStatus(BrokerTestCase):
     def _bearer(self, token):
         return {"Authorization": f"Bearer {token}"}

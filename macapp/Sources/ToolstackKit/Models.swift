@@ -137,6 +137,40 @@ public struct ToolsResponse: Codable, Sendable {
     public let error: String?
 }
 
+public struct ParsedOpenAPI: Codable, Sendable, Equatable {
+    public let baseUrl: String
+    public let authHeaders: [ParsedAuthHeader]
+    public let secrets: [SecretDecl]
+    public let operations: [ParsedRestOperation]
+}
+
+public struct ParsedAuthHeader: Codable, Sendable, Identifiable, Equatable {
+    public let name: String
+    public let value: String
+    public var id: String { name }
+}
+
+public struct ParsedRestOperation: Codable, Sendable, Identifiable, Equatable {
+    public let name: String
+    public let verb: String
+    public let path: String
+    public let risk: String
+    public let description: String
+    public let allowedHeaders: [String]
+    public let bodyKind: String
+    public let bodyContentType: String?
+    public let args: [ParsedArg]
+    public var id: String { name }
+}
+
+public struct ParsedArg: Codable, Sendable, Identifiable, Equatable {
+    public let name: String
+    public let type: String
+    public let required: Bool
+    public let description: String?
+    public var id: String { name }
+}
+
 /// A caller's policy: tool -> op -> effect ("allow" | "review"). An op absent from the map is
 /// denied. (Dictionary keys are tool/op names, untouched by `.convertFromSnakeCase`.)
 public struct Policy: Codable, Sendable, Equatable {

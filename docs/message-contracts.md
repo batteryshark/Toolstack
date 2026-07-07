@@ -57,7 +57,9 @@ GET  /v1/requests/<id>           poll a request (owner only) -> status + result 
 ### 2. Broker → Tool container (forwarding)
 
 ```text
-POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
+api:  POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
+mcp:  POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/mcp
+rest: POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/sendrequest
 ```
 
 - Both ingress framings converge here: whether a call arrived as HTTP `/v1/actions` or as a
@@ -80,6 +82,31 @@ POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
 - Audit: `runtime.execution_started`, `runtime.execution_completed`, `runtime.execution_failed`.
 - Security: the broker attaches **no workload** secrets. The tool already holds its own; the
   only thing the broker may add is the optional channel shared secret above.
+
+For `type = "rest"` the channel secret is required, not optional. The broker reads
+`TOOLSTACK_TOOL_SECRET_<TOOL>` and sends it as `X-Toolstack-Secret`; the forwarder reads
+`$TOOLSTACK_SECRETS_DIR/broker_channel` and rejects missing/mismatched values. The
+forwarder request body is:
+
+```json
+{
+  "op": "get_item",
+  "arguments": {"variables": {"item_id": "i42"}, "headers": {}, "body": "{}"},
+  "broker_request_id": 123,
+  "caller": {"name": "hermes"}
+}
+```
+
+The forwarder always returns JSON. Success is an envelope:
+
+```json
+{"status": 200, "headers": {"content-type": "application/json"}, "body": "{\"id\":\"i42\"}"}
+```
+
+Failures are `{"error": "..."}` envelopes. `outbound_unreachable` maps to
+`tool_unreachable`; other forwarder errors map to `tool_failed`. REST tools are intentionally
+not exposed through broker-native `/mcp`; they remain HTTP action API only. See
+[rest-forwarder.md](rest-forwarder.md).
 
 ### 3. Toolyard → Secret backend (at container start)
 
@@ -128,6 +155,7 @@ Append-only, written by the broker's Audit module. Families:
 - `identity.*`: `token_validated`, `token_rejected` (per-request auth at the gateway;
   token *revocation* is an operator action, audited under `admin.token_revoked`)
 - `registry.*`: `tool_lookup_failed`
+- `registry.*`: `tool_lookup_failed`, `reloaded`
 - `policy.*`: `decision_allow`, `decision_deny`, `decision_review_required`
 - `request.*`: `received`, `completed`, `denied`, `failed`, `expired` (one terminal
   event per request; the producing component also records its own runtime/policy/approval event)

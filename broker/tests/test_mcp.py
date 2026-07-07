@@ -109,6 +109,21 @@ class ToolsList(BrokerTestCase):
         # an allow op carries neither
         self.assertNotIn("_reason", tools["echo__say"].get("inputSchema", {}).get("properties", {}))
 
+    def test_rest_ops_are_not_listed(self):
+        ctx = self.make_ctx(
+            catalog={"jira": {"get_user": "read"}},
+            tool_type="rest",
+            rest_meta={
+                "verb": "GET",
+                "path_template": "/users/{user_id}",
+                "base_url_host": "api.example.test",
+                "body_kind": "none",
+            },
+        )
+        token = seed_caller(ctx.store, "hermes", allow=["jira.get_user"])
+        tools = _mcp(ctx, token, "tools/list").body["result"]["tools"]
+        self.assertEqual(tools, [])
+
 
 class ToolsCall(BrokerTestCase):
     def setUp(self):
@@ -180,6 +195,24 @@ class ToolsCall(BrokerTestCase):
         self.assertEqual(poll.body["status"], "ok")
         self.assertEqual(poll.body["result"], {"echoed": {"m": "hi"}})
         self.assertEqual(ctx.runtime.calls[0][2], {"m": "hi"})  # ran with _reason stripped
+
+    def test_rest_call_is_hidden_and_never_invokes_runtime(self):
+        ctx = self.make_ctx(
+            catalog={"jira": {"get_user": "read"}},
+            tool_type="rest",
+            rest_meta={
+                "verb": "GET",
+                "path_template": "/users/{user_id}",
+                "base_url_host": "api.example.test",
+                "body_kind": "none",
+            },
+        )
+        token = seed_caller(ctx.store, "hermes", allow=["jira.get_user"])
+        result = _mcp(ctx, token, "tools/call",
+                      {"name": "jira__get_user", "arguments": {"variables": {"user_id": "u42"}}}).body["result"]
+        self.assertTrue(result["isError"])
+        self.assertIn("unknown tool", result["content"][0]["text"])
+        self.assertEqual(ctx.runtime.calls, [])
 
 
 class RateLimit(BrokerTestCase):

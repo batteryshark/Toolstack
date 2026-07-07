@@ -23,6 +23,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shlex
+import signal
+import subprocess
+from pathlib import Path
 
 from . import operations, request_lifecycle
 from .audit import AuditLog, stderr_sink
@@ -33,6 +38,28 @@ from .surface_nod import NodSurface
 
 def _store(args) -> Store:
     return Store(args.db)  # Store(None) -> default XDG path
+
+
+def _state_dir() -> Path:
+    base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return Path(base) / "toolstack"
+
+
+def _pidfile_path() -> Path:
+    return _state_dir() / "broker.pid"
+
+
+def _is_broker(pid: int) -> bool:
+    try:
+        out = subprocess.run(["ps", "-p", str(pid), "-o", "args="],
+                             capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    try:
+        args = shlex.split(out.stdout)
+    except ValueError:
+        return False
+    return any(tok == "-m" and args[i + 1] == "broker.server" for i, tok in enumerate(args[:-1]))
 
 
 def create_caller(args) -> None:
@@ -160,6 +187,21 @@ def audit(args) -> None:
         store.close()
 
 
+def reload(args) -> None:
+    path = Path(args.pidfile) if args.pidfile else _pidfile_path()
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"cannot read broker pidfile {path}: {exc}")
+    if not _is_broker(pid):
+        raise SystemExit(f"refusing to signal pid {pid}: it is not broker.server")
+    try:
+        os.kill(pid, signal.SIGHUP)
+    except OSError as exc:
+        raise SystemExit(f"failed to signal broker pid {pid}: {exc}")
+    print(f"reloaded broker registry (pid {pid}).")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="brokerctl")
     common = argparse.ArgumentParser(add_help=False)
@@ -219,6 +261,10 @@ def main() -> None:
     p.add_argument("--correlation-id")
     p.add_argument("--limit", type=int, default=50)
     p.set_defaults(func=audit)
+
+    p = sub.add_parser("reload", help="send SIGHUP to the running broker to reload the registry")
+    p.add_argument("--pidfile", help="broker pidfile (default: XDG state toolstack/broker.pid)")
+    p.set_defaults(func=reload)
 
     args = parser.parse_args()
     args.func(args)

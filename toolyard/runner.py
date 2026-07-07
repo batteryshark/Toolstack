@@ -33,6 +33,7 @@ from .config import ToolDef
 # Container-internal mount point for the writable-secret socket (message-contracts
 # §4); matches the tool's default TOOLYARD_SECRETS_SOCKET.
 _CONTAINER_SOCKET = "/run/toolyard/secrets.sock"
+_CONTAINER_TOOL_CONFIG = "/run/toolstack/toolyard.toml"
 _REPO_ROOT = Path(__file__).resolve().parents[1]  # so `-m toolyard.write_proxy` imports
 
 # Docker subprocess timeouts (seconds): a slow pull or a wedged daemon must fail with a
@@ -172,6 +173,7 @@ class ProcessRunner:
                 **os.environ,
                 "TOOLSTACK_SECRETS_DIR": secrets_dir,
                 "TOOLSTACK_PORT": str(tool_def.port),
+                "TOOLSTACK_TOOL_CONFIG": str(tool_def.path / "toolyard.toml"),
             }
             if proxy_dir:
                 env["TOOLYARD_SECRETS_SOCKET"] = str(Path(proxy_dir) / "secrets.sock")
@@ -262,8 +264,9 @@ class DockerRunner:
             for path in Path(secrets_dir).iterdir():
                 path.chmod(0o644)
             proxy_pid, proxy_dir = _start_write_proxy(tool_def, secret_backend, secrets_file)
-            image = tool_def.image or f"toolstack-{tool_def.id}"
-            if tool_def.image is None:
+            rest_generic = tool_def.type == "rest" and tool_def.image is None
+            image = tool_def.image or ("python:3.13-slim" if rest_generic else f"toolstack-{tool_def.id}")
+            if tool_def.image is None and not rest_generic:
                 self._docker(["build", "-t", image, str(tool_def.path)], _DOCKER_BUILD_TIMEOUT, check=True)
             name = f"toolyard-{tool_def.id}"
             self._docker(["rm", "-f", name], _DOCKER_RM_TIMEOUT)  # clear a same-named leftover
@@ -274,11 +277,23 @@ class DockerRunner:
                 "-e", "TOOLSTACK_BIND=0.0.0.0",  # container-internal; host side stays loopback via -p
                 "-v", f"{secrets_dir}:/run/secrets:ro",
             ]
+            if tool_def.type == "rest":
+                run_args += [
+                    "-v", f"{tool_def.path / 'toolyard.toml'}:{_CONTAINER_TOOL_CONFIG}:ro",
+                    "-e", f"TOOLSTACK_TOOL_CONFIG={_CONTAINER_TOOL_CONFIG}",
+                ]
+                if rest_generic:
+                    run_args += [
+                        "-v", f"{_REPO_ROOT}:/app:ro",
+                        "-w", "/app",
+                    ]
             if proxy_dir:
                 # Mount the proxy's socket dir so the tool reaches it at the contract path.
                 run_args += ["-v", f"{proxy_dir}:/run/toolyard",
                              "-e", f"TOOLYARD_SECRETS_SOCKET={_CONTAINER_SOCKET}"]
             run_args.append(image)
+            if rest_generic:
+                run_args += ["python3", "-m", "toolstack_forwarder"]
             self._docker(run_args, _DOCKER_RUN_TIMEOUT, check=True)
             running = RunningTool(tool_def.id, tool_def.port, self.backend, name, secrets_dir,
                                   proxy_pid, proxy_dir)

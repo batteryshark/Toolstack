@@ -285,6 +285,23 @@ class JsonApi(unittest.TestCase):
     def test_add_tool_needs_auth(self):
         self.assertEqual(self.client.post("/api/tools", json={"source": "/x"}).status_code, 401)
 
+    def test_parse_openapi_accepts_object_spec(self):
+        spec = {"openapi": "3.0.0",
+                "servers": [{"url": "https://api.example.com/v1"}],
+                "paths": {"/items/{id}": {"get": {"operationId": "getItem",
+                          "parameters": [{"name": "id", "in": "path", "required": True}]}}}}
+        r = self.client.post("/api/tools/parse-openapi", headers=self._auth(), json={"spec": spec})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(body["base_url"], "https://api.example.com/v1")
+        self.assertEqual(body["operations"][0]["name"], "getItem")
+        self.assertEqual(body["operations"][0]["args"][0]["name"], "variables")
+
+    def test_parse_openapi_rejects_bad_spec(self):
+        r = self.client.post("/api/tools/parse-openapi", headers=self._auth(), json={"spec": "{not valid"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("not valid", r.json()["detail"].lower())
+
     def test_add_tool_from_github(self):
         def fake_clone(cmd, *a, **k):
             dest = Path(cmd[-1])           # `git clone ... -- <url> <dest>`

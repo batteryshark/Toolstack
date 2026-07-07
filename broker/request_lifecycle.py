@@ -75,7 +75,7 @@ def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Out
     if decision == policy_rules.REVIEW:
         audit.record("policy", "decision_review_required", PENDING, correlation_id,
                      request_id=request_id, details={"tool": tool, "op": op, "risk": tool_op.risk})
-        return _open_approval(ctx, request_id, caller.name, tool, op, tool_op.risk,
+        return _open_approval(ctx, request_id, caller.name, tool, op, tool_op,
                               arguments, correlation_id, reason)
 
     # allow
@@ -84,7 +84,7 @@ def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Out
     return execute_request(ctx, request_id, tool, op, arguments, correlation_id, caller.name)
 
 
-def _open_approval(ctx, request_id, caller_name, tool, op, risk, arguments, correlation_id,
+def _open_approval(ctx, request_id, caller_name, tool, op, tool_op, arguments, correlation_id,
                    reason=None) -> Outcome:
     if ctx.surface is None:
         ctx.store.update_request(request_id, status="failed", error="approval_unavailable")
@@ -95,9 +95,9 @@ def _open_approval(ctx, request_id, caller_name, tool, op, risk, arguments, corr
     # keep arguments for deferred execution (control-plane store, never audited)
     ctx.store.update_request(request_id, arguments_json=json.dumps(arguments))
     # the agent's reason (redacted) rides along to the human on the card
-    card = approval.build_card(request_id, caller_name, tool, op, risk,
+    card = approval.build_card(request_id, caller_name, tool, op, tool_op.risk,
                                reason="policy review", justification=redact(reason),
-                               details=redact_request(arguments))
+                               details=redact_request(arguments), endpoint=_rest_endpoint(tool_op))
     try:
         ref = ctx.surface.open(card)
     except Exception as exc:
@@ -110,7 +110,7 @@ def _open_approval(ctx, request_id, caller_name, tool, op, risk, arguments, corr
     ctx.store.create_approval(request_id, ref, time.time() + ctx.approval_ttl)
     ctx.store.update_request(request_id, status="pending_approval")
     ctx.audit.record("approval", "opened", PENDING, correlation_id,
-                     request_id=request_id, details={"tool": tool, "op": op, "risk": risk})
+                     request_id=request_id, details={"tool": tool, "op": op, "risk": tool_op.risk})
     return Outcome(PENDING, request_id=request_id)
 
 
@@ -146,9 +146,24 @@ def execute_request(ctx, request_id, tool, op, arguments, correlation_id, caller
 
     ctx.store.update_request(request_id, status="completed",
                              result_json=json.dumps(result), arguments_json=None)
+    details = {"tool": tool, "op": op}
+    if tool_op.type == "rest":
+        details.update({
+            "outbound_host": tool_op.base_url_host,
+            "outbound_verb": tool_op.verb,
+            "outbound_path_template": tool_op.path_template,
+            "outbound_status": result.get("status") if isinstance(result, dict) else None,
+        })
     audit.record("runtime", "execution_completed", "ok", correlation_id,
-                 request_id=request_id, details={"tool": tool, "op": op})
+                 request_id=request_id, details=details)
     return Outcome(OK, request_id=request_id, result=result)
+
+
+def _rest_endpoint(tool_op) -> str | None:
+    if tool_op.type != "rest":
+        return None
+    bits = [tool_op.verb or "", tool_op.base_url_host or "", tool_op.path_template or ""]
+    return " ".join(b for b in bits if b) or None
 
 
 def _expire_approval(ctx, approval_id, request_id, surface_ref, tool, op, correlation_id) -> None:

@@ -119,7 +119,9 @@ _TOOL_EDITOR_JS = """
 (function(){
   var ARG_TYPES = ["string","number","integer","boolean","object","array"];
   var RISK_CHOICES = ["read","write","destructive"];
-  var TOOL_TYPES = ["api","mcp"];   // matches admin TOOL_TYPES
+  var TOOL_TYPES = ["api","mcp","rest"];   // matches admin TOOL_TYPES
+  var REST_VERBS = ["GET","POST","PUT","PATCH","DELETE"];
+  var REST_BODY_KINDS = ["none","text","binary"];
   function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
   function opts(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+v+'</option>';}).join('');}
   function riskOpts(sel){return RISK_CHOICES.indexOf(sel)<0 ? [sel].concat(RISK_CHOICES) : RISK_CHOICES;}
@@ -144,9 +146,22 @@ _TOOL_EDITOR_JS = """
       + '<select class="op-risk">'+opts(riskOpts(o.risk||'read'), o.risk||'read')+'</select>'
       + '<input class="op-desc" placeholder="description">'
       + '<button type="button" class="rm">remove op</button></div>'
+      + '<div class="row op-rest">'
+      + '<select class="op-verb">'+opts(REST_VERBS, o.verb||'GET')+'</select>'
+      + '<input class="op-path" placeholder="/items/{item_id}">'
+      + '<input class="op-headers" placeholder="allowed headers, comma separated">'
+      + '<select class="op-body-kind">'+opts(REST_BODY_KINDS, o.body_kind||'none')+'</select>'
+      + '<input class="op-body-content-type" placeholder="body content type"></div>'
       + '<div class="args"></div><button type="button" class="add-arg">add argument</button></div>');
     card.querySelector('.op-name').value = o.name||'';
     card.querySelector('.op-desc').value = o.description||'';
+    card.querySelector('.op-verb').value = o.verb||'GET';
+    card.querySelector('.op-path').value = o.path||'';
+    card.querySelector('.op-headers').value = (o.allowed_headers||[]).join(', ');
+    card.querySelector('.op-body-kind').value = o.body_kind||'none';
+    card.querySelector('.op-body-content-type').value = o.body_content_type||'';
+    card._secret_update_rules = o.secret_update_rules || [];
+    card._body_substitution = o.body_substitution;
     var args = card.querySelector('.args');
     (o.args||[]).forEach(function(a){args.appendChild(argRow(a));});
     card.querySelector('.add-arg').onclick = function(){args.appendChild(argRow());};
@@ -176,26 +191,96 @@ _TOOL_EDITOR_JS = """
   document.getElementById('f_command').value = initial.command||'';
   document.getElementById('f_image').value = initial.image||'';
   document.getElementById('f_description').value = initial.description||'';
+  document.getElementById('f_base_url').value = initial.base_url||'';
   document.getElementById('f_port').value = initial.port||'';
   var ops = document.getElementById('ops');
   (initial.operations && initial.operations.length ? initial.operations : [{}]).forEach(function(o){ops.appendChild(opCard(o));});
   var secs = document.getElementById('secrets');
   (initial.secrets||[]).forEach(function(s){secs.appendChild(secRow(s));});
-  document.getElementById('add-op').onclick = function(){ops.appendChild(opCard());};
+  document.getElementById('add-op').onclick = function(){ops.appendChild(opCard()); syncType();};
   document.getElementById('add-secret').onclick = function(){secs.appendChild(secRow());};
+  var f_type = document.getElementById('f_type');
+
+  function syncType(){
+    var isRest = f_type.value === 'rest';
+    document.getElementById('rest-fields').hidden = !isRest;
+    [].forEach.call(document.querySelectorAll('.op-rest'), function(el){el.style.display = isRest ? '' : 'none';});
+    [].forEach.call(document.querySelectorAll('.opcard .args, .opcard .add-arg'), function(el){el.style.display = isRest ? 'none' : '';});
+    if (isRest && !document.getElementById('f_command').value) {
+      document.getElementById('f_command').value = 'python3 -m toolstack_forwarder';
+    }
+  }
+  f_type.addEventListener('change', syncType);
+  syncType();
+
+  var parseBtn = document.getElementById('oai-parse');
+  if (parseBtn) {
+    var parsedSpec = null;
+    parseBtn.onclick = function(){
+      var err = document.getElementById('oai-error');
+      err.hidden = true;
+      var body = new URLSearchParams();
+      body.append('spec', document.getElementById('oai-spec').value);
+      body.append('_csrf', document.querySelector('input[name=_csrf]').value);
+      fetch('/tools/parse-openapi', {method: 'POST', body: body})
+        .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, j: j}; }); })
+        .then(function(res){
+          if (!res.ok) { err.textContent = (res.j && res.j.error) || 'parse failed'; err.hidden = false; return; }
+          parsedSpec = res.j;
+          var box = document.getElementById('oai-ops');
+          box.innerHTML = '';
+          (parsedSpec.operations || []).forEach(function(op, idx){
+            var row = mk('<label class="oai-op"><input type="checkbox" data-i="'+idx+'" checked> '
+              + '<code></code> <b></b> <span class="muted"></span></label>');
+            row.querySelector('code').textContent = op.verb + ' ' + op.path;
+            row.querySelector('b').textContent = ' ' + op.name + ' ';
+            row.querySelector('.muted').textContent = op.description || '';
+            box.appendChild(row);
+          });
+          document.getElementById('oai-base').textContent = parsedSpec.base_url ? ('Base URL: ' + parsedSpec.base_url) : 'No server URL in the spec.';
+          document.getElementById('oai-results').hidden = false;
+        })
+        .catch(function(){ err.textContent = 'parse failed'; err.hidden = false; });
+    };
+    document.getElementById('oai-add').onclick = function(){
+      if (!parsedSpec) return;
+      f_type.value = 'rest';
+      if (parsedSpec.base_url) document.getElementById('f_base_url').value = parsedSpec.base_url;
+      document.getElementById('f_command').value = 'python3 -m toolstack_forwarder';
+      ops.innerHTML = '';
+      [].forEach.call(document.querySelectorAll('#oai-ops input[type=checkbox]:checked'), function(c){
+        ops.appendChild(opCard(parsedSpec.operations[+c.getAttribute('data-i')]));
+      });
+      (parsedSpec.secrets || []).forEach(function(s){
+        var exists = [].some.call(secs.querySelectorAll('.sec-name'), function(n){ return n.value === s.name; });
+        if (!exists) secs.appendChild(secRow(s));
+      });
+      syncType();
+      document.getElementById('import-openapi').open = false;
+    };
+  }
 
   document.getElementById('tool-form').addEventListener('submit', function(){
     var tool = {
       id: document.getElementById('f_id').value,
       type: document.getElementById('f_type').value,
       description: document.getElementById('f_description').value,
+      base_url: document.getElementById('f_base_url').value,
       command: document.getElementById('f_command').value,
       image: document.getElementById('f_image').value,
       port: document.getElementById('f_port').value,
       operations: [].map.call(ops.querySelectorAll('.opcard'), function(card){
+        var headers = card.querySelector('.op-headers').value.split(',').map(function(h){return h.trim();}).filter(Boolean);
         return {name: card.querySelector('.op-name').value,
                 risk: card.querySelector('.op-risk').value,
                 description: card.querySelector('.op-desc').value,
+                verb: card.querySelector('.op-verb').value,
+                path: card.querySelector('.op-path').value,
+                allowed_headers: headers,
+                body_kind: card.querySelector('.op-body-kind').value,
+                body_content_type: card.querySelector('.op-body-content-type').value,
+                body_substitution: card._body_substitution,
+                secret_update_rules: card._secret_update_rules || [],
                 args: [].map.call(card.querySelectorAll('.argrow'), function(r){
                   return {name: r.querySelector('.arg-name').value,
                           type: r.querySelector('.arg-type').value,
@@ -702,17 +787,35 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
                      f"<p class='muted'>Directory: <code>{esc(dir_value)}</code></p>")
         id_attr = " readonly"  # renaming a tool would orphan its caller policies
     initial = json.dumps(tool).replace("</", "<\\/")  # safe to embed in <script>
+    importer = ""
+    if mode == "new":
+        importer = (
+            "<details id='import-openapi'><summary>Import OpenAPI</summary>"
+            "<p class='muted'>Paste a JSON OpenAPI/Swagger spec; YAML works when PyYAML is installed.</p>"
+            "<textarea id='oai-spec' rows='8' placeholder='{\"openapi\":\"3.0.0\",...}'></textarea>"
+            "<div class='actions'><button type='button' id='oai-parse'>Parse spec</button></div>"
+            "<div id='oai-error' class='error' hidden></div>"
+            "<div id='oai-results' hidden><p id='oai-base' class='muted'></p>"
+            "<div id='oai-ops'></div>"
+            "<button type='button' id='oai-add'>Use selected operations</button></div>"
+            "</details>"
+        )
     body = (
         f"{err}<section><div class='row'><a class='button' href='/tools'>Back</a>"
         f"<h2>{'Add tool' if mode == 'new' else 'Edit tool: ' + esc(tool.get('id', ''))}</h2></div>"
+        f"{importer}"
         f"<form id='tool-form' method='post' action='{action}'>"
         f"{_csrf_field(csrf)}{dir_field}"
         f"<label class='field'>id <input id='f_id' placeholder='weather'{id_attr} required></label>"
         "<label class='field'>transport <span class='muted'>(api = POST /v1/actions; "
-        "mcp = streamable-HTTP MCP server)</span>"
+        "mcp = streamable-HTTP MCP server; rest = generic forwarder)</span>"
         "<select id='f_type'></select></label>"
         "<label class='field'>description <span class='muted'>(optional)</span>"
         "<textarea id='f_description' rows='2' placeholder='what this tool does'></textarea></label>"
+        "<div id='rest-fields' hidden>"
+        "<label class='field'>base URL <span class='muted'>(REST upstream)</span>"
+        "<input id='f_base_url' placeholder='https://api.example.com/v1'></label>"
+        "</div>"
         "<label class='field'>entrypoint command <span class='muted'>(process backend)</span>"
         "<input id='f_command' placeholder='python3 app.py'></label>"
         "<label class='field'>image <span class='muted'>(docker backend)</span>"
