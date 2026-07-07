@@ -48,13 +48,12 @@ _READINESS_WAIT = 0.3
 log = logging.getLogger(__name__)
 
 
-def _tool_log_path(tool_id: str) -> Path:
-    """Per-tool logfile under the state dir, so a tool's stdout/stderr can be tailed to
-    diagnose a failed start or a crash (the process runner dup's the child onto it)."""
-    state = Path(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"))
-    d = state / "toolstack" / "tools"
+def _tool_log_path(tool_def: ToolDef) -> Path:
+    """Per-tool logfile in the tool folder (`logs/tool.log`) so tool output travels with
+    the tool, not an opaque global state directory."""
+    d = tool_def.path / "logs"
     d.mkdir(parents=True, exist_ok=True)
-    return d / f"{tool_id}.log"
+    return d / "tool.log"
 
 
 def _check_port_free(port: int) -> None:
@@ -70,12 +69,12 @@ def _check_port_free(port: int) -> None:
 
 
 def _cleanup_partial_start(secrets_dir: str, proxy_pid: str | None, proxy_dir: str | None,
-                           child_pid: int | None = None) -> None:
+                           child_pid: int | None = None, log_pid: str | None = None) -> None:
     """Best-effort cleanup when start() fails partway: never leave the (world-readable) secrets
     dir on disk, an orphaned write-proxy, or an unreaped child zombie behind. start() runs inside
     the long-lived admin handler, so a leaked zombie per failed start would accrue there; kill
     AND reap both the tool child and the proxy (a readiness-failed child is already a zombie)."""
-    for pid in (child_pid, proxy_pid):
+    for pid in (child_pid, proxy_pid, log_pid):
         if pid is None:
             continue
         try:
@@ -100,6 +99,8 @@ class RunningTool:
     workdir: str  # secrets dir to clean up on stop
     proxy_pid: str | None = None  # writable-secret proxy pid (when the tool has one)
     proxy_dir: str | None = None  # proxy socket dir to clean up on stop
+    log_pid: str | None = None  # docker log follower pid (process runner logs directly)
+    log_path: str | None = None
 
 
 def _write_secrets(tool_id: str, secrets: dict[str, str]) -> str:
@@ -156,6 +157,35 @@ def _stop_proxy(running: RunningTool) -> None:
         shutil.rmtree(running.proxy_dir, ignore_errors=True)
 
 
+def _stop_log_follower(running: RunningTool) -> None:
+    if running.log_pid:
+        try:
+            os.killpg(int(running.log_pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, ValueError):
+            pass
+        try:
+            os.waitpid(int(running.log_pid), 0)
+        except (ChildProcessError, ProcessLookupError, ValueError):
+            pass
+
+
+def _start_docker_log_follower(container: str, log_path: Path) -> str:
+    fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        pid = os.posix_spawn(
+            "/usr/bin/env",
+            ["env", "docker", "logs", "-f", container],
+            os.environ,
+            setpgroup=0,
+            file_actions=[(os.POSIX_SPAWN_DUP2, fd, 1),
+                          (os.POSIX_SPAWN_DUP2, fd, 2),
+                          (os.POSIX_SPAWN_CLOSE, fd)],
+        )
+    finally:
+        os.close(fd)
+    return str(pid)
+
+
 class ProcessRunner:
     backend = "process"
 
@@ -167,6 +197,7 @@ class ProcessRunner:
         secrets_dir = _write_secrets(tool_def.id, secrets)
         proxy_pid = proxy_dir = None
         child_pid = None
+        log_path = _tool_log_path(tool_def)
         try:
             proxy_pid, proxy_dir = _start_write_proxy(tool_def, secret_backend, secrets_file)
             env = {
@@ -182,7 +213,6 @@ class ProcessRunner:
             script = f"cd {shlex.quote(str(tool_def.path))} && exec {tool_def.command}"
             # Capture the tool's stdout/stderr onto a per-tool logfile (the child's fd 1/2) so a
             # crash or a noisy start is diagnosable, not lost into the toolyard's own stream.
-            log_path = _tool_log_path(tool_def.id)
             log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
             try:
                 pid = os.posix_spawn(
@@ -195,7 +225,7 @@ class ProcessRunner:
                 os.close(log_fd)
             child_pid = pid  # track so a readiness failure (below) reaps it, not just kills it
             running = RunningTool(tool_def.id, tool_def.port, self.backend, str(pid), secrets_dir,
-                                  proxy_pid, proxy_dir)
+                                  proxy_pid, proxy_dir, log_path=str(log_path))
             # Readiness: a bad command (missing file, import error) execs and exits at once.
             # Catch it now (with the logfile to diagnose) instead of recording a phantom
             # "running" tool that 502s every call.
@@ -220,6 +250,7 @@ class ProcessRunner:
         except (ChildProcessError, ProcessLookupError):
             pass
         _stop_proxy(running)
+        _stop_log_follower(running)
         shutil.rmtree(running.workdir, ignore_errors=True)
         log.info("stopped tool %s (pid %s)", running.tool_id, running.handle)
 
@@ -253,6 +284,8 @@ class DockerRunner:
         secrets_dir = _write_secrets(tool_def.id, secrets)
         proxy_pid = proxy_dir = None
         name = None
+        log_pid = None
+        log_path = _tool_log_path(tool_def)
         try:
             # The bind mount exposes host files by uid; a tool image that drops to a
             # non-root user (the recommended posture) cannot read files owned by the
@@ -295,16 +328,17 @@ class DockerRunner:
             if rest_generic:
                 run_args += ["python3", "-m", "toolstack_forwarder"]
             self._docker(run_args, _DOCKER_RUN_TIMEOUT, check=True)
+            log_pid = _start_docker_log_follower(name, log_path)
             running = RunningTool(tool_def.id, tool_def.port, self.backend, name, secrets_dir,
-                                  proxy_pid, proxy_dir)
+                                  proxy_pid, proxy_dir, log_pid=log_pid, log_path=str(log_path))
             # Readiness: a container that exits at once (bad image / port clash) must not record
             # as running, then 502 every call. Settle briefly first: `docker run -d` returns at
             # create, so an immediate crash can still read Running=true for a moment.
             time.sleep(_READINESS_WAIT)
             if not self.is_alive(running):
-                raise RuntimeError(f"tool {tool_def.id} container exited immediately: docker logs {name}")
-            log.info("started tool %s in container %s on :%s (docker logs %s)",
-                     tool_def.id, name, tool_def.port, name)
+                raise RuntimeError(f"tool {tool_def.id} container exited immediately: see {log_path}")
+            log.info("started tool %s in container %s on :%s (log %s)",
+                     tool_def.id, name, tool_def.port, log_path)
             return running
         except BaseException:
             if name:  # drop the just-created (now-stopped) container so a failed start isn't litter
@@ -313,10 +347,11 @@ class DockerRunner:
                                    timeout=_DOCKER_RM_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     pass
-            _cleanup_partial_start(secrets_dir, proxy_pid, proxy_dir)
+            _cleanup_partial_start(secrets_dir, proxy_pid, proxy_dir, log_pid=log_pid)
             raise
 
     def stop(self, running: RunningTool) -> None:
+        _stop_log_follower(running)
         try:
             r = subprocess.run(["docker", "rm", "-f", running.handle],
                                capture_output=True, text=True, timeout=_DOCKER_RM_TIMEOUT)

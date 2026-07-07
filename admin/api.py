@@ -222,6 +222,12 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             return {"audit": store.recent_audit(limit=limit),
                     "requests": _rows(store.list_requests(limit=limit))}
 
+    @app.delete("/api/audit")
+    async def api_clear_audit(user: str = Depends(require_user)):
+        with open_store(broker_config.load()) as store:
+            store.clear_audit()
+        return {"ok": True}
+
     @app.get("/api/tools")
     async def api_tools(user: str = Depends(require_user)):
         config = broker_config.load()

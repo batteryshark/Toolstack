@@ -39,11 +39,13 @@ field = "API_KEY"            # looked up in the secret backend
 A tool's `type` is one of `api` / `mcp` / `rest`; see [../tools/README.md](../tools/README.md)
 for choosing one. Samples live in [../tools/](../tools/).
 
-REST tools add top-level `base_url`, per-operation `verb` / `path`, and a required
-`broker_channel` secret. When `[entrypoint].command` is omitted for a REST tool, the
-toolyard defaults it to `python3 -m toolstack_forwarder`. Under the docker runner,
-a REST tool without an explicit image uses a generic stock-Python container with
-the repo mounted read-only to run that bundled forwarder.
+REST tools add top-level `base_url` and per-operation `verb` / `path`. When
+`[entrypoint].command` is omitted for a REST tool, the toolyard defaults it to
+`python3 -m toolstack_forwarder`. Under the docker runner, a REST tool without an
+explicit image uses a generic stock-Python container with the repo mounted
+read-only to run that bundled forwarder. Broker-to-tool `X-Toolstack-Secret`
+works uniformly for api / mcp / rest when a shared `broker_secret` is provisioned;
+REST tools do not need a per-tool channel secret.
 
 To scaffold a REST manifest from an OpenAPI JSON spec:
 

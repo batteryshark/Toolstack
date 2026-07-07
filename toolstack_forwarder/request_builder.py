@@ -40,7 +40,7 @@ class OutboundRequest:
 _TEMPLATE_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _SECRET_REF = re.compile(r"\{\{secret:([A-Za-z0-9_-]+)\}\}")
 _HEADER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*\Z")
-_FORBIDDEN_VARIABLE_CHARS = set("/.&=\\")
+_FORBIDDEN_PATH_VARIABLE_CHARS = set("/\\.")
 
 
 def build_request(config: RestConfig, op_name: str, arguments: dict, secrets_dir: str | Path,
@@ -73,17 +73,21 @@ def _hydrate_path(op: Operation, arguments: dict) -> str:
     if not isinstance(variables, dict):
         raise RequestBuildError("invalid_variables", "variables must be an object")
 
+    query_at = op.path.find("?")
+
     def fill(match: re.Match[str]) -> str:
         name = match.group(1)
         value = variables.get(name)
         if not isinstance(value, str):
             raise RequestBuildError("missing_variable", f"missing path variable {name!r}", name=name)
-        return urllib.parse.quote(_validate_variable(name, value), safe="")
+        if query_at >= 0 and match.start() > query_at:
+            return urllib.parse.quote(_validate_query_variable(name, value), safe="")
+        return urllib.parse.quote(_validate_path_variable(name, value), safe="")
 
     return _TEMPLATE_VAR.sub(fill, op.path)
 
 
-def _validate_variable(name: str, raw: str) -> str:
+def _validate_variable_common(name: str, raw: str) -> str:
     value = raw.strip()
     if not value:
         raise RequestBuildError("invalid_variable", "path variable is empty", name=name)
@@ -93,21 +97,31 @@ def _validate_variable(name: str, raw: str) -> str:
         raise RequestBuildError("invalid_variable", "path variable must be ASCII", name=name)
     if any(ord(c) <= 0x20 or ord(c) == 0x7f for c in value):
         raise RequestBuildError("invalid_variable", "path variable contains whitespace or control characters", name=name)
-    if any(c in _FORBIDDEN_VARIABLE_CHARS for c in value):
+    return value
+
+
+def _validate_path_variable(name: str, raw: str) -> str:
+    value = _validate_variable_common(name, raw)
+    if any(c in _FORBIDDEN_PATH_VARIABLE_CHARS for c in value):
         raise RequestBuildError("invalid_variable", "path variable contains a forbidden character", name=name)
     decoded = urllib.parse.unquote(value)
     if any(ord(c) <= 0x20 or ord(c) == 0x7f or ord(c) > 0x7f for c in decoded):
         raise RequestBuildError("invalid_variable", "path variable contains an encoded forbidden character", name=name)
-    if any(c in _FORBIDDEN_VARIABLE_CHARS for c in decoded):
+    if any(c in _FORBIDDEN_PATH_VARIABLE_CHARS for c in decoded):
         raise RequestBuildError("invalid_variable", "path variable contains an encoded forbidden character", name=name)
     return value
 
 
+def _validate_query_variable(name: str, raw: str) -> str:
+    return _validate_variable_common(name, raw)
+
+
 def _join_url(base_url: str, path: str) -> str:
     base = urllib.parse.urlsplit(base_url)
+    rel = urllib.parse.urlsplit(path)
     base_path = base.path.rstrip("/")
-    full_path = (base_path + path) if base_path else path
-    return urllib.parse.urlunsplit((base.scheme, base.netloc, full_path, "", ""))
+    full_path = (base_path + rel.path) if base_path else rel.path
+    return urllib.parse.urlunsplit((base.scheme, base.netloc, full_path, rel.query, ""))
 
 
 def _build_headers(op: Operation, arguments: dict, secrets_dir: str | Path) -> dict[str, str]:

@@ -260,7 +260,7 @@ class ProcessRunnerHardening(unittest.TestCase):
 
 class ProcessRunnerLogging(unittest.TestCase):
     """The process runner captures a tool's stdout/stderr onto a per-tool logfile under the
-    state dir, so a crashed/noisy tool is diagnosable instead of lost."""
+    tool folder, so a crashed/noisy tool is diagnosable instead of lost."""
 
     def test_start_creates_the_per_tool_logfile(self):
         import toolyard.runner as runner_mod
@@ -269,7 +269,7 @@ class ProcessRunnerLogging(unittest.TestCase):
         tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
         runner = ProcessRunner()
         with mock.patch.dict(os.environ, {"XDG_STATE_HOME": state}):
-            logpath = runner_mod._tool_log_path(tool.id)
+            logpath = runner_mod._tool_log_path(tool)
             running = runner.start(tool, {"api_key": SECRET})
             self.addCleanup(runner.stop, running)
             self.assertTrue(logpath.exists())   # the child's fd 1/2 were redirected here
@@ -290,7 +290,6 @@ class RestRunnerConfig(unittest.TestCase):
             'id = "rest_demo"\ntype = "rest"\nbase_url = "https://api.example.test"\n'
             '[entrypoint]\nport = 4800\n'
             '[[operations]]\nname = "get_item"\nrisk = "read"\nverb = "GET"\npath = "/items/{id}"\n'
-            '[[secrets]]\nname = "broker_channel"\nfield = "TOOLSTACK_TOOL_SECRET_REST_DEMO"\n'
         )
         self.tool = load(self.tool_dir / "toolyard.toml")
 
@@ -300,7 +299,7 @@ class RestRunnerConfig(unittest.TestCase):
              mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
              mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
              mock.patch("os.posix_spawn", return_value=123) as spawn:
-            running = ProcessRunner().start(self.tool, {"broker_channel": "chan"})
+            running = ProcessRunner().start(self.tool, {})
         env = spawn.call_args.args[2]
         self.assertEqual(env["TOOLSTACK_TOOL_CONFIG"], str(self.tool_dir / "toolyard.toml"))
         self.assertEqual(running.handle, "123")
@@ -314,9 +313,10 @@ class RestRunnerConfig(unittest.TestCase):
 
         with mock.patch("toolyard.runner._write_secrets", return_value=str(self.secrets_dir)), \
              mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+             mock.patch("toolyard.runner._start_docker_log_follower", return_value=None), \
              mock.patch.object(DockerRunner, "_docker", side_effect=fake_docker), \
              mock.patch.object(DockerRunner, "is_alive", return_value=True):
-            DockerRunner().start(dataclasses.replace(self.tool, image="toolstack-forwarder"), {"broker_channel": "chan"})
+            DockerRunner().start(dataclasses.replace(self.tool, image="toolstack-forwarder"), {})
         run = next(args for args in calls if args[:2] == ["run", "-d"])
         self.assertIn(f"{self.tool_dir / 'toolyard.toml'}:/run/toolstack/toolyard.toml:ro", run)
         self.assertIn("TOOLSTACK_TOOL_CONFIG=/run/toolstack/toolyard.toml", run)
@@ -330,9 +330,10 @@ class RestRunnerConfig(unittest.TestCase):
 
         with mock.patch("toolyard.runner._write_secrets", return_value=str(self.secrets_dir)), \
              mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+             mock.patch("toolyard.runner._start_docker_log_follower", return_value=None), \
              mock.patch.object(DockerRunner, "_docker", side_effect=fake_docker), \
              mock.patch.object(DockerRunner, "is_alive", return_value=True):
-            DockerRunner().start(self.tool, {"broker_channel": "chan"})
+            DockerRunner().start(self.tool, {})
         self.assertFalse(any(args[:1] == ["build"] for args in calls))
         run = next(args for args in calls if args[:2] == ["run", "-d"])
         self.assertIn("python:3.13-slim", run)

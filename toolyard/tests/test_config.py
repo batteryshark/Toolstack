@@ -132,19 +132,17 @@ class PortValidation(unittest.TestCase):
             'id = "kv"\ntype = "rest"\nbase_url = "https://api.example.test/v1"\n'
             '[entrypoint]\nport = 4621\n'
             '[[operations]]\nname = "get_item"\nrisk = "read"\nverb = "GET"\npath = "/items/{id}"\n'
-            '[[secrets]]\nname = "broker_channel"\nfield = "TOOLSTACK_TOOL_SECRET_KV"\n'
         ))
         self.assertEqual(tool.type, "rest")
         self.assertEqual(tool.command, "python3 -m toolstack_forwarder")
 
-    def test_rest_requires_broker_channel_secret(self):
-        with self.assertRaises(ValueError) as cm:
-            load(self._write(
-                'id = "kv"\ntype = "rest"\nbase_url = "https://api.example.test"\n'
-                '[entrypoint]\nport = 4621\n'
-                '[[operations]]\nname = "get_item"\nrisk = "read"\nverb = "GET"\npath = "/items/{id}"\n'
-            ))
-        self.assertIn("broker_channel", str(cm.exception))
+    def test_rest_path_may_include_query_text(self):
+        tool = load(self._write(
+            'id = "kv"\ntype = "rest"\nbase_url = "https://api.example.test/v1"\n'
+            '[entrypoint]\nport = 4621\n'
+            '[[operations]]\nname = "find_item"\nrisk = "read"\nverb = "GET"\npath = "/items?id={id}"\n'
+        ))
+        self.assertEqual(tool.type, "rest")
 
     def test_rest_rule_target_must_be_writable(self):
         with self.assertRaises(ValueError) as cm:
@@ -154,7 +152,6 @@ class PortValidation(unittest.TestCase):
                 '[[operations]]\nname = "login"\nrisk = "write"\nverb = "POST"\npath = "/login"\n'
                 'secret_update_rules = [{ secret_name = "token", response_type = "json", '
                 'extract_path = "token", match_status = "200" }]\n'
-                '[[secrets]]\nname = "broker_channel"\nfield = "TOOLSTACK_TOOL_SECRET_KV"\n'
                 '[[secrets]]\nname = "token"\nfield = "TOKEN"\n'
             ))
         self.assertIn("non-writable", str(cm.exception))

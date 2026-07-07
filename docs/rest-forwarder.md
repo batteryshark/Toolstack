@@ -27,15 +27,13 @@ args = [
   { name = "variables", type = "object", required = true, description = "Path variables: user_id" },
   { name = "headers", type = "object", required = false, description = "Allowed headers: X-Trace" },
 ]
-
-[[secrets]]
-name = "broker_channel"
-field = "TOOLSTACK_TOOL_SECRET_JIRA"
 ```
 
-`path` supports single-segment `{name}` variables. Values are stripped, bounded,
-validated as printable ASCII, rejected for `/`, `.`, `..`, `&`, `=`, whitespace,
-and encoded forbidden forms, then percent-encoded before insertion.
+`path` supports single-segment `{name}` variables in the path and query text, for
+example `/users?email={email}`. Path variable values are stripped, bounded,
+validated as printable ASCII, rejected for `/`, `.`, whitespace, and encoded
+forbidden forms, then percent-encoded before insertion. Query variable values use
+the same printable-ASCII bound but allow query-safe content before percent-encoding.
 
 `body_kind` is `none`, `text`, or `binary`. Text bodies are UTF-8 strings and may
 substitute `{{secret:NAME}}`; binary bodies are base64 and force substitution off.
@@ -70,9 +68,10 @@ The broker calls the forwarder:
 }
 ```
 
-`X-Toolstack-Secret` is required. The broker reads
-`TOOLSTACK_TOOL_SECRET_<TOOL>`; the forwarder reads `broker_channel` from its
-secrets dir.
+`X-Toolstack-Secret` is optional and works the same way as api / mcp tools. If the
+broker has a shared secret for the tool it sends the header; if the forwarder has
+`$TOOLSTACK_SECRETS_DIR/broker_secret`, it verifies the header. With neither side
+configured, the channel check stays off.
 
 Success:
 

@@ -32,10 +32,6 @@ secret_update_rules = [
 ]
 
 [[secrets]]
-name = "broker_channel"
-field = "TOOLSTACK_TOOL_SECRET_REST_DEMO"
-
-[[secrets]]
 name = "auth_token"
 field = "REST_DEMO_AUTH_TOKEN"
 writable = true

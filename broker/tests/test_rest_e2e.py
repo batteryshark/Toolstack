@@ -91,7 +91,7 @@ class RestE2E(unittest.TestCase):
         self.root = Path(self.tmp)
         self.secrets = self.root / "secrets"
         self.secrets.mkdir()
-        (self.secrets / "broker_channel").write_text("chan")
+        (self.secrets / "broker_secret").write_text("chan")
 
         _Upstream.seen = []
         self.upstream = HTTPServer(("127.0.0.1", 0), _Upstream)
@@ -133,10 +133,6 @@ body_kind = "text"
 secret_update_rules = [
   {{ secret_name = "auth_token", response_type = "json", extract_path = "session.token", match_status = "200" }},
 ]
-
-[[secrets]]
-name = "broker_channel"
-field = "TOOLSTACK_TOOL_SECRET_REST_DEMO"
 
 [[secrets]]
 name = "auth_token"

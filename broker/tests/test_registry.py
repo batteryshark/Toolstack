@@ -138,7 +138,6 @@ class RestType(unittest.TestCase):
             f'id = "kv"\ntype = "rest"\nbase_url = "{base_url}"\n[entrypoint]\nport = 4621\n'
             '[[operations]]\nname = "get_item"\nrisk = "read"\nverb = "GET"\npath = "/items/{item_id}"\n'
             'body_kind = "none"\n'
-            '[[secrets]]\nname = "broker_channel"\nfield = "TOOLSTACK_TOOL_SECRET_KV"\n'
             '[[secrets]]\nname = "api_token"\nfield = "SUPER_SECRET_VALUE"\n'
         )
         return Registry.from_tools_root(self.tmp)

@@ -51,7 +51,7 @@ class ForwarderServer(unittest.TestCase):
         self.root = Path(self.tmp)
         self.secrets = self.root / "secrets"
         self.secrets.mkdir()
-        (self.secrets / "broker_channel").write_text("chan\n")
+        (self.secrets / "broker_secret").write_text("chan\n")
         self.upstream = HTTPServer(("127.0.0.1", 0), _Upstream)
         self.upstream.seen = []
         self._start(self.upstream)
@@ -82,10 +82,6 @@ path = "/items/{{item_id}}"
 allowed_headers = ["X-Trace"]
 
 {extra_ops}
-
-[[secrets]]
-name = "broker_channel"
-field = "TOOLSTACK_TOOL_SECRET_REST_DEMO"
 """)
         return load_config(toml)
 
@@ -126,16 +122,16 @@ field = "TOOLSTACK_TOOL_SECRET_REST_DEMO"
         self.assertEqual(self.upstream.seen[-1]["path"], "/v1/items/i1")
         self.assertEqual(self.upstream.seen[-1]["headers"]["X-Trace"], "abc")
 
-    def test_channel_secret_mismatch_is_401_json(self):
+    def test_broker_secret_mismatch_is_401_json_when_configured(self):
         status, body = self._post(self._forwarder(), {"op": "get_item", "arguments": {}}, secret="wrong")
         self.assertEqual(status, 401)
         self.assertEqual(body["error"], "channel_secret_mismatch")
 
-    def test_missing_channel_secret_file_is_401_json(self):
-        (self.secrets / "broker_channel").unlink()
-        status, body = self._post(self._forwarder(), {"op": "get_item", "arguments": {}}, secret="chan")
-        self.assertEqual(status, 401)
-        self.assertEqual(body["error"], "channel_secret_missing")
+    def test_missing_broker_secret_file_disables_channel_auth(self):
+        (self.secrets / "broker_secret").unlink()
+        status, body = self._post(self._forwarder(), {"op": "get_item", "arguments": {"variables": {"item_id": "i1"}}}, secret="anything")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status"], 201)
 
     def test_does_not_follow_upstream_redirect(self):
         cfg = self._config("""
