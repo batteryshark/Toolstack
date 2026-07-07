@@ -200,6 +200,22 @@ class JsonApi(unittest.TestCase):
         sb = self.client.get("/api/secret-backend", headers=self._auth()).json()
         self.assertIn("name", sb)
 
+    def test_infisical_secret_backend_reports_identity_without_values(self):
+        with mock.patch.dict(os.environ, {
+            "TOOLSTACK_SECRET_BACKEND": "infisical",
+            "TOOLSTACK_INFISICAL_HOST": "https://infisical.example.test",
+            "TOOLSTACK_INFISICAL_ENVIRONMENT": "dev",
+            "TOOLSTACK_INFISICAL_VAULT": "ToolServer",
+            "TOOLSTACK_INFISICAL_CLIENT_ID": "cid-secret",
+            "TOOLSTACK_INFISICAL_CLIENT_SECRET": "csecret-secret",
+        }):
+            body = self.client.get("/api/secret-backend", headers=self._auth()).json()
+        self.assertEqual(body["name"], "infisical")
+        self.assertTrue(body["identity_configured"])
+        dumped = json.dumps(body)
+        self.assertNotIn("cid-secret", dumped)
+        self.assertNotIn("csecret-secret", dumped)
+
     def test_edit_tool_updates_description_and_secrets(self):
         r = self.client.post("/api/tools/echo", headers=self._auth(), json={
             "description": "now with feeling",
