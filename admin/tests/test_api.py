@@ -193,7 +193,7 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(echo["description"], "echo tool")
         self.assertIsNone(echo["source"])   # hand-authored tool: no .tsr-source.json
         self.assertEqual(echo["secrets"], [{"name": "api_key", "field": "API_KEY",
-                                            "writable": True, "vault": None, "item": None}])
+                                            "writable": True, "item": None}])
         cfg = self.client.get("/api/config", headers=self._auth())
         self.assertEqual(cfg.status_code, 200)
         self.assertIn("port", cfg.json())
@@ -220,7 +220,7 @@ class JsonApi(unittest.TestCase):
         r = self.client.post("/api/tools/echo", headers=self._auth(), json={
             "description": "now with feeling",
             "secrets": [{"name": "api_key", "field": "NEW_KEY", "writable": False},
-                        {"name": "token", "field": "TOKEN", "writable": True, "vault": "Proj"}]})
+                        {"name": "token", "field": "TOKEN", "writable": True, "item": "oauth"}]})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["description"], "now with feeling")
         # the change is persisted: GET reflects the new description + secrets, ops untouched

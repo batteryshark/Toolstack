@@ -51,23 +51,27 @@ class Serialize(unittest.TestCase):
         self.assertTrue(parsed["operations"][0]["args"][0]["required"])
         self.assertEqual(parsed["secrets"][0]["field"], "API_KEY")
 
-    def test_infisical_vault_item_round_trip(self):
-        # The Infisical coordinates survive normalize -> to_toml -> parse, so editing an
-        # Infisical-backed tool in the panel does not strip its vault/item.
+    def test_infisical_item_round_trip(self):
+        # The Infisical path survives normalize -> to_toml -> parse, so editing an
+        # Infisical-backed tool in the panel does not strip its path.
         data = tool_authoring.normalize({**FULL, "secrets": [
-            {"name": "api_key", "field": "API_KEY", "vault": "ToolServer",
-             "item": "weather-tool", "writable": True}]})
+            {"name": "api_key", "field": "API_KEY", "item": "weather-tool", "writable": True}]})
         parsed = tomllib.loads(tool_authoring.to_toml(data))
         sec = parsed["secrets"][0]
-        self.assertEqual((sec["vault"], sec["item"], sec["writable"]),
-                         ("ToolServer", "weather-tool", True))
+        self.assertEqual((sec["item"], sec["writable"]), ("weather-tool", True))
 
-    def test_blank_vault_item_are_omitted(self):
-        # No vault/item declared -> no keys emitted (so file-backend tools stay clean and
-        # the backend defaults apply).
+    def test_blank_item_is_omitted(self):
+        # No item declared -> no key emitted (so file-backend tools stay clean and the
+        # backend default applies).
         parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(FULL)))
-        self.assertNotIn("vault", parsed["secrets"][0])
         self.assertNotIn("item", parsed["secrets"][0])
+
+    def test_vault_is_not_serialized_from_editor_input(self):
+        data = tool_authoring.normalize({**FULL, "secrets": [
+            {"name": "api_key", "field": "API_KEY", "vault": "ToolServer", "item": "weather-tool"}]})
+        sec = tomllib.loads(tool_authoring.to_toml(data))["secrets"][0]
+        self.assertNotIn("vault", sec)
+        self.assertEqual(sec["item"], "weather-tool")
 
     def test_escapes_quotes_in_description(self):
         data = tool_authoring.normalize(

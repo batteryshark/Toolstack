@@ -49,10 +49,16 @@ class Secrets(unittest.TestCase):
         spec = self._load('[[secrets]]\nname = "api_key"\nfield = "API_KEY"\n').secrets[0]
         self.assertEqual((spec.name, spec.field), ("api_key", "API_KEY"))
 
-    def test_vault_item_default_to_none(self):
+    def test_item_defaults_to_none(self):
         spec = self._load('[[secrets]]\nname = "api_key"\nfield = "API_KEY"\n').secrets[0]
-        self.assertIsNone(spec.vault)
         self.assertIsNone(spec.item)
+
+    def test_ignores_legacy_vault_key(self):
+        spec = self._load(
+            '[[secrets]]\nname = "api_key"\nfield = "API_KEY"\nvault = "Legacy"\nitem = "weather"\n'
+        ).secrets[0]
+        self.assertEqual(spec.item, "weather")
+        self.assertFalse(hasattr(spec, "vault"))
 
     def test_description_defaults_empty(self):
         # The echo tool declares no top-level description.

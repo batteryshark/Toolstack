@@ -4,7 +4,7 @@ A tool that refreshes a credential (e.g. an OAuth token) cannot reach the secret
 backend itself. Instead it `POST`s the new value to a Unix socket the toolyard
 mounts into the container at `/run/toolyard/secrets.sock`; this proxy (which runs
 on the host, holds the backend, and is never inside the container) enforces the
-tool's writable allowlist and patches exactly the declared `(vault, item, field)`.
+tool's writable allowlist and patches exactly the declared `(item, field)`.
 
 Wire shape (what the tool sends):
 

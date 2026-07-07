@@ -87,10 +87,10 @@ class Infisical(unittest.TestCase):
         b._request = fake_request
         return b
 
-    def test_resolves_by_vault_item_field(self):
+    def test_resolves_by_configured_vault_item_field(self):
         b = self._backend([{"secretKey": "username", "secretValue": "alice"}])
         resolved = b.resolve(_tool(
-            SecretSpec("app_username", "username", vault="Proj", item="demo-item")))
+            SecretSpec("app_username", "username", item="demo-item")))
         self.assertEqual(resolved, {"app_username": "alice"})
 
     def test_item_defaults_to_tool_id(self):
@@ -111,7 +111,7 @@ class Infisical(unittest.TestCase):
     def test_missing_field_raises(self):
         b = self._backend([{"secretKey": "other", "secretValue": "x"}])
         with self.assertRaises(KeyError):
-            b.resolve(_tool(SecretSpec("k", "missing", vault="Proj", item="demo-item")))
+            b.resolve(_tool(SecretSpec("k", "missing", item="demo-item")))
 
     def test_no_vault_raises(self):
         b = InfisicalBackend(
@@ -122,6 +122,15 @@ class Infisical(unittest.TestCase):
         )  # no default_vault
         with self.assertRaises(ValueError):
             b.resolve(_tool(SecretSpec("k", "K", item="demo-item")))
+
+    def test_no_secret_tool_does_not_need_vault(self):
+        b = InfisicalBackend(
+            host="https://infisical.test",
+            client_id="cid",
+            client_secret="csecret",
+            environment="dev",
+        )
+        self.assertEqual(b.resolve(_tool()), {})
 
     def test_update_patches_writable_field(self):
         b = self._backend([])
@@ -136,7 +145,7 @@ class Infisical(unittest.TestCase):
             return {}
 
         b._request = fake_request
-        b.update(_tool(SecretSpec("tok", "TOKEN", writable=True, vault="Proj", item="demo-item")),
+        b.update(_tool(SecretSpec("tok", "TOKEN", writable=True, item="demo-item")),
                  "tok", "new-value")
         self.assertEqual(seen["method"], "PATCH")
         self.assertTrue(seen["url"].endswith("/api/v4/secrets/TOKEN"))
@@ -146,7 +155,7 @@ class Infisical(unittest.TestCase):
     def test_update_rejects_non_writable(self):
         b = self._backend([])
         with self.assertRaises(PermissionError):
-            b.update(_tool(SecretSpec("tok", "TOKEN", vault="Proj", item="demo-item")),
+            b.update(_tool(SecretSpec("tok", "TOKEN", item="demo-item")),
                      "tok", "x")
 
     def test_from_env_uses_toolstack_wide_identity(self):
@@ -284,7 +293,8 @@ class InfisicalHTTP(unittest.TestCase):
 
 @unittest.skipUnless(
     os.environ.get("TOOLSTACK_INFISICAL_HOST")
-    and os.environ.get("TOOLSTACK_INFISICAL_TEST_VAULT")
+    and os.environ.get("TOOLSTACK_INFISICAL_VAULT")
+    and os.environ.get("TOOLSTACK_INFISICAL_TEST_FIELD")
     and (
         os.environ.get("TOOLSTACK_INFISICAL_CLIENT_ID")
         or os.environ.get("INFISICAL_CLIENT_ID")
@@ -293,17 +303,16 @@ class InfisicalHTTP(unittest.TestCase):
         os.environ.get("TOOLSTACK_INFISICAL_CLIENT_SECRET")
         or os.environ.get("INFISICAL_CLIENT_SECRET")
     ),
-    "set TOOLSTACK_INFISICAL_HOST + client id/secret + _TEST_VAULT/_TEST_ITEM/_TEST_FIELD for the live test",
+    "set TOOLSTACK_INFISICAL_HOST + TOOLSTACK_INFISICAL_VAULT + client id/secret + _TEST_ITEM/_TEST_FIELD for the live test",
 )
 class InfisicalLive(unittest.TestCase):
     """Opt-in: verify the pinned v4 contract against a REAL Infisical. Reads
     TOOLSTACK_INFISICAL_* (host/env/client credentials, via from_env) plus
-    _TEST_VAULT/_TEST_ITEM/_TEST_FIELD naming a secret the configured identity can read."""
+    _TEST_ITEM/_TEST_FIELD naming a secret the configured identity can read."""
 
     def test_resolves_a_real_secret(self):
         backend = InfisicalBackend.from_env()
         spec = SecretSpec("probe", os.environ["TOOLSTACK_INFISICAL_TEST_FIELD"],
-                          vault=os.environ["TOOLSTACK_INFISICAL_TEST_VAULT"],
                           item=os.environ.get("TOOLSTACK_INFISICAL_TEST_ITEM"))
         resolved = backend.resolve(_tool(spec))
         self.assertIsInstance(resolved["probe"], str)

@@ -210,7 +210,7 @@ final class ApiClientTests: XCTestCase {
 
     func testListToolsDecodesSecrets() async throws {
         let json = #"{"tools":[{"id":"echo","type":"api","port":4601,"running":false,"ops":[],"#
-                 + #""secrets":[{"name":"api_key","field":"API_KEY","writable":true,"vault":null,"item":null}]}]}"#
+                 + #""secrets":[{"name":"api_key","field":"API_KEY","writable":true,"item":null}]}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let tools = try await makeClient(token: "t").listTools()
         XCTAssertEqual(tools.first?.secrets.first?.name, "api_key")
@@ -282,7 +282,7 @@ final class ApiClientTests: XCTestCase {
 
     func testParseOpenAPIPostsSpecAndDecodesRestDraft() async throws {
         let json = #"{"base_url":"https://api.example.com/v1","auth_headers":[{"name":"Authorization","value":"Bearer {{secret:api_token}}"}],"#
-            + #""secrets":[{"name":"api_token","field":"API_TOKEN","writable":false,"vault":null,"item":null}],"#
+            + #""secrets":[{"name":"api_token","field":"API_TOKEN","writable":false,"item":null}],"#
             + #""operations":[{"name":"getItem","verb":"GET","path":"/items/{id}","risk":"read","description":"","#
             + #""allowed_headers":["Authorization"],"body_kind":"none","body_content_type":"","#
             + #""args":[{"name":"variables","type":"object","required":true,"description":"Path variables: id"}]}]}"#
@@ -384,7 +384,7 @@ final class ApiClientTests: XCTestCase {
 
     func testUpdateToolPostsDescriptionAndSecrets() async throws {
         let json = #"{"id":"echo","description":"new","secrets":[{"name":"api_key","field":"K","writable":true,"#
-                 + #""vault":null,"item":null}]}"#
+                 + #""item":null}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let result = try await makeClient(token: "t").updateTool(
             id: "echo", description: "new",
@@ -397,7 +397,8 @@ final class ApiClientTests: XCTestCase {
         let secrets = try XCTUnwrap(body["secrets"] as? [[String: Any]])
         XCTAssertEqual(secrets.first?["field"] as? String, "K")
         XCTAssertEqual(secrets.first?["writable"] as? Bool, true)
-        // a declaration with no vault/item omits those keys (file backend stays clean)
+        // a declaration with no item omits that key (file backend stays clean)
+        XCTAssertNil(secrets.first?["item"])
         XCTAssertNil(secrets.first?["vault"])
     }
 

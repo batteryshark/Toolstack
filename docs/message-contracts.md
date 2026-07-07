@@ -121,7 +121,8 @@ backend credential for any of them.
 ### 4. Tool container → Toolyard (writable secrets)
 
 Writable fields only, via `/run/toolyard/secrets.sock`. Toolyard enforces the
-descriptor allowlist and patches exactly `(vault, item, field)`. No backend
+descriptor allowlist and patches exactly `(item, field)` inside the configured
+deployment vault/project. No backend
 credential is ever mounted in the container.
 
 ### 5. Broker ↔ nod (approval)

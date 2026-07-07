@@ -66,11 +66,11 @@ hands the values to the tool, never to the broker.
   encrypted file unlocked by `$TOOLSTACK_VAULT_PASSPHRASE` (`pip install '.[vault]'`).
 - **Production (shipped):** `InfisicalBackend` resolves each secret from Infisical
   over its HTTP API (stdlib only, no added dependency). A `[[secrets]]` entry adds
-  `vault` (Infisical project) and `item` (secret path; defaults to the tool id) next
-  to `field` (the secret key). Toolstack authenticates once with the deployment's
-  machine identity (`TOOLSTACK_INFISICAL_CLIENT_ID` / `_CLIENT_SECRET`, or the
-  unprefixed Infisical names). Configure with `TOOLSTACK_INFISICAL_HOST` /
-  `_ENVIRONMENT` / `_VAULT`.
+  `item` (secret path; defaults to the tool id) next to `field` (the secret key).
+  The Infisical project/vault comes only from `TOOLSTACK_INFISICAL_VAULT`.
+  Toolstack authenticates once with the deployment's machine identity
+  (`TOOLSTACK_INFISICAL_CLIENT_ID` / `_CLIENT_SECRET`, or the unprefixed Infisical
+  names). Configure with `TOOLSTACK_INFISICAL_HOST` / `_ENVIRONMENT` / `_VAULT`.
 - **Backend selection:** `get_backend(name)` picks `file` (default), `vault`, or `infisical`;
   the CLI exposes `--secret-backend` and honors `$TOOLSTACK_SECRET_BACKEND`.
 - SOPS can follow behind the same `resolve()` interface.
@@ -125,7 +125,7 @@ socket the toolyard mounts into the container at `/run/toolyard/secrets.sock`
 (message-contracts §4). For any tool declaring a `writable = true` secret, the runner
 starts a small **write-proxy** on the host (it holds the backend; only the socket is
 exposed to the container), enforces the tool's writable allowlist, and patches exactly
-the declared `(vault, item, field)`. The proxy is killed and its socket removed on
+the declared `(item, field)`. The proxy is killed and its socket removed on
 stop. No backend credential is ever mounted in the container.
 
 ## Modules

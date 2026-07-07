@@ -122,7 +122,6 @@ public actor ApiClient {
                            secrets: [SecretDecl]) async throws -> ToolEdit {
         let secretsBody: [[String: Any]] = secrets.map { s in
             var row: [String: Any] = ["name": s.name, "field": s.field, "writable": s.writable]
-            if let vault = s.vault, !vault.isEmpty { row["vault"] = vault }
             if let item = s.item, !item.isEmpty { row["item"] = item }
             return row
         }
