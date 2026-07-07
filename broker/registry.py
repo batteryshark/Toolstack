@@ -15,11 +15,12 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # Tool transports the broker knows how to route. "api" -> POST /v1/actions/<op>; "mcp" ->
-# streamable-HTTP MCP client. An unknown type is rejected at load. Mirrors toolyard/config.py
-# and admin/tool_authoring.py (independent packages, so the set is duplicated, not shared).
-TOOL_TYPES = ("api", "mcp")
+# streamable-HTTP MCP client; "rest" -> generic REST forwarder. An unknown type is rejected
+# at load. Mirrors toolyard/config.py and admin/tool_authoring.py (independent packages).
+TOOL_TYPES = ("api", "mcp", "rest")
 
 # A tool id is the routing key and a directory name; it must match this charset, and crucially
 # must NOT contain a dot. A policy spec is split on the FIRST dot into (tool, op) (see
@@ -35,6 +36,10 @@ class ToolOp:
     risk: str
     port: int
     type: str
+    verb: str | None = None
+    path_template: str | None = None
+    base_url_host: str | None = None
+    body_kind: str | None = None
 
 
 class Registry:
@@ -77,12 +82,33 @@ class Registry:
                 f"{toml_path}: tool {data.get('id')!r} needs an [entrypoint] port "
                 f"(integer 1-65535) for a {tool_type!r} tool; got {port!r}"
             )
+        rest_host = _rest_base_url_host(toml_path, data) if tool_type == "rest" else None
         ops = {}
         for o in data.get("operations", []):
+            rest_fields = {}
+            if tool_type == "rest":
+                verb = o.get("verb")
+                path_template = o.get("path")
+                if not isinstance(verb, str) or verb.upper() not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+                    raise ValueError(f"{toml_path}: rest operation {o.get('name')!r} needs a valid verb")
+                if not isinstance(path_template, str) or not path_template.startswith("/") or path_template.startswith("//"):
+                    raise ValueError(f"{toml_path}: rest operation {o.get('name')!r} needs an absolute path template")
+                body_kind = o.get("body_kind")
+                if body_kind is None:
+                    body_kind = "none" if verb.upper() in {"GET", "DELETE"} else "text"
+                if body_kind not in {"none", "text", "binary"}:
+                    raise ValueError(f"{toml_path}: rest operation {o.get('name')!r} has invalid body_kind")
+                rest_fields = {
+                    "verb": verb.upper(),
+                    "path_template": path_template,
+                    "base_url_host": rest_host,
+                    "body_kind": body_kind,
+                }
             ops[o["name"]] = {
                 "risk": o.get("risk", "unknown"),
                 "description": o.get("description", ""),
                 "args": o.get("args", []),
+                **rest_fields,
             }
         # NOTE: data["secrets"] is deliberately never read here.
         catalog[tool_id] = {"port": port, "type": tool_type, "ops": ops}
@@ -114,7 +140,11 @@ class Registry:
         entry = self._catalog.get(tool)
         if entry is None or op not in entry["ops"]:
             return None
-        return ToolOp(tool, op, entry["ops"][op]["risk"], entry["port"], entry["type"])
+        meta = entry["ops"][op]
+        return ToolOp(
+            tool, op, meta["risk"], entry["port"], entry["type"],
+            meta.get("verb"), meta.get("path_template"), meta.get("base_url_host"), meta.get("body_kind"),
+        )
 
     def describe(self, tool: str, op: str) -> dict | None:
         entry = self._catalog.get(tool)
@@ -131,3 +161,20 @@ class Registry:
                 ops.append({"tool": tool, "op": op, "type": entry["type"], "risk": meta["risk"],
                             "description": meta["description"]})
         return ops
+
+
+def _rest_base_url_host(toml_path: Path, data: dict) -> str:
+    base_url = data.get("base_url")
+    if not isinstance(base_url, str) or not base_url:
+        raise ValueError(f"{toml_path}: rest tool needs top-level base_url")
+    split = urlsplit(base_url)
+    if split.scheme not in {"http", "https"} or not split.hostname:
+        raise ValueError(f"{toml_path}: rest base_url must be an absolute http(s) URL with a host")
+    if split.username is not None or split.password is not None:
+        raise ValueError(f"{toml_path}: rest base_url must not embed credentials")
+    host = split.hostname
+    if not re.match(r"^[A-Za-z0-9.-]+\Z", host):
+        raise ValueError(f"{toml_path}: rest base_url host has invalid characters")
+    if split.port is not None:
+        return f"{host}:{split.port}"
+    return host

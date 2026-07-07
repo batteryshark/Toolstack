@@ -275,6 +275,71 @@ class ProcessRunnerLogging(unittest.TestCase):
             self.assertTrue(logpath.exists())   # the child's fd 1/2 were redirected here
 
 
+class RestRunnerConfig(unittest.TestCase):
+    """REST forwarder tools need the toolyard.toml path inside the process/container so the
+    generic forwarder can load its own routing config."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.secrets_dir = Path(self.tmp, "secrets")
+        self.secrets_dir.mkdir()
+        self.tool_dir = Path(self.tmp, "rest_demo")
+        self.tool_dir.mkdir()
+        (self.tool_dir / "toolyard.toml").write_text(
+            'id = "rest_demo"\ntype = "rest"\nbase_url = "https://api.example.test"\n'
+            '[entrypoint]\nport = 4800\n'
+            '[[operations]]\nname = "get_item"\nrisk = "read"\nverb = "GET"\npath = "/items/{id}"\n'
+            '[[secrets]]\nname = "broker_channel"\nfield = "TOOLSTACK_TOOL_SECRET_REST_DEMO"\n'
+        )
+        self.tool = load(self.tool_dir / "toolyard.toml")
+
+    def test_process_runner_sets_tool_config_env(self):
+        with mock.patch("toolyard.runner._check_port_free"), \
+             mock.patch("toolyard.runner._write_secrets", return_value=str(self.secrets_dir)), \
+             mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+             mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
+             mock.patch("os.posix_spawn", return_value=123) as spawn:
+            running = ProcessRunner().start(self.tool, {"broker_channel": "chan"})
+        env = spawn.call_args.args[2]
+        self.assertEqual(env["TOOLSTACK_TOOL_CONFIG"], str(self.tool_dir / "toolyard.toml"))
+        self.assertEqual(running.handle, "123")
+
+    def test_docker_runner_mounts_rest_tool_config(self):
+        calls = []
+
+        def fake_docker(args, timeout, *, check=False):
+            calls.append(args)
+            return subprocess.CompletedProcess(["docker", *args], 0, stdout="true\n", stderr="")
+
+        with mock.patch("toolyard.runner._write_secrets", return_value=str(self.secrets_dir)), \
+             mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+             mock.patch.object(DockerRunner, "_docker", side_effect=fake_docker), \
+             mock.patch.object(DockerRunner, "is_alive", return_value=True):
+            DockerRunner().start(dataclasses.replace(self.tool, image="toolstack-forwarder"), {"broker_channel": "chan"})
+        run = next(args for args in calls if args[:2] == ["run", "-d"])
+        self.assertIn(f"{self.tool_dir / 'toolyard.toml'}:/run/toolstack/toolyard.toml:ro", run)
+        self.assertIn("TOOLSTACK_TOOL_CONFIG=/run/toolstack/toolyard.toml", run)
+
+    def test_docker_runner_uses_generic_forwarder_for_rest_without_image(self):
+        calls = []
+
+        def fake_docker(args, timeout, *, check=False):
+            calls.append(args)
+            return subprocess.CompletedProcess(["docker", *args], 0, stdout="true\n", stderr="")
+
+        with mock.patch("toolyard.runner._write_secrets", return_value=str(self.secrets_dir)), \
+             mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+             mock.patch.object(DockerRunner, "_docker", side_effect=fake_docker), \
+             mock.patch.object(DockerRunner, "is_alive", return_value=True):
+            DockerRunner().start(self.tool, {"broker_channel": "chan"})
+        self.assertFalse(any(args[:1] == ["build"] for args in calls))
+        run = next(args for args in calls if args[:2] == ["run", "-d"])
+        self.assertIn("python:3.13-slim", run)
+        self.assertIn("-w", run)
+        self.assertEqual(run[-3:], ["python3", "-m", "toolstack_forwarder"])
+
+
 def _docker_ok() -> bool:
     if not os.environ.get("TOOLSTACK_TEST_DOCKER"):
         return False

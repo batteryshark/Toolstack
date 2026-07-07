@@ -902,6 +902,11 @@ struct AddToolSheet: View {
 struct EditableOp: Identifiable {
     let id = UUID()
     var name = ""
+    var verb = "GET"
+    var path = ""
+    var allowedHeaders = ""
+    var bodyKind = "none"
+    var bodyContentType = ""
     var risk = "read"
     var description = ""
     var args: [EditableArg] = []
@@ -927,6 +932,7 @@ struct ToolAuthoringForm: View {
     @State private var id = ""
     @State private var type = "api"
     @State private var description = ""
+    @State private var baseURL = ""
     @State private var command = ""
     @State private var image = ""
     @State private var port = ""
@@ -935,7 +941,9 @@ struct ToolAuthoringForm: View {
     @State private var saveError: String?
 
     private let risks = ["read", "write", "destructive"]   // matches admin RISK_CHOICES
-    private let toolTypes = ["api", "mcp"]                  // matches admin TOOL_TYPES
+    private let toolTypes = ["api", "mcp", "rest"]          // matches admin TOOL_TYPES
+    private let restVerbs = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+    private let restBodyKinds = ["none", "text", "binary"]
     private let argTypes = ["string", "number", "integer", "boolean", "object", "array"]
 
     var body: some View {
@@ -955,6 +963,9 @@ struct ToolAuthoringForm: View {
                         ForEach(toolTypes, id: \.self) { Text($0).tag($0) }
                     }
                     TextField("description (optional)", text: $description, axis: .vertical).lineLimit(1...3)
+                    if type == "rest" {
+                        TextField("base URL, e.g. https://api.example.com/v1", text: $baseURL)
+                    }
                 }
                 Section {
                     TextField("command, e.g. python3 app.py", text: $command)
@@ -992,6 +1003,8 @@ struct ToolAuthoringForm: View {
         switch type {
         case "mcp":
             return "An mcp tool is a streamable-HTTP MCP server: it serves /mcp on this port; the broker calls it via tools/call (op = MCP tool name)."
+        case "rest":
+            return "A rest tool runs the bundled forwarder on this port. Leave command blank to use python3 -m toolstack_forwarder."
         default:
             return "Give a command (process) or an image (docker), plus the port the tool serves on."
         }
@@ -1002,15 +1015,34 @@ struct ToolAuthoringForm: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 TextField("operation name", text: b.name)
-                Picker("", selection: b.risk) { ForEach(risks, id: \.self) { Text($0).tag($0) } }
-                    .labelsHidden().frame(width: 96)
+                if type == "rest" {
+                    Picker("", selection: b.verb) { ForEach(restVerbs, id: \.self) { Text($0).tag($0) } }
+                        .labelsHidden().frame(width: 96)
+                } else {
+                    Picker("", selection: b.risk) { ForEach(risks, id: \.self) { Text($0).tag($0) } }
+                        .labelsHidden().frame(width: 96)
+                }
                 Button(role: .destructive) { operations.removeAll { $0.id == op.id } } label: { Image(systemName: "trash") }
                     .buttonStyle(.borderless)
             }
             TextField("description (optional)", text: b.description).font(.caption)
-            ForEach(op.args) { arg in argEditor(op: op, arg: arg) }
-            Button { b.wrappedValue.args.append(EditableArg()) } label: { Label("Add argument", systemImage: "plus") }
-                .font(.caption2)
+            if type == "rest" {
+                TextField("/items/{item_id}", text: b.path).font(.caption)
+                HStack(spacing: 6) {
+                    TextField("allowed headers, comma separated", text: b.allowedHeaders).font(.caption)
+                    Picker("", selection: b.bodyKind) {
+                        ForEach(restBodyKinds, id: \.self) { Text($0).tag($0) }
+                    }
+                    .labelsHidden().frame(width: 96)
+                }
+                if b.wrappedValue.bodyKind != "none" {
+                    TextField("body content type", text: b.bodyContentType).font(.caption)
+                }
+            } else {
+                ForEach(op.args) { arg in argEditor(op: op, arg: arg) }
+                Button { b.wrappedValue.args.append(EditableArg()) } label: { Label("Add argument", systemImage: "plus") }
+                    .font(.caption2)
+            }
         }
         .padding(.vertical, 3)
     }
@@ -1070,11 +1102,23 @@ struct ToolAuthoringForm: View {
     /// Build the tool_authoring manifest dict the server expects (it normalizes + validates).
     private func manifest() -> [String: Any] {
         func s(_ v: String) -> String { v.trimmingCharacters(in: .whitespaces) }
+        let finalCommand = type == "rest" && s(command).isEmpty ? "python3 -m toolstack_forwarder" : s(command)
         return [
             "id": s(id), "type": s(type), "description": s(description),
-            "command": s(command), "image": s(image), "port": Int(s(port)) ?? 0,
+            "base_url": s(baseURL),
+            "command": finalCommand, "image": s(image), "port": Int(s(port)) ?? 0,
             "operations": operations.compactMap { op -> [String: Any]? in
                 guard !s(op.name).isEmpty else { return nil }
+                if type == "rest" {
+                    var row: [String: Any] = [
+                        "name": s(op.name), "verb": s(op.verb), "path": s(op.path),
+                        "description": s(op.description), "body_kind": s(op.bodyKind),
+                    ]
+                    let headers = op.allowedHeaders.split(separator: ",").map { s(String($0)) }.filter { !$0.isEmpty }
+                    if !headers.isEmpty { row["allowed_headers"] = headers }
+                    if !s(op.bodyContentType).isEmpty { row["body_content_type"] = s(op.bodyContentType) }
+                    return row
+                }
                 return ["name": s(op.name), "risk": op.risk, "description": s(op.description),
                         "args": op.args.compactMap { a -> [String: Any]? in
                             s(a.name).isEmpty ? nil : ["name": s(a.name), "type": a.type, "required": a.required] }]

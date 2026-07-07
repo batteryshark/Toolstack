@@ -11,12 +11,13 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # Tool transports this toolyard knows how to run. "api" answers /v1/actions/<op>; "mcp" is
-# a streamable-HTTP MCP server. Both are served on a loopback port. An unknown type is
-# rejected at load; never accepted silently. Mirrors broker/registry.py and
-# admin/tool_authoring.py (independent packages, so the set is duplicated, not shared).
-TOOL_TYPES = ("api", "mcp")
+# a streamable-HTTP MCP server; "rest" is the generic REST forwarder. All are served on a
+# loopback port. An unknown type is rejected at load; never accepted silently. Mirrors
+# broker/registry.py and admin/tool_authoring.py (independent packages, duplicated).
+TOOL_TYPES = ("api", "mcp", "rest")
 
 # A tool id is the routing key and a directory name; it must match this charset, and must NOT
 # contain a dot, since the broker splits a policy spec on the FIRST dot into (tool, op), so a
@@ -81,6 +82,8 @@ def load(toml_path: str | Path) -> ToolDef:
             f"{path}: tool {data.get('id')!r} needs an [entrypoint] port "
             f"(integer 1-65535) for a {tool_type!r} tool; got {port!r}"
         )
+    if tool_type == "rest":
+        _validate_rest(path, data)
     secrets = tuple(
         SecretSpec(
             s["name"],
@@ -95,12 +98,46 @@ def load(toml_path: str | Path) -> ToolDef:
         id=tool_id,
         type=tool_type,
         port=port,
-        command=entry.get("command"),
+        command=entry.get("command") or ("python3 -m toolstack_forwarder" if tool_type == "rest" else None),
         image=entry.get("image"),
         secrets=secrets,
         path=path.parent,
         description=data.get("description", ""),
     )
+
+
+def _validate_rest(path: Path, data: dict) -> None:
+    base_url = data.get("base_url")
+    if not isinstance(base_url, str) or not base_url:
+        raise ValueError(f"{path}: rest tool needs top-level base_url")
+    split = urlsplit(base_url)
+    if split.scheme not in ("http", "https") or not split.hostname:
+        raise ValueError(f"{path}: rest base_url must be an absolute http(s) URL with a host")
+    if split.username is not None or split.password is not None:
+        raise ValueError(f"{path}: rest base_url must not embed credentials")
+    secrets = data.get("secrets", [])
+    if not isinstance(secrets, list):
+        raise ValueError(f"{path}: rest [[secrets]] must be a list")
+    secret_names = set()
+    writable = set()
+    for item in secrets:
+        if not isinstance(item, dict):
+            raise ValueError(f"{path}: rest [[secrets]] entries must be tables")
+        name = item.get("name")
+        if isinstance(name, str):
+            secret_names.add(name)
+            if item.get("writable", False) is True:
+                writable.add(name)
+    if "broker_channel" not in secret_names:
+        raise ValueError(f"{path}: rest tools must declare a broker_channel secret")
+    for op in data.get("operations", []):
+        if not isinstance(op, dict):
+            continue
+        for rule in op.get("secret_update_rules", []):
+            if isinstance(rule, dict) and rule.get("secret_name") not in writable:
+                raise ValueError(
+                    f"{path}: rest secret_update_rule targets non-writable secret {rule.get('secret_name')!r}"
+                )
 
 
 def discover(root: str | Path) -> list[ToolDef]:

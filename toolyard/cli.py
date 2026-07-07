@@ -76,6 +76,11 @@ def cmd_down(args) -> None:
     _save_state(state)
 
 
+def cmd_reload(args) -> None:
+    cmd_down(args)
+    cmd_up(args)
+
+
 def cmd_ls(args) -> None:
     state = _load_state()
     if not state:
@@ -155,6 +160,17 @@ def main() -> None:
     down = sub.add_parser("down", help="stop one or all tools")
     down.add_argument("id", nargs="?")
     down.set_defaults(func=cmd_down)
+
+    reload_p = sub.add_parser("reload", help="restart one or all tools")
+    reload_p.add_argument("id", nargs="?")
+    reload_p.add_argument("--root", help="tools root (default: $TOOLSTACK_TOOLS_ROOT or 'tools')")
+    reload_p.add_argument("--secrets", help="dev secrets TOML (default: $TOOLSTACK_SECRETS_FILE or 'secrets.toml')")
+    reload_p.add_argument("--backend", choices=["process", "docker"],
+                          default=os.environ.get("TOOLSTACK_RUNNER", "process"))
+    reload_p.add_argument("--secret-backend", choices=["file", "vault", "infisical"],
+                          default=os.environ.get("TOOLSTACK_SECRET_BACKEND", "file"),
+                          help="secret backend (default: $TOOLSTACK_SECRET_BACKEND or 'file')")
+    reload_p.set_defaults(func=cmd_reload)
 
     ls = sub.add_parser("ls", help="list running tools")
     ls.set_defaults(func=cmd_ls)

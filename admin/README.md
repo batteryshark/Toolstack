@@ -4,9 +4,10 @@ The operator's control panel for the whole stack: **run the broker**, **manage
 clients** (callers, tokens, policies), **control tools**, and watch **requests and
 audit**. Built for local / homelab use; binds loopback only. See [../plan.md](../plan.md).
 
-This is the one Toolstack component with runtime dependencies (FastAPI + uvicorn);
-the broker, toolyard, and client stay zero-dependency stdlib. Because the broker has
-no admin API, the panel reaches broker state two ways:
+This is the one Toolstack component with runtime dependencies (FastAPI + uvicorn,
+plus PyYAML for YAML OpenAPI imports); the broker, toolyard, and client stay
+zero-dependency stdlib. Because the broker has no admin API, the panel reaches
+broker state two ways:
 
 - **data**: opens the broker's SQLite `Store` directly (exactly as `brokerctl`
   does) and mutates through `broker.operations`, so the panel and the CLI share one
@@ -36,7 +37,8 @@ a relative tools root. Then sign in and:
    (allow / review / deny per operation);
 3. **Manage tools**: **Add tool** writes a `toolyard.toml` from a form (id, entrypoint
    command/port or image, operations, and secret *declarations*) into a directory you
-   name on the server; **Edit** loads an existing tool back into that form; **Remove**
+   name on the server. REST tools can be authored directly or bootstrapped from a
+   pasted OpenAPI/Swagger spec. **Edit** loads an existing tool back into that form; **Remove**
    unregisters a panel-added tool (stops it and drops it from the broker's search path;
    its files stay on disk). Start/stop tools, then restart the broker to register a new
    or changed one (the broker reads its registry at startup). You bring the tool's code

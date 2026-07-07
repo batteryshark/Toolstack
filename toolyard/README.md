@@ -36,8 +36,23 @@ name = "api_key"             # the tool reads $TOOLSTACK_SECRETS_DIR/api_key
 field = "API_KEY"            # looked up in the secret backend
 ```
 
-A tool's `type` is one of `api` / `mcp`; see [../tools/README.md](../tools/README.md)
+A tool's `type` is one of `api` / `mcp` / `rest`; see [../tools/README.md](../tools/README.md)
 for choosing one. Samples live in [../tools/](../tools/).
+
+REST tools add top-level `base_url`, per-operation `verb` / `path`, and a required
+`broker_channel` secret. When `[entrypoint].command` is omitted for a REST tool, the
+toolyard defaults it to `python3 -m toolstack_forwarder`. Under the docker runner,
+a REST tool without an explicit image uses a generic stock-Python container with
+the repo mounted read-only to run that bundled forwarder.
+
+To scaffold a REST manifest from an OpenAPI JSON spec:
+
+```bash
+python3 -m toolyard.openapi_import openapi.json --id graph --port 4640 > tools/graph/toolyard.toml
+```
+
+The importer emits named operations for the generic forwarder contract. The admin
+panel also exposes the parser and accepts YAML when `PyYAML` is installed.
 
 ## Secrets
 
@@ -78,6 +93,7 @@ python3 -m toolyard.cli up echo --secrets secrets.toml --backend docker
 
 python3 -m toolyard.cli ls
 python3 -m toolyard.cli down echo
+python3 -m toolyard.cli reload echo
 ```
 
 Defaults: `--root` = `$TOOLSTACK_TOOLS_ROOT` or `tools`; `--secrets` =
@@ -117,7 +133,9 @@ stop. No backend credential is ever mounted in the container.
 - `secrets.py`: secret backends (`FileBackend`, `VaultBackend`, `InfisicalBackend`; `get_backend()`).
 - `runner.py`: `ProcessRunner` and `DockerRunner` (`get_runner(backend)`).
 - `write_proxy.py`: the writable-secret socket server (message-contracts §4).
+- `openapi_import.py`: stdlib OpenAPI/Swagger JSON importer for REST manifests.
 - `cli.py`: `up` / `down` / `ls`, with a small JSON state file.
+- `toolstack_forwarder`: the generic REST forwarder process used by `type = "rest"` tools.
 
 ## Security notes
 

@@ -275,6 +275,24 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual((sent["operations"] as? [[String: Any]])?.first?["name"] as? String, "go")
     }
 
+    func testParseOpenAPIPostsSpecAndDecodesRestDraft() async throws {
+        let json = #"{"base_url":"https://api.example.com/v1","auth_headers":[{"name":"Authorization","value":"Bearer {{secret:api_token}}"}],"#
+            + #""secrets":[{"name":"api_token","field":"API_TOKEN","writable":false,"vault":null,"item":null}],"#
+            + #""operations":[{"name":"getItem","verb":"GET","path":"/items/{id}","risk":"read","description":"","#
+            + #""allowed_headers":["Authorization"],"body_kind":"none","body_content_type":"","#
+            + #""args":[{"name":"variables","type":"object","required":true,"description":"Path variables: id"}]}]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let parsed = try await makeClient(token: "t").parseOpenAPI(#"{"openapi":"3.0.0"}"#)
+        XCTAssertEqual(parsed.baseUrl, "https://api.example.com/v1")
+        XCTAssertEqual(parsed.authHeaders.first?.name, "Authorization")
+        XCTAssertEqual(parsed.secrets.first?.name, "api_token")
+        XCTAssertEqual(parsed.operations.first?.name, "getItem")
+        XCTAssertEqual(parsed.operations.first?.allowedHeaders, ["Authorization"])
+        XCTAssertEqual(parsed.operations.first?.args.first?.name, "variables")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/parse-openapi")
+        XCTAssertEqual(try XCTUnwrap(bodyJSON()["spec"] as? String), #"{"openapi":"3.0.0"}"#)
+    }
+
     func testAddToolNoManifestMapsTo422() async throws {
         StubURLProtocol.handler = { _ in
             (422, [:], Data(#"{"detail":"folder has no toolyard.toml. Author one to add it"}"#.utf8))

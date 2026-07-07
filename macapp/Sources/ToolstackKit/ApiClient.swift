@@ -111,6 +111,10 @@ public actor ApiClient {
         try await send("GET", "/api/secret-backend")
     }
 
+    public func parseOpenAPI(_ spec: String) async throws -> ParsedOpenAPI {
+        try await send("POST", "/api/tools/parse-openapi", body: ["spec": spec])
+    }
+
     /// Edit a tool's description and secret DECLARATIONS (its ops/entrypoint are preserved
     /// server-side). Secret *values* are never sent; these are declarations (name/field/...).
     @discardableResult

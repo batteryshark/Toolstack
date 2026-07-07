@@ -3,14 +3,17 @@ end to end over HTTP, including a real allowed action."""
 
 import json
 import os
+import shutil
+import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.request
+from pathlib import Path
 from unittest import mock
 
 from broker.identity import hash_token
-from broker.server import _configured_host, build_server
+from broker.server import _clear_pidfile, _configured_host, _pidfile_path, _write_pidfile, build_server
 
 from .support import FakeRuntime, make_registry
 
@@ -124,6 +127,15 @@ class ServerIntegration(unittest.TestCase):
         )
         self.assertEqual(status, 404)
 
+    def test_declared_oversize_action_body_returns_413(self):
+        with mock.patch.dict(os.environ, {"TOOLSTACK_REST_BODY_MAX": "1"}):
+            status, body, _ = self._req(
+                "POST", "/v1/actions/echo.say", headers=self._auth(),
+                body={"arguments": {"body": "x" * (70 * 1024)}},
+            )
+        self.assertEqual(status, 413)
+        self.assertEqual(body["error"], "body_too_large")
+
     # --- broker-native MCP framing over HTTP (T-021) ------------------------
 
     def test_mcp_unauthenticated_401(self):
@@ -222,6 +234,67 @@ class NodSurfaceFromEnv(unittest.TestCase):
     def test_no_surface_without_nod_env(self):
         server = self._build({})
         self.assertIsNone(server.ctx.surface)
+
+
+class RegistryReload(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.root = Path(self.tmp, "tools")
+        self.root.mkdir()
+        self.tool = self.root / "echo"
+        self.tool.mkdir()
+        self._write("echo", 4600, "say")
+        self.server = build_server(
+            port=0, host="127.0.0.1", db_path=":memory:", audit_sink=None,
+            tools_root=str(self.root), runtime=FakeRuntime(),
+        )
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.ctx.store.close)
+
+    def _write(self, tool_id, port, op):
+        d = self.root / tool_id
+        d.mkdir(exist_ok=True)
+        (d / "toolyard.toml").write_text(
+            f'id = "{tool_id}"\ntype = "api"\n[entrypoint]\nport = {port}\n'
+            f'[[operations]]\nname = "{op}"\nrisk = "read"\n'
+        )
+
+    def test_reload_adds_new_tool(self):
+        self._write("weather", 4700, "today")
+        self.server.reload_registry()
+        self.assertIsNotNone(self.server.ctx.registry.lookup("weather", "today"))
+
+    def test_reload_removes_deleted_tool(self):
+        shutil.rmtree(self.tool)
+        self.server.reload_registry()
+        self.assertIsNone(self.server.ctx.registry.lookup("echo", "say"))
+
+    def test_reload_uses_new_port(self):
+        self._write("echo", 4701, "say")
+        self.server.reload_registry()
+        self.assertEqual(self.server.ctx.registry.lookup("echo", "say").port, 4701)
+
+    def test_reload_audits_before_after_counts(self):
+        self._write("weather", 4700, "today")
+        self.server.reload_registry()
+        event = self.server.ctx.store.recent_audit(limit=1)[0]
+        self.assertEqual(event["component"], "registry")
+        self.assertEqual(event["event_type"], "reloaded")
+        self.assertEqual(event["details"]["tools_before"], 1)
+        self.assertEqual(event["details"]["tools_after"], 2)
+
+
+class Pidfile(unittest.TestCase):
+    def test_write_and_clear_pidfile_under_xdg_state_home(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": tmp}):
+            _write_pidfile()
+            path = _pidfile_path()
+            self.assertEqual(path.read_text(), str(os.getpid()))
+            _clear_pidfile()
+            self.assertFalse(path.exists())
 
 
 if __name__ == "__main__":

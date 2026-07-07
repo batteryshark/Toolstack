@@ -76,6 +76,85 @@ class Forward(unittest.TestCase):
         self.assertIsNone(_FakeTool.received["shared_secret"])
 
 
+class _FakeRestForwarder(BaseHTTPRequestHandler):
+    received = None
+    status = 200
+    response = {"status": 200, "headers": {"content-type": "text/plain"}, "body": "ok"}
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        body = json.loads(self.rfile.read(length)) if length else {}
+        type(self).received = {
+            "path": self.path,
+            "body": body,
+            "shared_secret": self.headers.get("X-Toolstack-Secret"),
+        }
+        payload = json.dumps(type(self).response).encode("utf-8")
+        self.send_response(type(self).status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args):
+        pass
+
+
+class RestForward(unittest.TestCase):
+    def setUp(self):
+        _FakeRestForwarder.received = None
+        _FakeRestForwarder.status = 200
+        _FakeRestForwarder.response = {"status": 200, "headers": {"content-type": "text/plain"}, "body": "ok"}
+        self.server = HTTPServer(("127.0.0.1", 0), _FakeRestForwarder)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.thread.join(timeout=5)
+        self.server.server_close()
+
+    def _op(self):
+        return ToolOp("jira", "get_user", "read", self.port, "rest",
+                      "GET", "/users/{user_id}", "api.example.test", "none")
+
+    def test_posts_sendrequest_with_context_and_required_secret(self):
+        rt = HttpRuntime(tool_secret=lambda tool_id: "chan" if tool_id == "jira" else None)
+        result = rt.execute(self._op(), {"variables": {"user_id": "u42"}}, 7, "hermes")
+        self.assertEqual(result, {"status": 200, "headers": {"content-type": "text/plain"}, "body": "ok"})
+        self.assertEqual(_FakeRestForwarder.received["path"], "/sendrequest")
+        self.assertEqual(_FakeRestForwarder.received["shared_secret"], "chan")
+        sent = _FakeRestForwarder.received["body"]
+        self.assertEqual(sent["op"], "get_user")
+        self.assertEqual(sent["arguments"], {"variables": {"user_id": "u42"}})
+        self.assertEqual(sent["broker_request_id"], 7)
+        self.assertEqual(sent["caller"], {"name": "hermes"})
+
+    def test_missing_channel_secret_refuses_dispatch(self):
+        rt = HttpRuntime(tool_secret=lambda tool_id: None)
+        with self.assertRaises(RuntimeError) as cm:
+            rt.execute(self._op(), {}, 1, "hermes")
+        self.assertIn("channel secret", str(cm.exception))
+        self.assertIsNone(_FakeRestForwarder.received)
+
+    def test_outbound_unreachable_error_maps_to_tool_unreachable(self):
+        _FakeRestForwarder.status = 502
+        _FakeRestForwarder.response = {"error": "outbound_unreachable", "reason": "timed out"}
+        rt = HttpRuntime(tool_secret=lambda tool_id: "chan")
+        with self.assertRaises(RuntimeError) as cm:
+            rt.execute(self._op(), {}, 1, "hermes")
+        self.assertIn("outbound unreachable", str(cm.exception))
+
+    def test_forwarder_error_maps_to_tool_failure(self):
+        _FakeRestForwarder.status = 400
+        _FakeRestForwarder.response = {"error": "missing_variable", "name": "user_id"}
+        rt = HttpRuntime(tool_secret=lambda tool_id: "chan")
+        with self.assertRaises(RuntimeError) as cm:
+            rt.execute(self._op(), {}, 1, "hermes")
+        self.assertIn("missing_variable", str(cm.exception))
+
+
 class _FakeMcpTool(BaseHTTPRequestHandler):
     """A minimal streamable-HTTP MCP server for exercising the broker's MCP client.
     Class attributes configure the response shape; ``received`` records every request."""
