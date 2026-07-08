@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -186,6 +187,30 @@ def _start_docker_log_follower(container: str, log_path: Path) -> str:
     return str(pid)
 
 
+# A bare Python interpreter token: `python`, `python3`, `python3.13` — but not a path
+# (`/usr/bin/python3`, `./python`) and not another program.
+_PY_INTERPRETER = re.compile(r"python(\d+(\.\d+)?)?")
+
+
+def _bind_interpreter(command: str) -> str:
+    """Rebind a leading bare ``python``/``python3`` token to this process's own interpreter
+    (``sys.executable``) so a process-backend tool runs under the same Python — and the same
+    virtualenv — as the broker that spawns it.
+
+    The generic REST forwarder ships ``command = "python3 -m toolstack_forwarder"``. On a host
+    whose PATH ``python3`` is the system interpreter, that module isn't importable and the tool
+    exits immediately with ModuleNotFoundError. Binding to ``sys.executable`` fixes this without
+    hardcoding a venv path, so it stays portable across install locations. A command that names
+    an explicit path (``/usr/bin/python3``, ``./run.sh``) or a different program (``node ...``)
+    is left untouched — an explicit interpreter is the author's deliberate choice. The rest of
+    the command is preserved verbatim (only the interpreter token is swapped)."""
+    parts = command.split(None, 1)
+    if not parts or "/" in parts[0] or not _PY_INTERPRETER.fullmatch(parts[0]):
+        return command
+    rest = parts[1] if len(parts) > 1 else ""
+    return f"{shlex.quote(sys.executable)} {rest}".rstrip()
+
+
 class ProcessRunner:
     backend = "process"
 
@@ -210,7 +235,7 @@ class ProcessRunner:
                 env["TOOLYARD_SECRETS_SOCKET"] = str(Path(proxy_dir) / "secrets.sock")
             # posix_spawn (not Popen) so the detached child has no lifecycle object to
             # warn about; setpgroup=0 gives it its own group so stop() can killpg it.
-            script = f"cd {shlex.quote(str(tool_def.path))} && exec {tool_def.command}"
+            script = f"cd {shlex.quote(str(tool_def.path))} && exec {_bind_interpreter(tool_def.command)}"
             # Capture the tool's stdout/stderr onto a per-tool logfile (the child's fd 1/2) so a
             # crash or a noisy start is diagnosable, not lost into the toolyard's own stream.
             log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)

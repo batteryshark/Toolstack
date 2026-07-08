@@ -79,6 +79,8 @@ def normalize(data: dict) -> dict:
                 "body_kind": body_kind,
                 "body_content_type": s(o.get("body_content_type")),
                 "body_substitution": bool(o.get("body_substitution", body_kind == "text")),
+                "redact_response_body": bool(o.get("redact_response_body")),
+                "redact_response_headers": bool(o.get("redact_response_headers")),
                 "secret_update_rules": _norm_secret_update_rules(o.get("secret_update_rules")),
                 "args": _rest_envelope_args(path_template, allowed_headers, body_kind),
             })
@@ -371,6 +373,10 @@ def to_toml(data: dict) -> str:
                 out.append(f"body_content_type = {_s(o['body_content_type'])}")
             if bool(o.get("body_substitution", o.get("body_kind") == "text")) != (o.get("body_kind") == "text"):
                 out.append(f"body_substitution = {str(bool(o.get('body_substitution'))).lower()}")
+            if o.get("redact_response_body"):
+                out.append("redact_response_body = true")
+            if o.get("redact_response_headers"):
+                out.append("redact_response_headers = true")
             if o.get("secret_update_rules"):
                 out.append("secret_update_rules = [ " + ", ".join(
                     _rule_inline(r) for r in o["secret_update_rules"]) + " ]")

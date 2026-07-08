@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from unittest import mock
 
 from toolstack_forwarder.config import load_config
 from toolstack_forwarder.server import serve
@@ -183,7 +184,7 @@ writable = true
             writes.append((name, value))
             return 200, {"ok": True}
 
-        with unittest.mock.patch("toolstack_forwarder.rules.write_secret_via_proxy", fake_write):
+        with mock.patch("toolstack_forwarder.rules.write_secret_via_proxy", fake_write):
             status, body = self._post(self._forwarder(cfg), {"op": "login", "arguments": {"body": "{}"}})
         self.assertEqual(status, 200)
         self.assertEqual(body["status"], 200)
@@ -206,11 +207,91 @@ name = "auth_token"
 field = "AUTH_TOKEN"
 writable = true
 """)
-        with unittest.mock.patch("toolstack_forwarder.rules.write_secret_via_proxy") as write:
+        with mock.patch("toolstack_forwarder.rules.write_secret_via_proxy") as write:
             status, body = self._post(self._forwarder(cfg), {"op": "login", "arguments": {"body": "{}"}})
         self.assertEqual(status, 502)
         self.assertEqual(body["error"], "rule_extraction_failed")
         write.assert_not_called()
+
+    def test_redact_response_body_replaces_json_body_but_keeps_headers(self):
+        cfg = self._config("""
+[[operations]]
+name = "get_secret"
+risk = "read"
+verb = "GET"
+path = "/items/{item_id}"
+redact_response_body = true
+""")
+        status, body = self._post(self._forwarder(cfg), {"op": "get_secret", "arguments": {"variables": {"item_id": "i1"}}})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status"], 201)
+        self.assertEqual(json.loads(body["body"]),
+                         {"message": "response redacted for this operation due to config in toolserver"})
+        self.assertEqual(body["headers"]["x-rate"], "9")  # headers untouched when only the body is redacted
+
+    def test_redact_non_json_body_uses_plaintext_message(self):
+        cfg = self._config("""
+[[operations]]
+name = "login"
+risk = "write"
+verb = "POST"
+path = "/login"
+body_kind = "text"
+redact_response_body = true
+""")
+        status, body = self._post(self._forwarder(cfg), {"op": "login", "arguments": {"body": "{}"}})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["body"], "response redacted for this operation due to config in toolserver")
+
+    def test_redact_response_headers_returns_only_security_header(self):
+        cfg = self._config("""
+[[operations]]
+name = "get_secret"
+risk = "read"
+verb = "GET"
+path = "/items/{item_id}"
+redact_response_headers = true
+""")
+        status, body = self._post(self._forwarder(cfg), {"op": "get_secret", "arguments": {"variables": {"item_id": "i1"}}})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["body"], '{"ok":true}')  # body untouched when only headers are redacted
+        self.assertEqual(body["headers"],
+                         {"X-ToolStack-Security": "headers redacted for this operation due to config in toolserver"})
+
+    def test_redaction_runs_after_secret_writeback(self):
+        # The rule must still extract from the real upstream body ("abcdef" -> "def"), even though
+        # the caller receives only the redaction placeholder.
+        cfg = self._config("""
+[[operations]]
+name = "login"
+risk = "write"
+verb = "POST"
+path = "/login"
+body_kind = "text"
+redact_response_body = true
+redact_response_headers = true
+secret_update_rules = [
+  { secret_name = "auth_token", response_type = "plaintext", extract_path = "abc(def)", match_status = "200" },
+]
+
+[[secrets]]
+name = "auth_token"
+field = "AUTH_TOKEN"
+writable = true
+""")
+        writes = []
+
+        def fake_write(name, value):
+            writes.append((name, value))
+            return 200, {"ok": True}
+
+        with mock.patch("toolstack_forwarder.rules.write_secret_via_proxy", fake_write):
+            status, body = self._post(self._forwarder(cfg), {"op": "login", "arguments": {"body": "{}"}})
+        self.assertEqual(status, 200)
+        self.assertEqual(writes, [("auth_token", "def")])  # writeback saw the real body
+        self.assertEqual(body["body"], "response redacted for this operation due to config in toolserver")
+        self.assertEqual(body["headers"],
+                         {"X-ToolStack-Security": "headers redacted for this operation due to config in toolserver"})
 
 
 if __name__ == "__main__":

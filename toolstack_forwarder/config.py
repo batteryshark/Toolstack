@@ -55,6 +55,8 @@ class Operation:
     body_kind: str
     body_content_type: str | None
     body_substitution: bool
+    redact_response_body: bool = False
+    redact_response_headers: bool = False
     secret_update_rules: tuple[SecretUpdateRule, ...] = ()
 
 
@@ -173,6 +175,13 @@ def _load_operations(path: Path, raw: Any, secrets: dict[str, SecretDecl]) -> di
         if body_kind == "none":
             body_substitution = False
 
+        redact_body = item.get("redact_response_body", False)
+        if not isinstance(redact_body, bool):
+            raise _err(path, f"{field}.redact_response_body", "must be a boolean")
+        redact_headers = item.get("redact_response_headers", False)
+        if not isinstance(redact_headers, bool):
+            raise _err(path, f"{field}.redact_response_headers", "must be a boolean")
+
         rules = _load_rules(path, field, item.get("secret_update_rules", []), writable)
         operations[name] = Operation(
             name=name,
@@ -184,6 +193,8 @@ def _load_operations(path: Path, raw: Any, secrets: dict[str, SecretDecl]) -> di
             body_kind=body_kind,
             body_content_type=body_content_type,
             body_substitution=body_substitution,
+            redact_response_body=redact_body,
+            redact_response_headers=redact_headers,
             secret_update_rules=rules,
         )
     return operations

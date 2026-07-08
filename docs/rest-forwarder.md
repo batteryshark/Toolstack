@@ -103,6 +103,26 @@ Supported `response_type`: `json`, `xml`, `form`, `plaintext`.
 Extraction is all-or-nothing before writes begin. A write failure after a prior
 write is logged with SHA-256 fingerprints only, never secret values.
 
+## Response Redaction
+
+An operation can withhold the upstream response from the caller when it carries
+data the caller should not see:
+
+```toml
+redact_response_body = true
+redact_response_headers = true
+```
+
+Both default to `false`. Redaction runs *after* secret update rules, so
+writebacks still extract from the real body and headers; only the caller-facing
+envelope is replaced. `redact_response_body` swaps the body for a placeholder
+matching the upstream content type: `{"message": "response redacted for this
+operation due to config in toolserver"}` for JSON, the same sentence as a plain
+string otherwise. `redact_response_headers` replaces the header map with a single
+`X-ToolStack-Security` header carrying `headers redacted for this operation due
+to config in toolserver`. The admin tool editor exposes both as checkboxes on the
+operation card.
+
 ## Broker Visibility
 
 The broker registry stores only REST metadata needed for routing, audit, and

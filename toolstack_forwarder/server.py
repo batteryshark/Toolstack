@@ -8,14 +8,32 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from . import outbound
-from .config import RestConfig
+from .config import Operation, RestConfig
 from .request_builder import RequestBuildError, build_request, read_secret
 from .rules import RuleError, apply_secret_update_rules
+
+_REDACTED_BODY_JSON = '{"message":"response redacted for this operation due to config in toolserver"}'
+_REDACTED_BODY_TEXT = "response redacted for this operation due to config in toolserver"
+_REDACTED_HEADERS = {"X-ToolStack-Security": "headers redacted for this operation due to config in toolserver"}
 
 
 def serve(bind: str, port: int, config: RestConfig, secrets_dir: str | Path,
           timeout: float, max_body: int) -> HTTPServer:
     return HTTPServer((bind, port), _handler(config, Path(secrets_dir), timeout, max_body))
+
+
+def redact_response(op: Operation, result: dict) -> None:
+    """Replace caller-facing response parts the operation marks as sensitive, in place.
+
+    Runs *after* secret-update rules, so writebacks still extract from the real body while the
+    caller receives only placeholders. Body redaction reads the original Content-Type (JSON gets
+    a JSON message, everything else a plain string) and must happen before header redaction wipes
+    that header."""
+    if op.redact_response_body:
+        ctype = str(result.get("headers", {}).get("content-type", "")).lower()
+        result["body"] = _REDACTED_BODY_JSON if "json" in ctype else _REDACTED_BODY_TEXT
+    if op.redact_response_headers:
+        result["headers"] = dict(_REDACTED_HEADERS)
 
 
 def _handler(config: RestConfig, secrets_dir: Path, timeout: float, max_body: int):
@@ -62,6 +80,7 @@ def _handler(config: RestConfig, secrets_dir: Path, timeout: float, max_body: in
                     apply_secret_update_rules(config.operations[op], result)
                 except RuleError as exc:
                     return self._reply(502, exc.envelope())
+                redact_response(config.operations[op], result)
             status = 502 if "error" in result else 200
             self._reply(status, result)
 

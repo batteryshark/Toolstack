@@ -10,9 +10,11 @@ TOOLSTACK_TEST_DOCKER=1.
 import dataclasses
 import json
 import os
+import shlex
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -303,6 +305,20 @@ class RestRunnerConfig(unittest.TestCase):
         env = spawn.call_args.args[2]
         self.assertEqual(env["TOOLSTACK_TOOL_CONFIG"], str(self.tool_dir / "toolyard.toml"))
         self.assertEqual(running.handle, "123")
+
+    def test_process_runner_binds_forwarder_to_this_interpreter(self):
+        # The forwarder's `python3 -m toolstack_forwarder` must run under the broker's own
+        # interpreter (sys.executable) so it finds the venv-installed module, not system python3.
+        self.assertEqual(self.tool.command, "python3 -m toolstack_forwarder")
+        with mock.patch("toolyard.runner._check_port_free"), \
+             mock.patch("toolyard.runner._write_secrets", return_value=str(self.secrets_dir)), \
+             mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+             mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
+             mock.patch("os.posix_spawn", return_value=123) as spawn:
+            ProcessRunner().start(self.tool, {})
+        script = spawn.call_args.args[1][2]  # ["/bin/sh", "-c", script]
+        self.assertIn(f"exec {shlex.quote(sys.executable)} -m toolstack_forwarder", script)
+        self.assertNotIn("exec python3 -m", script)
 
     def test_docker_runner_mounts_rest_tool_config(self):
         calls = []
