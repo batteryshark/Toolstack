@@ -4,9 +4,11 @@ and that mutating actions are recorded as admin.* audit events."""
 import argparse
 import io
 import os
+import signal
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
 from broker import brokerctl
 from broker.identity import authenticate, hash_token
@@ -82,6 +84,27 @@ class Brokerctl(unittest.TestCase):
     def test_unknown_caller_errors(self):
         with self.assertRaises(SystemExit):
             self._run(brokerctl.revoke_caller, name="ghost")
+
+    def test_reload_reads_pidfile_verifies_and_sighups(self):
+        fd, pidfile = tempfile.mkstemp()
+        os.write(fd, b"12345")
+        os.close(fd)
+        self.addCleanup(os.unlink, pidfile)
+        out = io.StringIO()
+        with mock.patch.object(brokerctl, "_is_broker", return_value=True), \
+             mock.patch("os.kill") as kill, redirect_stdout(out):
+            brokerctl.reload(argparse.Namespace(pidfile=pidfile))
+        kill.assert_called_once_with(12345, signal.SIGHUP)
+        self.assertIn("reloaded", out.getvalue())
+
+    def test_reload_refuses_pid_that_is_not_broker(self):
+        fd, pidfile = tempfile.mkstemp()
+        os.write(fd, b"12345")
+        os.close(fd)
+        self.addCleanup(os.unlink, pidfile)
+        with mock.patch.object(brokerctl, "_is_broker", return_value=False), \
+             self.assertRaises(SystemExit):
+            brokerctl.reload(argparse.Namespace(pidfile=pidfile))
 
 
 if __name__ == "__main__":

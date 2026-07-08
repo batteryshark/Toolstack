@@ -36,8 +36,25 @@ name = "api_key"             # the tool reads $TOOLSTACK_SECRETS_DIR/api_key
 field = "API_KEY"            # looked up in the secret backend
 ```
 
-A tool's `type` is one of `api` / `mcp`; see [../tools/README.md](../tools/README.md)
+A tool's `type` is one of `api` / `mcp` / `rest`; see [../tools/README.md](../tools/README.md)
 for choosing one. Samples live in [../tools/](../tools/).
+
+REST tools add top-level `base_url` and per-operation `verb` / `path`. When
+`[entrypoint].command` is omitted for a REST tool, the toolyard defaults it to
+`python3 -m toolstack_forwarder`. Under the docker runner, a REST tool without an
+explicit image uses a generic stock-Python container with the repo mounted
+read-only to run that bundled forwarder. Broker-to-tool `X-Toolstack-Secret`
+works uniformly for api / mcp / rest when a shared `broker_secret` is provisioned;
+REST tools do not need a per-tool channel secret.
+
+To scaffold a REST manifest from an OpenAPI JSON spec:
+
+```bash
+python3 -m toolyard.openapi_import openapi.json --id graph --port 4640 > tools/graph/toolyard.toml
+```
+
+The importer emits named operations for the generic forwarder contract. The admin
+panel also exposes the parser and accepts YAML when `PyYAML` is installed.
 
 ## Secrets
 
@@ -51,10 +68,11 @@ hands the values to the tool, never to the broker.
   encrypted file unlocked by `$TOOLSTACK_VAULT_PASSPHRASE` (`pip install '.[vault]'`).
 - **Production (shipped):** `InfisicalBackend` resolves each secret from Infisical
   over its HTTP API (stdlib only, no added dependency). A `[[secrets]]` entry adds
-  `vault` (Infisical project) and `item` (secret path; defaults to the tool id) next
-  to `field` (the secret key). Each tool authenticates with its own machine identity
-  read from `<credentials_dir>/<item>.env`. Configure with `TOOLSTACK_INFISICAL_HOST`
-  / `_ENVIRONMENT` / `_CREDENTIALS_DIR` / `_VAULT`.
+  `item` (secret path; defaults to the tool id) next to `field` (the secret key).
+  The Infisical project/vault comes only from `TOOLSTACK_INFISICAL_VAULT`.
+  Toolstack authenticates once with the deployment's machine identity
+  (`TOOLSTACK_INFISICAL_CLIENT_ID` / `_CLIENT_SECRET`, or the unprefixed Infisical
+  names). Configure with `TOOLSTACK_INFISICAL_HOST` / `_ENVIRONMENT` / `_VAULT`.
 - **Backend selection:** `get_backend(name)` picks `file` (default), `vault`, or `infisical`;
   the CLI exposes `--secret-backend` and honors `$TOOLSTACK_SECRET_BACKEND`.
 - SOPS can follow behind the same `resolve()` interface.
@@ -78,6 +96,7 @@ python3 -m toolyard.cli up echo --secrets secrets.toml --backend docker
 
 python3 -m toolyard.cli ls
 python3 -m toolyard.cli down echo
+python3 -m toolyard.cli reload echo
 ```
 
 Defaults: `--root` = `$TOOLSTACK_TOOLS_ROOT` or `tools`; `--secrets` =
@@ -108,7 +127,7 @@ socket the toolyard mounts into the container at `/run/toolyard/secrets.sock`
 (message-contracts §4). For any tool declaring a `writable = true` secret, the runner
 starts a small **write-proxy** on the host (it holds the backend; only the socket is
 exposed to the container), enforces the tool's writable allowlist, and patches exactly
-the declared `(vault, item, field)`. The proxy is killed and its socket removed on
+the declared `(item, field)`. The proxy is killed and its socket removed on
 stop. No backend credential is ever mounted in the container.
 
 ## Modules
@@ -117,7 +136,9 @@ stop. No backend credential is ever mounted in the container.
 - `secrets.py`: secret backends (`FileBackend`, `VaultBackend`, `InfisicalBackend`; `get_backend()`).
 - `runner.py`: `ProcessRunner` and `DockerRunner` (`get_runner(backend)`).
 - `write_proxy.py`: the writable-secret socket server (message-contracts §4).
+- `openapi_import.py`: stdlib OpenAPI/Swagger JSON importer for REST manifests.
 - `cli.py`: `up` / `down` / `ls`, with a small JSON state file.
+- `toolstack_forwarder`: the generic REST forwarder process used by `type = "rest"` tools.
 
 ## Security notes
 

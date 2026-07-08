@@ -210,7 +210,7 @@ final class ApiClientTests: XCTestCase {
 
     func testListToolsDecodesSecrets() async throws {
         let json = #"{"tools":[{"id":"echo","type":"api","port":4601,"running":false,"ops":[],"#
-                 + #""secrets":[{"name":"api_key","field":"API_KEY","writable":true,"vault":null,"item":null}]}]}"#
+                 + #""secrets":[{"name":"api_key","field":"API_KEY","writable":true,"item":null}]}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let tools = try await makeClient(token: "t").listTools()
         XCTAssertEqual(tools.first?.secrets.first?.name, "api_key")
@@ -218,10 +218,15 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testSecretBackendDecodes() async throws {
-        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"name":"vault","path":"/data/vault.json"}"#.utf8)) }
+        StubURLProtocol.handler = { _ in
+            (200, [:], Data(#"{"name":"infisical","host":"https://infisical.example.test","default_vault":"ToolServer","organization_slug":"org","identity_configured":true}"#.utf8))
+        }
         let backend = try await makeClient(token: "t").secretBackend()
-        XCTAssertEqual(backend.name, "vault")
-        XCTAssertEqual(backend.path, "/data/vault.json")
+        XCTAssertEqual(backend.name, "infisical")
+        XCTAssertEqual(backend.host, "https://infisical.example.test")
+        XCTAssertEqual(backend.defaultVault, "ToolServer")
+        XCTAssertEqual(backend.organizationSlug, "org")
+        XCTAssertEqual(backend.identityConfigured, true)
     }
 
     func testAddToolPostsSource() async throws {
@@ -275,6 +280,24 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual((sent["operations"] as? [[String: Any]])?.first?["name"] as? String, "go")
     }
 
+    func testParseOpenAPIPostsSpecAndDecodesRestDraft() async throws {
+        let json = #"{"base_url":"https://api.example.com/v1","auth_headers":[{"name":"Authorization","value":"Bearer {{secret:api_token}}"}],"#
+            + #""secrets":[{"name":"api_token","field":"API_TOKEN","writable":false,"item":null}],"#
+            + #""operations":[{"name":"getItem","verb":"GET","path":"/items/{id}","risk":"read","description":"","#
+            + #""allowed_headers":["Authorization"],"body_kind":"none","body_content_type":"","#
+            + #""args":[{"name":"variables","type":"object","required":true,"description":"Path variables: id"}]}]}"#
+        StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
+        let parsed = try await makeClient(token: "t").parseOpenAPI(#"{"openapi":"3.0.0"}"#)
+        XCTAssertEqual(parsed.baseUrl, "https://api.example.com/v1")
+        XCTAssertEqual(parsed.authHeaders.first?.name, "Authorization")
+        XCTAssertEqual(parsed.secrets.first?.name, "api_token")
+        XCTAssertEqual(parsed.operations.first?.name, "getItem")
+        XCTAssertEqual(parsed.operations.first?.allowedHeaders, ["Authorization"])
+        XCTAssertEqual(parsed.operations.first?.args.first?.name, "variables")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/parse-openapi")
+        XCTAssertEqual(try XCTUnwrap(bodyJSON()["spec"] as? String), #"{"openapi":"3.0.0"}"#)
+    }
+
     func testAddToolNoManifestMapsTo422() async throws {
         StubURLProtocol.handler = { _ in
             (422, [:], Data(#"{"detail":"folder has no toolyard.toml. Author one to add it"}"#.utf8))
@@ -324,6 +347,14 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.query, "limit=100")   // query support works
     }
 
+    func testClearAuditSendsDelete() async throws {
+        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"ok":true}"#.utf8)) }
+        let ok = try await makeClient(token: "t").clearAudit()
+        XCTAssertTrue(ok)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "DELETE")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/audit")
+    }
+
     func testResyncToolPostsToUpdatePath() async throws {
         let json = #"{"id":"weather","type":"api","description":"wx","path":"/data/tools/weather"}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
@@ -361,7 +392,7 @@ final class ApiClientTests: XCTestCase {
 
     func testUpdateToolPostsDescriptionAndSecrets() async throws {
         let json = #"{"id":"echo","description":"new","secrets":[{"name":"api_key","field":"K","writable":true,"#
-                 + #""vault":null,"item":null}]}"#
+                 + #""item":null}]}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let result = try await makeClient(token: "t").updateTool(
             id: "echo", description: "new",
@@ -374,7 +405,8 @@ final class ApiClientTests: XCTestCase {
         let secrets = try XCTUnwrap(body["secrets"] as? [[String: Any]])
         XCTAssertEqual(secrets.first?["field"] as? String, "K")
         XCTAssertEqual(secrets.first?["writable"] as? Bool, true)
-        // a declaration with no vault/item omits those keys (file backend stays clean)
+        // a declaration with no item omits that key (file backend stays clean)
+        XCTAssertNil(secrets.first?["item"])
         XCTAssertNil(secrets.first?["vault"])
     }
 

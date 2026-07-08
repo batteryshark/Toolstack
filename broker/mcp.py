@@ -91,6 +91,8 @@ def _allowed(ctx, caller):
     ops are omitted: least privilege."""
     policy = ctx.store.policy_for(caller.id)
     for op in ctx.registry.list_ops():
+        if op.get("type") == "rest":
+            continue
         effect = policy_rules.decide(policy, op["tool"], op["op"])
         if effect != policy_rules.DENY:
             yield op["tool"], op["op"], effect
@@ -110,7 +112,7 @@ def _list_tools(ctx, caller) -> list:
 
 
 def _registered_ops(ctx):
-    return [(op["tool"], op["op"]) for op in ctx.registry.list_ops()]
+    return [(op["tool"], op["op"]) for op in ctx.registry.list_ops() if op.get("type") != "rest"]
 
 
 def _resolve_name(ctx, name: str):
@@ -149,6 +151,9 @@ def _call_tool(ctx, caller, correlation_id, params) -> dict:
 
     tool, op = _resolve_name(ctx, name)
     if tool is None:  # unparseable name: there is no tool.op to submit/audit
+        return _result(f'unknown tool "{name}"', is_error=True)
+    resolved = ctx.registry.lookup(tool, op)
+    if resolved is not None and resolved.type == "rest":
         return _result(f'unknown tool "{name}"', is_error=True)
 
     # `_reason` is adapter metadata, not a tool argument: pull it out (never forwarded to

@@ -19,7 +19,10 @@ import ipaddress
 import json
 import logging
 import os
+import signal
+import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 from .audit import AuditLog, stderr_sink
 from .context import BrokerContext
@@ -33,6 +36,7 @@ from .surface_nod import NodSurface
 DEFAULT_HOST = "127.0.0.1"  # loopback by default, see the module docstring
 DEFAULT_PORT = 8765
 MAX_BODY_BYTES = 64 * 1024  # cap request bodies to bound memory use
+DEFAULT_REST_BODY_MAX = 20 * 1024 * 1024
 
 
 def _is_loopback(host: str) -> bool:
@@ -69,6 +73,25 @@ def _configured_port() -> int:
         raise SystemExit(f"TOOLSTACK_BROKER_PORT must be an integer, got {raw!r}")
 
 
+def _state_dir() -> Path:
+    base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return Path(base) / "toolstack"
+
+
+def _pidfile_path() -> Path:
+    return _state_dir() / "broker.pid"
+
+
+def _write_pidfile() -> None:
+    path = _pidfile_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def _clear_pidfile() -> None:
+    _pidfile_path().unlink(missing_ok=True)
+
+
 class _Handler(BaseHTTPRequestHandler):
     # Do not leak the Python/server version to unauthenticated callers.
     server_version = "broker"
@@ -77,13 +100,25 @@ class _Handler(BaseHTTPRequestHandler):
     def _ctx(self) -> BrokerContext:
         return self.server.ctx  # type: ignore[attr-defined]
 
+    def _body_cap(self) -> int:
+        if self.path.startswith("/v1/actions/"):
+            try:
+                rest_max = int(os.environ.get("TOOLSTACK_REST_BODY_MAX", str(DEFAULT_REST_BODY_MAX)))
+            except ValueError:
+                rest_max = DEFAULT_REST_BODY_MAX
+            return (rest_max * 4 // 3) + (64 * 1024)
+        return MAX_BODY_BYTES
+
     def _read_body(self):
         """Return the parsed JSON body: {} when absent, None on malformed JSON
         (the gateway maps a non-dict body to 400)."""
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0:
             return {}
-        raw = self.rfile.read(min(length, MAX_BODY_BYTES))
+        cap = self._body_cap()
+        if length > cap:
+            return _TooLarge(cap)
+        raw = self.rfile.read(length)
         if not raw:
             return {}
         try:
@@ -93,6 +128,16 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _respond(self) -> None:
         body = self._read_body()
+        if isinstance(body, _TooLarge):
+            correlation_id = uuid.uuid4().hex
+            payload = json.dumps({"error": "body_too_large", "limit_bytes": body.limit}).encode("utf-8")
+            self.send_response(413)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("X-Correlation-Id", correlation_id)
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         response = handle(self.command, self.path, dict(self.headers), body, self._ctx())
         payload = json.dumps(response.body).encode("utf-8")
         self.send_response(response.status)
@@ -112,6 +157,11 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args) -> None:
         # The audit log is our record of requests; suppress the default access log.
         pass
+
+
+class _TooLarge:
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
 
 
 def build_server(
@@ -155,7 +205,33 @@ def build_server(
     # ThreadingHTTPServer + per-connection store handles if real concurrency is ever needed.
     server = HTTPServer((bind_host, bind_port), _Handler)
     server.ctx = ctx  # type: ignore[attr-defined]
+    server.tools_root = tools_root  # type: ignore[attr-defined]
+    server.tool_dirs = tuple(tool_dirs or ())  # type: ignore[attr-defined]
+    server.reload_registry = lambda: _reload_registry(server)  # type: ignore[attr-defined]
     return server
+
+
+def _catalog_counts(registry: Registry) -> tuple[int, int]:
+    catalog = getattr(registry, "_catalog", {})
+    return len(catalog), len(registry.list_ops())
+
+
+def _reload_registry(server) -> Registry:
+    old = server.ctx.registry
+    before_tools, before_ops = _catalog_counts(old)
+    new = Registry.from_sources(server.tools_root, server.tool_dirs)
+    server.ctx.registry = new
+    after_tools, after_ops = _catalog_counts(new)
+    server.ctx.audit.record(
+        "registry", "reloaded", "ok", uuid.uuid4().hex,
+        details={
+            "tools_before": before_tools,
+            "ops_before": before_ops,
+            "tools_after": after_tools,
+            "ops_after": after_ops,
+        },
+    )
+    return new
 
 
 def main() -> None:
@@ -170,6 +246,15 @@ def main() -> None:
         tools_root=os.environ.get("TOOLSTACK_TOOLS_ROOT"),
         tool_dirs=tool_dirs,
     )
+    _write_pidfile()
+
+    def _sighup(_signum, _frame):
+        try:
+            server.reload_registry()  # type: ignore[attr-defined]
+        except Exception:
+            logging.exception("registry reload failed")
+
+    signal.signal(signal.SIGHUP, _sighup)
     host, port = server.server_address
     print(f"broker listening on http://{host}:{port}  (health: GET /v1/health)", flush=True)
     try:
@@ -179,6 +264,7 @@ def main() -> None:
     finally:
         server.server_close()
         server.ctx.store.close()  # type: ignore[attr-defined]
+        _clear_pidfile()
 
 
 if __name__ == "__main__":

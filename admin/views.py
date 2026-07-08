@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html
 import json
+import time
 from typing import Any
 
 _CSS = """
@@ -50,9 +51,11 @@ pre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:aut
 .risk.write{background:#fff6df;color:#7a5100;}
 .risk.destructive{background:#ffe8e8;color:#8c1f1f;}
 .card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}
-.argrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
-.argrow input{min-width:120px;}
-.sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}
+.argrow,.headerrow,.rulerow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
+.argrow input,.headerrow input{min-width:120px;}
+.rulerow input,.rulerow select{min-width:130px;}
+.rest-sub{display:grid;gap:6px;margin-top:8px;}
+.sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}
 .sechead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 2px;}
 .secrow input{min-width:0;width:100%;}
 .colcenter{justify-self:center;text-align:center;}
@@ -69,6 +72,7 @@ nav.appnav a.active{background:rgba(255,255,255,.16);color:#fff;}
 .filterbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
 .filterbar input[type=search]{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}
 .filterbar select{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}
+.audit-latest{background:#fff9df;}
 """
 
 _JS = """
@@ -119,10 +123,29 @@ _TOOL_EDITOR_JS = """
 (function(){
   var ARG_TYPES = ["string","number","integer","boolean","object","array"];
   var RISK_CHOICES = ["read","write","destructive"];
-  var TOOL_TYPES = ["api","mcp"];   // matches admin TOOL_TYPES
+  var TOOL_TYPES = ["api","mcp","rest"];   // matches admin TOOL_TYPES
+  var REST_VERBS = ["GET","POST","PUT","PATCH","DELETE"];
+  var REST_BODY_KINDS = ["none","text","binary"];
+  var REST_RULE_RESPONSE_TYPES = ["json","xml","form","plaintext"];
   function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
   function opts(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+v+'</option>';}).join('');}
   function riskOpts(sel){return RISK_CHOICES.indexOf(sel)<0 ? [sel].concat(RISK_CHOICES) : RISK_CHOICES;}
+  function currentSecretNames(){
+    return [].map.call(document.querySelectorAll('#secrets .sec-name'), function(n){return n.value.trim();}).filter(Boolean);
+  }
+  function secretOpts(sel){
+    var values = currentSecretNames();
+    if (sel && values.indexOf(sel) < 0) values.unshift(sel);
+    if (!values.length) values = [""];
+    return opts(values, sel||values[0]||"");
+  }
+  function refreshRuleSecretOptions(){
+    [].forEach.call(document.querySelectorAll('.rule-secret'), function(sel){
+      var chosen = sel.value || sel.getAttribute('data-selected') || '';
+      sel.innerHTML = secretOpts(chosen);
+      if (chosen) sel.value = chosen;
+    });
+  }
 
   function argRow(a){
     a = a||{};
@@ -137,6 +160,29 @@ _TOOL_EDITOR_JS = """
     row.querySelector('.rm').onclick = function(){row.remove();};
     return row;
   }
+  function headerRow(h){
+    var row = mk('<div class="headerrow"><input class="header-name" placeholder="Header-Name">'
+      + '<button type="button" class="rm">remove</button></div>');
+    row.querySelector('.header-name').value = h||'';
+    row.querySelector('.rm').onclick = function(){row.remove();};
+    return row;
+  }
+  function ruleRow(r){
+    r = r||{};
+    var row = mk('<div class="rulerow">'
+      + '<select class="rule-secret"></select>'
+      + '<select class="rule-response-type">'+opts(REST_RULE_RESPONSE_TYPES, r.response_type||'json')+'</select>'
+      + '<input class="rule-extract-path" placeholder="extract path">'
+      + '<input class="rule-match-status" placeholder="2xx or 200">'
+      + '<button type="button" class="rm">remove</button></div>');
+    row.querySelector('.rule-secret').setAttribute('data-selected', r.secret_name||'');
+    row.querySelector('.rule-secret').innerHTML = secretOpts(r.secret_name||'');
+    if (r.secret_name) row.querySelector('.rule-secret').value = r.secret_name;
+    row.querySelector('.rule-extract-path').value = r.extract_path||'';
+    row.querySelector('.rule-match-status').value = r.match_status||'2xx';
+    row.querySelector('.rm').onclick = function(){row.remove();};
+    return row;
+  }
   function opCard(o){
     o = o||{};
     var card = mk('<div class="card opcard"><div class="row">'
@@ -144,12 +190,37 @@ _TOOL_EDITOR_JS = """
       + '<select class="op-risk">'+opts(riskOpts(o.risk||'read'), o.risk||'read')+'</select>'
       + '<input class="op-desc" placeholder="description">'
       + '<button type="button" class="rm">remove op</button></div>'
+      + '<div class="row op-rest">'
+      + '<select class="op-verb">'+opts(REST_VERBS, o.verb||'GET')+'</select>'
+      + '<input class="op-path" placeholder="/items/{item_id}">'
+      + '<select class="op-body-kind">'+opts(REST_BODY_KINDS, o.body_kind||'none')+'</select>'
+      + '<input class="op-body-content-type" placeholder="body content type"></div>'
+      + '<div class="op-rest rest-sub"><strong>Allowed headers</strong><div class="headers"></div>'
+      + '<button type="button" class="add-header">add header</button></div>'
+      + '<div class="op-rest rest-sub"><strong>Response redaction</strong>'
+      + '<label class="op-redact"><input type="checkbox" class="op-redact-body"> Redact response body from the caller</label>'
+      + '<label class="op-redact"><input type="checkbox" class="op-redact-headers"> Redact response headers from the caller</label></div>'
+      + '<div class="op-rest rest-sub"><strong>Secret writeback rules</strong><div class="rules"></div>'
+      + '<button type="button" class="add-rule">add rule</button></div>'
       + '<div class="args"></div><button type="button" class="add-arg">add argument</button></div>');
     card.querySelector('.op-name').value = o.name||'';
     card.querySelector('.op-desc').value = o.description||'';
+    card.querySelector('.op-verb').value = o.verb||'GET';
+    card.querySelector('.op-path').value = o.path||'';
+    card.querySelector('.op-body-kind').value = o.body_kind||'none';
+    card.querySelector('.op-body-content-type').value = o.body_content_type||'';
+    card._body_substitution = o.body_substitution;
+    card.querySelector('.op-redact-body').checked = !!o.redact_response_body;
+    card.querySelector('.op-redact-headers').checked = !!o.redact_response_headers;
     var args = card.querySelector('.args');
+    var headers = card.querySelector('.headers');
+    var rules = card.querySelector('.rules');
     (o.args||[]).forEach(function(a){args.appendChild(argRow(a));});
+    (o.allowed_headers||[]).forEach(function(h){headers.appendChild(headerRow(h));});
+    (o.secret_update_rules||[]).forEach(function(r){rules.appendChild(ruleRow(r));});
     card.querySelector('.add-arg').onclick = function(){args.appendChild(argRow());};
+    card.querySelector('.add-header').onclick = function(){headers.appendChild(headerRow());};
+    card.querySelector('.add-rule').onclick = function(){rules.appendChild(ruleRow()); refreshRuleSecretOptions();};
     card.querySelector('.rm').onclick = function(){card.remove();};
     return card;
   }
@@ -157,16 +228,15 @@ _TOOL_EDITOR_JS = """
     s = s||{};
     var row = mk('<div class="secrow"><input class="sec-name" placeholder="e.g. api_key">'
       + '<input class="sec-field" placeholder="e.g. API_KEY">'
-      + '<input class="sec-vault" placeholder="default">'
-      + '<input class="sec-item" placeholder="tool id">'
+      + '<input class="sec-item" placeholder="tool id or path">'
       + '<span class="colcenter"><input type="checkbox" class="sec-writable"></span>'
       + '<button type="button" class="rm">remove</button></div>');
     row.querySelector('.sec-name').value = s.name||'';
     row.querySelector('.sec-field').value = s.field||'';
-    row.querySelector('.sec-vault').value = s.vault||'';
     row.querySelector('.sec-item').value = s.item||'';
     row.querySelector('.sec-writable').checked = !!s.writable;
-    row.querySelector('.rm').onclick = function(){row.remove();};
+    row.querySelector('.sec-name').addEventListener('input', refreshRuleSecretOptions);
+    row.querySelector('.rm').onclick = function(){row.remove(); refreshRuleSecretOptions();};
     return row;
   }
 
@@ -176,26 +246,105 @@ _TOOL_EDITOR_JS = """
   document.getElementById('f_command').value = initial.command||'';
   document.getElementById('f_image').value = initial.image||'';
   document.getElementById('f_description').value = initial.description||'';
+  document.getElementById('f_base_url').value = initial.base_url||'';
   document.getElementById('f_port').value = initial.port||'';
   var ops = document.getElementById('ops');
   (initial.operations && initial.operations.length ? initial.operations : [{}]).forEach(function(o){ops.appendChild(opCard(o));});
   var secs = document.getElementById('secrets');
   (initial.secrets||[]).forEach(function(s){secs.appendChild(secRow(s));});
-  document.getElementById('add-op').onclick = function(){ops.appendChild(opCard());};
-  document.getElementById('add-secret').onclick = function(){secs.appendChild(secRow());};
+  refreshRuleSecretOptions();
+  document.getElementById('add-op').onclick = function(){ops.appendChild(opCard()); syncType();};
+  document.getElementById('add-secret').onclick = function(){secs.appendChild(secRow()); refreshRuleSecretOptions();};
+  var f_type = document.getElementById('f_type');
+
+  function syncType(){
+    var isRest = f_type.value === 'rest';
+    document.getElementById('rest-fields').hidden = !isRest;
+    [].forEach.call(document.querySelectorAll('.op-rest'), function(el){el.style.display = isRest ? '' : 'none';});
+    [].forEach.call(document.querySelectorAll('.opcard .args, .opcard .add-arg'), function(el){el.style.display = isRest ? 'none' : '';});
+    if (isRest && !document.getElementById('f_command').value) {
+      document.getElementById('f_command').value = 'python3 -m toolstack_forwarder';
+    }
+  }
+  f_type.addEventListener('change', syncType);
+  syncType();
+
+  var parseBtn = document.getElementById('oai-parse');
+  if (parseBtn) {
+    var parsedSpec = null;
+    parseBtn.onclick = function(){
+      var err = document.getElementById('oai-error');
+      err.hidden = true;
+      var body = new URLSearchParams();
+      body.append('spec', document.getElementById('oai-spec').value);
+      body.append('_csrf', document.querySelector('input[name=_csrf]').value);
+      fetch('/tools/parse-openapi', {method: 'POST', body: body})
+        .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, j: j}; }); })
+        .then(function(res){
+          if (!res.ok) { err.textContent = (res.j && res.j.error) || 'parse failed'; err.hidden = false; return; }
+          parsedSpec = res.j;
+          var box = document.getElementById('oai-ops');
+          box.innerHTML = '';
+          (parsedSpec.operations || []).forEach(function(op, idx){
+            var row = mk('<label class="oai-op"><input type="checkbox" data-i="'+idx+'" checked> '
+              + '<code></code> <b></b> <span class="muted"></span></label>');
+            row.querySelector('code').textContent = op.verb + ' ' + op.path;
+            row.querySelector('b').textContent = ' ' + op.name + ' ';
+            row.querySelector('.muted').textContent = op.description || '';
+            box.appendChild(row);
+          });
+          document.getElementById('oai-base').textContent = parsedSpec.base_url ? ('Base URL: ' + parsedSpec.base_url) : 'No server URL in the spec.';
+          document.getElementById('oai-results').hidden = false;
+        })
+        .catch(function(){ err.textContent = 'parse failed'; err.hidden = false; });
+    };
+    document.getElementById('oai-add').onclick = function(){
+      if (!parsedSpec) return;
+      f_type.value = 'rest';
+      if (parsedSpec.base_url) document.getElementById('f_base_url').value = parsedSpec.base_url;
+      document.getElementById('f_command').value = 'python3 -m toolstack_forwarder';
+      ops.innerHTML = '';
+      [].forEach.call(document.querySelectorAll('#oai-ops input[type=checkbox]:checked'), function(c){
+        ops.appendChild(opCard(parsedSpec.operations[+c.getAttribute('data-i')]));
+      });
+      (parsedSpec.secrets || []).forEach(function(s){
+        var exists = [].some.call(secs.querySelectorAll('.sec-name'), function(n){ return n.value === s.name; });
+        if (!exists) secs.appendChild(secRow(s));
+      });
+      syncType();
+      document.getElementById('import-openapi').open = false;
+    };
+  }
 
   document.getElementById('tool-form').addEventListener('submit', function(){
     var tool = {
       id: document.getElementById('f_id').value,
       type: document.getElementById('f_type').value,
       description: document.getElementById('f_description').value,
+      base_url: document.getElementById('f_base_url').value,
       command: document.getElementById('f_command').value,
       image: document.getElementById('f_image').value,
       port: document.getElementById('f_port').value,
       operations: [].map.call(ops.querySelectorAll('.opcard'), function(card){
+        var headers = [].map.call(card.querySelectorAll('.headerrow .header-name'), function(h){return h.value.trim();}).filter(Boolean);
+        var rules = [].map.call(card.querySelectorAll('.rulerow'), function(r){
+          return {secret_name: r.querySelector('.rule-secret').value,
+                  response_type: r.querySelector('.rule-response-type').value,
+                  extract_path: r.querySelector('.rule-extract-path').value,
+                  match_status: r.querySelector('.rule-match-status').value};
+        }).filter(function(r){return r.secret_name || r.extract_path;});
         return {name: card.querySelector('.op-name').value,
                 risk: card.querySelector('.op-risk').value,
                 description: card.querySelector('.op-desc').value,
+                verb: card.querySelector('.op-verb').value,
+                path: card.querySelector('.op-path').value,
+                allowed_headers: headers,
+                body_kind: card.querySelector('.op-body-kind').value,
+                body_content_type: card.querySelector('.op-body-content-type').value,
+                body_substitution: card._body_substitution,
+                redact_response_body: card.querySelector('.op-redact-body').checked,
+                redact_response_headers: card.querySelector('.op-redact-headers').checked,
+                secret_update_rules: rules,
                 args: [].map.call(card.querySelectorAll('.argrow'), function(r){
                   return {name: r.querySelector('.arg-name').value,
                           type: r.querySelector('.arg-type').value,
@@ -206,7 +355,6 @@ _TOOL_EDITOR_JS = """
       secrets: [].map.call(secs.querySelectorAll('.secrow'), function(r){
         return {name: r.querySelector('.sec-name').value,
                 field: r.querySelector('.sec-field').value,
-                vault: r.querySelector('.sec-vault').value,
                 item: r.querySelector('.sec-item').value,
                 writable: r.querySelector('.sec-writable').checked};
       })
@@ -292,8 +440,8 @@ def _broker_section(broker: dict, log_tail: str, config: dict, csrf: str) -> str
                 + btn("restart", "Restart", not running))
     cfg_rows = "".join(f"<tr><td>{esc(k)}</td><td><code>{esc(v)}</code></td></tr>"
                        for k, v in config.items())
-    log_html = (f"<details><summary>Broker log</summary><pre>{esc(log_tail)}</pre></details>"
-                if log_tail else "")
+    log_body = log_tail if log_tail else "No broker log yet."
+    log_html = f"<details><summary>Broker log</summary><pre>{esc(log_body)}</pre></details>"
     return (
         "<section><h2>Broker</h2>"
         f"<p>{status}</p>"
@@ -397,20 +545,32 @@ def _requests_section(requests, caller_names) -> str:
             f"<tbody>{rows}</tbody></table></section>")
 
 
-def _audit_section(events) -> str:
+def _fmt_at(ts) -> str:
+    try:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(ts)))
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+def _audit_section(events, csrf: str) -> str:
+    latest = max((e["id"] for e in events), default=None)
     rows = "".join(
-        f"<tr data-row data-key=\"{esc(e['outcome'])}\">"
+        f"<tr data-row data-key=\"{esc(e['outcome'])}\" class=\"{'audit-latest' if e['id'] == latest else ''}\">"
+        f"<td>{esc(_fmt_at(e.get('at')))}</td>"
         f"<td>{esc(e['component'])}.{esc(e['event_type'])}</td>"
         f"<td>{esc(e['outcome'])}</td>"
         f"<td>{esc(e['request_id'] if e['request_id'] is not None else '')}</td>"
         f"<td><code>{esc(json.dumps(e['details']))}</code></td>"
         "</tr>"
         for e in events
-    ) or "<tr><td colspan='4' class='muted'>No audit events yet.</td></tr>"
+    ) or "<tr><td colspan='5' class='muted'>No audit events yet.</td></tr>"
     bar = _filterbar("audit-table", "Filter by caller / tool / event...", "All outcomes",
                      sorted({e["outcome"] for e in events}))
-    return ("<section><h2>Audit</h2>" + bar +
-            "<table id='audit-table'><thead><tr><th>Event</th><th>Outcome</th><th>Req</th><th>Details</th></tr></thead>"
+    clear = ("<form method='post' action='/audit/clear' class='inline-form' "
+             "onsubmit=\"return confirm('Clear the audit log?')\">"
+             f"{_csrf_field(csrf)}<button type='submit'>Clear audit</button></form>")
+    return ("<section><div class='toolbar'><h2>Audit</h2>" + clear + "</div>" + bar +
+            "<table id='audit-table'><thead><tr><th>Time</th><th>Event</th><th>Outcome</th><th>Req</th><th>Details</th></tr></thead>"
             f"<tbody>{rows}</tbody></table></section>")
 
 
@@ -421,7 +581,7 @@ def dashboard_view(*, user, csrf, broker, log_tail, config, callers, tokens,
         ("callers", "Callers", _callers_section(callers, csrf)),
         ("tokens", "Tokens", _tokens_section(tokens, csrf)),
         ("requests", "Requests", _requests_section(requests, caller_names)),
-        ("audit", "Audit", _audit_section(audit)),
+        ("audit", "Audit", _audit_section(audit, csrf)),
     ]
     bar = "".join(
         f"<button class='tab-button{' active' if i == 0 else ''}' type='button' "
@@ -624,26 +784,29 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, err
 
 def _secret_backend_note(backend: dict | None) -> str:
     """A muted line telling the operator where secrets resolve from, so they can see at a
-    glance whether a tool's secrets live in Infisical (and which project) and what the
-    vault/item fields mean for the active backend."""
+    glance whether a tool's secrets live in Infisical and what the path field means for
+    the active backend."""
     if not backend:
         return ""
     if backend["name"] == "infisical":
         dv = esc(backend.get("default_vault") or "(unset)")
+        identity = "configured" if backend.get("identity_configured") else "missing"
         return ("<p class='muted'>Secret backend: <strong>Infisical</strong> "
                 f"(host <code>{esc(backend.get('host', ''))}</code>, "
-                f"env <code>{esc(backend.get('environment', ''))}</code>). Each secret resolves "
-                "from <em>vault</em> / <em>item</em> / <em>field</em>. Leave <em>vault</em> blank to "
-                f"use the default project <code>{dv}</code>; leave <em>item</em> blank to use the "
-                "tool id. The per-item machine identity must have a matching credentials file.</p>")
+                f"env <code>{esc(backend.get('environment', ''))}</code>, "
+                f"identity <code>{identity}</code>). Each secret resolves "
+                f"inside project <code>{dv}</code> from <em>path</em> / <em>field</em>. Leave "
+                "<em>path</em> blank to use the tool id. Toolstack logs in once with the "
+                "deployment's Infisical machine identity; tools and callers never receive "
+                "that credential.</p>")
     if backend["name"] == "vault":
         return ("<p class='muted'>Secret backend: <strong>local vault</strong> (encrypted, "
-                f"<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "
-                "fields are ignored; only <em>field</em> (the key under <code>[tool_id]</code>) is "
+                f"<code>{esc(backend.get('path', ''))}</code>). The <em>path</em> "
+                "field is ignored; only <em>field</em> (the key under <code>[tool_id]</code>) is "
                 "used. Provision values with <code>toolyard vault-set</code>.</p>")
     return ("<p class='muted'>Secret backend: <strong>file</strong> "
-            f"(<code>{esc(backend.get('path', ''))}</code>). The <em>vault</em> / <em>item</em> "
-            "fields are ignored by this backend; only <em>field</em> (the key under "
+            f"(<code>{esc(backend.get('path', ''))}</code>). The <em>path</em> field is "
+            "ignored by this backend; only <em>field</em> (the key under "
             "<code>[tool_id]</code>) is used.</p>")
 
 
@@ -702,17 +865,35 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
                      f"<p class='muted'>Directory: <code>{esc(dir_value)}</code></p>")
         id_attr = " readonly"  # renaming a tool would orphan its caller policies
     initial = json.dumps(tool).replace("</", "<\\/")  # safe to embed in <script>
+    importer = ""
+    if mode == "new":
+        importer = (
+            "<details id='import-openapi'><summary>Import OpenAPI</summary>"
+            "<p class='muted'>Paste a JSON OpenAPI/Swagger spec; YAML works when PyYAML is installed.</p>"
+            "<textarea id='oai-spec' rows='8' placeholder='{\"openapi\":\"3.0.0\",...}'></textarea>"
+            "<div class='actions'><button type='button' id='oai-parse'>Parse spec</button></div>"
+            "<div id='oai-error' class='error' hidden></div>"
+            "<div id='oai-results' hidden><p id='oai-base' class='muted'></p>"
+            "<div id='oai-ops'></div>"
+            "<button type='button' id='oai-add'>Use selected operations</button></div>"
+            "</details>"
+        )
     body = (
         f"{err}<section><div class='row'><a class='button' href='/tools'>Back</a>"
         f"<h2>{'Add tool' if mode == 'new' else 'Edit tool: ' + esc(tool.get('id', ''))}</h2></div>"
+        f"{importer}"
         f"<form id='tool-form' method='post' action='{action}'>"
         f"{_csrf_field(csrf)}{dir_field}"
         f"<label class='field'>id <input id='f_id' placeholder='weather'{id_attr} required></label>"
         "<label class='field'>transport <span class='muted'>(api = POST /v1/actions; "
-        "mcp = streamable-HTTP MCP server)</span>"
+        "mcp = streamable-HTTP MCP server; rest = generic forwarder)</span>"
         "<select id='f_type'></select></label>"
         "<label class='field'>description <span class='muted'>(optional)</span>"
         "<textarea id='f_description' rows='2' placeholder='what this tool does'></textarea></label>"
+        "<div id='rest-fields' hidden>"
+        "<label class='field'>base URL <span class='muted'>(REST upstream)</span>"
+        "<input id='f_base_url' placeholder='https://api.example.com/v1'></label>"
+        "</div>"
         "<label class='field'>entrypoint command <span class='muted'>(process backend)</span>"
         "<input id='f_command' placeholder='python3 app.py'></label>"
         "<label class='field'>image <span class='muted'>(docker backend)</span>"
@@ -727,8 +908,7 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         "<div class='sechead'>"
         "<span>Name <span class='muted'>(file the tool reads)</span></span>"
         "<span>Field <span class='muted'>(backend key)</span></span>"
-        "<span>Vault <span class='muted'>(project)</span></span>"
-        "<span>Item <span class='muted'>(path)</span></span>"
+        "<span>Path <span class='muted'>(Infisical)</span></span>"
         "<span class='colcenter'>Writable</span><span></span></div>"
         "<div id='secrets'></div><button type='button' id='add-secret'>Add secret</button>"
         "<input type='hidden' name='tool_json' id='tool_json'>"

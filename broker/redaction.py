@@ -13,8 +13,9 @@ import re
 
 _MAX = 280
 _MAX_REQUEST = 2000
-# Crude secret-ish runs: a bearer token, or any long opaque token (>=32 chars).
-_SECRETISH = re.compile(r"(?i)bearer\s+\S+|[A-Za-z0-9_\-]{32,}")
+# Crude secret-ish runs: a bearer token, JWT-like three-part token, or any long
+# opaque token (>=32 chars).
+_SECRETISH = re.compile(r"(?i)bearer\s+\S+|[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+|[A-Za-z0-9_\-]{32,}")
 
 
 def redact(text, limit: int = _MAX) -> str | None:

@@ -185,6 +185,14 @@ class JsonApi(unittest.TestCase):
         self.assertIn(("admin", "caller_created"), pairs)
         self.assertIn("requests", body)
 
+    def test_clear_audit_removes_events(self):
+        authz = self._auth()
+        self._create("hermes")
+        self.assertTrue(self.client.get("/api/audit", headers=authz).json()["audit"])
+        r = self.client.delete("/api/audit", headers=authz)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.client.get("/api/audit", headers=authz).json()["audit"], [])
+
     def test_tools_config_secret_backend(self):
         tools = self.client.get("/api/tools", headers=self._auth())
         self.assertEqual(tools.status_code, 200)
@@ -193,18 +201,34 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(echo["description"], "echo tool")
         self.assertIsNone(echo["source"])   # hand-authored tool: no .tsr-source.json
         self.assertEqual(echo["secrets"], [{"name": "api_key", "field": "API_KEY",
-                                            "writable": True, "vault": None, "item": None}])
+                                            "writable": True, "item": None}])
         cfg = self.client.get("/api/config", headers=self._auth())
         self.assertEqual(cfg.status_code, 200)
         self.assertIn("port", cfg.json())
         sb = self.client.get("/api/secret-backend", headers=self._auth()).json()
         self.assertIn("name", sb)
 
+    def test_infisical_secret_backend_reports_identity_without_values(self):
+        with mock.patch.dict(os.environ, {
+            "TOOLSTACK_SECRET_BACKEND": "infisical",
+            "TOOLSTACK_INFISICAL_HOST": "https://infisical.example.test",
+            "TOOLSTACK_INFISICAL_ENVIRONMENT": "dev",
+            "TOOLSTACK_INFISICAL_VAULT": "ToolServer",
+            "TOOLSTACK_INFISICAL_CLIENT_ID": "cid-secret",
+            "TOOLSTACK_INFISICAL_CLIENT_SECRET": "csecret-secret",
+        }):
+            body = self.client.get("/api/secret-backend", headers=self._auth()).json()
+        self.assertEqual(body["name"], "infisical")
+        self.assertTrue(body["identity_configured"])
+        dumped = json.dumps(body)
+        self.assertNotIn("cid-secret", dumped)
+        self.assertNotIn("csecret-secret", dumped)
+
     def test_edit_tool_updates_description_and_secrets(self):
         r = self.client.post("/api/tools/echo", headers=self._auth(), json={
             "description": "now with feeling",
             "secrets": [{"name": "api_key", "field": "NEW_KEY", "writable": False},
-                        {"name": "token", "field": "TOKEN", "writable": True, "vault": "Proj"}]})
+                        {"name": "token", "field": "TOKEN", "writable": True, "item": "oauth"}]})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["description"], "now with feeling")
         # the change is persisted: GET reflects the new description + secrets, ops untouched
@@ -284,6 +308,23 @@ class JsonApi(unittest.TestCase):
 
     def test_add_tool_needs_auth(self):
         self.assertEqual(self.client.post("/api/tools", json={"source": "/x"}).status_code, 401)
+
+    def test_parse_openapi_accepts_object_spec(self):
+        spec = {"openapi": "3.0.0",
+                "servers": [{"url": "https://api.example.com/v1"}],
+                "paths": {"/items/{id}": {"get": {"operationId": "getItem",
+                          "parameters": [{"name": "id", "in": "path", "required": True}]}}}}
+        r = self.client.post("/api/tools/parse-openapi", headers=self._auth(), json={"spec": spec})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(body["base_url"], "https://api.example.com/v1")
+        self.assertEqual(body["operations"][0]["name"], "getItem")
+        self.assertEqual(body["operations"][0]["args"][0]["name"], "variables")
+
+    def test_parse_openapi_rejects_bad_spec(self):
+        r = self.client.post("/api/tools/parse-openapi", headers=self._auth(), json={"spec": "{not valid"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("not valid", r.json()["detail"].lower())
 
     def test_add_tool_from_github(self):
         def fake_clone(cmd, *a, **k):

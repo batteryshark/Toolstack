@@ -36,8 +36,9 @@ toolstack = "client.toolstack:main"        # the agent's generic tool client (CL
 toolstack-mcp = "client.mcp_server:main"   # the same client as an MCP stdio server
 brokerctl = "broker.brokerctl:main"        # operator CLI (callers/policies/tokens/sweep)
 toolyard = "toolyard.cli:main"             # tool runner (up/run/...)
+toolstack-forwarder = "toolstack_forwarder.__main__:main"  # generic rest forwarder process
 
 [tool.setuptools]
 # Explicit list (not auto-discovery) so the board dirs (.ordna/, tasks/) and the
 # dep-carrying admin package are never swept into the distribution.
-packages = ["broker", "toolyard", "client"]
+packages = ["broker", "toolyard", "client", "toolstack_forwarder"]

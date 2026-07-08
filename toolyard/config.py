@@ -11,12 +11,14 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # Tool transports this toolyard knows how to run. "api" answers /v1/actions/<op>; "mcp" is
-# a streamable-HTTP MCP server. Both are served on a loopback port. An unknown type is
-# rejected at load; never accepted silently. Mirrors broker/registry.py and
-# admin/tool_authoring.py (independent packages, so the set is duplicated, not shared).
-TOOL_TYPES = ("api", "mcp")
+# a streamable-HTTP MCP server; "rest" is the generic REST forwarder. All are served on a
+# loopback port. An unknown type is rejected at load; never accepted silently. Mirrors
+# broker/registry.py and admin/tool_authoring.py (independent packages, duplicated).
+TOOL_TYPES = ("api", "mcp", "rest")
+RULE_RESPONSE_TYPES = {"json", "xml", "form", "plaintext"}
 
 # A tool id is the routing key and a directory name; it must match this charset, and must NOT
 # contain a dot, since the broker splits a policy spec on the FIRST dot into (tool, op), so a
@@ -30,8 +32,7 @@ class SecretSpec:
     name: str  # file the tool reads at $TOOLSTACK_SECRETS_DIR/<name>
     field: str  # field looked up in the secret backend
     writable: bool = False
-    vault: str | None = None  # backend project/vault (Infisical); backend may ignore
-    item: str | None = None  # backend path/item (Infisical); defaults to the tool id
+    item: str | None = None  # backend secret path (Infisical); defaults to the tool id
 
 
 @dataclass(frozen=True)
@@ -81,12 +82,13 @@ def load(toml_path: str | Path) -> ToolDef:
             f"{path}: tool {data.get('id')!r} needs an [entrypoint] port "
             f"(integer 1-65535) for a {tool_type!r} tool; got {port!r}"
         )
+    if tool_type == "rest":
+        _validate_rest(path, data)
     secrets = tuple(
         SecretSpec(
             s["name"],
             s["field"],
             s.get("writable", False),
-            s.get("vault"),
             s.get("item"),
         )
         for s in data.get("secrets", [])
@@ -95,12 +97,50 @@ def load(toml_path: str | Path) -> ToolDef:
         id=tool_id,
         type=tool_type,
         port=port,
-        command=entry.get("command"),
+        command=entry.get("command") or ("python3 -m toolstack_forwarder" if tool_type == "rest" else None),
         image=entry.get("image"),
         secrets=secrets,
         path=path.parent,
         description=data.get("description", ""),
     )
+
+
+def _validate_rest(path: Path, data: dict) -> None:
+    base_url = data.get("base_url")
+    if not isinstance(base_url, str) or not base_url:
+        raise ValueError(f"{path}: rest tool needs top-level base_url")
+    split = urlsplit(base_url)
+    if split.scheme not in ("http", "https") or not split.hostname:
+        raise ValueError(f"{path}: rest base_url must be an absolute http(s) URL with a host")
+    if split.username is not None or split.password is not None:
+        raise ValueError(f"{path}: rest base_url must not embed credentials")
+    secrets = data.get("secrets", [])
+    if not isinstance(secrets, list):
+        raise ValueError(f"{path}: rest [[secrets]] must be a list")
+    writable = set()
+    for item in secrets:
+        if not isinstance(item, dict):
+            raise ValueError(f"{path}: rest [[secrets]] entries must be tables")
+        name = item.get("name")
+        if isinstance(name, str):
+            if item.get("writable", False) is True:
+                writable.add(name)
+    for op in data.get("operations", []):
+        if not isinstance(op, dict):
+            continue
+        for rule in op.get("secret_update_rules", []):
+            if isinstance(rule, dict) and rule.get("secret_name") not in writable:
+                raise ValueError(
+                    f"{path}: rest secret_update_rule targets non-writable secret {rule.get('secret_name')!r}"
+                )
+            if isinstance(rule, dict) and rule.get("response_type") not in RULE_RESPONSE_TYPES:
+                raise ValueError(
+                    f"{path}: rest secret_update_rule has invalid response_type {rule.get('response_type')!r}"
+                )
+            if isinstance(rule, dict) and not rule.get("extract_path"):
+                raise ValueError(f"{path}: rest secret_update_rule needs extract_path")
+            if isinstance(rule, dict) and not rule.get("match_status"):
+                raise ValueError(f"{path}: rest secret_update_rule needs match_status")
 
 
 def discover(root: str | Path) -> list[ToolDef]:

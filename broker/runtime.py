@@ -12,6 +12,10 @@ Two tool transports share this seam, dispatched on ``ToolOp.type``:
   in ``toolyard.toml`` exactly like an api tool; the runtime maps op -> MCP tool
   name. The MCP ``result`` (content blocks + optional ``structuredContent``) is
   returned to the caller unchanged.
+* **rest**: the broker POSTs ``/sendrequest`` to a generic rest forwarder
+  process. The forwarder owns outbound HTTP construction, workload secrets, and
+  secret-update rules; the broker only supplies the op, arguments, request id,
+  caller, and optional channel secret.
 The broker attaches NO workload secrets; the tool already has its own, resolved
 by the toolyard at container start. The broker adds ``broker_request_id`` and the
 caller name so the tool has request context (in the api body; in MCP under the
@@ -112,6 +116,8 @@ class HttpRuntime:
             return self._execute_api(tool_op, arguments, request_id, caller_name)
         if tool_op.type == "mcp":
             return self._execute_mcp(tool_op, arguments, request_id, caller_name)
+        if tool_op.type == "rest":
+            return self._execute_rest(tool_op, arguments, request_id, caller_name)
         # The registry rejects unknown types at load, so this guards only a programmer error
         # (a ToolOp built with a type no transport handles), fail loud, never POST blind.
         raise RuntimeError(f"unsupported tool type {tool_op.type!r}")
@@ -143,6 +149,48 @@ class HttpRuntime:
             return json.loads(body)
         except json.JSONDecodeError:
             raise RuntimeError("tool returned non-JSON")
+
+    # -- rest transport: POST /sendrequest to the generic forwarder --------------
+    def _execute_rest(self, tool_op: ToolOp, arguments: dict, request_id: int, caller_name: str) -> dict:
+        secret = self._tool_secret(tool_op.tool)
+        url = f"http://127.0.0.1:{tool_op.port}/sendrequest"
+        payload = json.dumps(
+            {
+                "op": tool_op.op,
+                "arguments": arguments,
+                "broker_request_id": request_id,
+                "caller": {"name": caller_name},
+            }
+        ).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if secret:
+            headers["X-Toolstack-Secret"] = secret
+        req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+        try:
+            with _OPENER.open(req, timeout=self._timeout) as resp:
+                body = resp.read()
+        except urllib.error.HTTPError as exc:
+            try:
+                body = exc.read()
+            finally:
+                exc.close()
+        except urllib.error.URLError as exc:
+            raise ToolUnreachable(f"tool unreachable: {exc.reason}")
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError:
+            raise RuntimeError("tool returned non-JSON")
+        if not isinstance(parsed, dict):
+            raise RuntimeError("tool returned a non-object envelope")
+        if "status" in parsed:
+            return parsed
+        if parsed.get("error") == "outbound_unreachable":
+            raise ToolUnreachable(f"tool outbound unreachable: {parsed.get('reason', '')}")
+        if "error" in parsed:
+            detail = parsed.get("detail") or parsed.get("reason") or parsed.get("name") or ""
+            suffix = f": {detail}" if detail else ""
+            raise RuntimeError(f"tool forwarder error: {parsed.get('error')}{suffix}")
+        raise RuntimeError("tool returned an invalid envelope")
 
     # -- mcp transport: streamable-HTTP MCP client at /mcp -----------------------
     def _execute_mcp(self, tool_op: ToolOp, arguments: dict, request_id: int, caller_name: str) -> dict:

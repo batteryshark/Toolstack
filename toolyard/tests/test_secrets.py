@@ -67,12 +67,13 @@ class Infisical(unittest.TestCase):
     """Drive InfisicalBackend with a stubbed HTTP layer (no network)."""
 
     def _backend(self, secrets_at_path):
-        creds_dir = tempfile.mkdtemp()
-        Path(creds_dir, "demo-item.env").write_text(
-            "INFISICAL_CLIENT_ID=cid\nINFISICAL_CLIENT_SECRET=csecret\n"
+        b = InfisicalBackend(
+            host="https://infisical.test",
+            client_id="cid",
+            client_secret="csecret",
+            environment="dev",
+            default_vault="Proj",
         )
-        b = InfisicalBackend(host="https://infisical.test", credentials_dir=creds_dir,
-                             environment="dev", default_vault="Proj")
 
         def fake_request(method, url, headers, body):
             if url.endswith("/api/v1/auth/universal-auth/login"):
@@ -86,19 +87,21 @@ class Infisical(unittest.TestCase):
         b._request = fake_request
         return b
 
-    def test_resolves_by_vault_item_field(self):
+    def test_resolves_by_configured_vault_item_field(self):
         b = self._backend([{"secretKey": "username", "secretValue": "alice"}])
         resolved = b.resolve(_tool(
-            SecretSpec("app_username", "username", vault="Proj", item="demo-item")))
+            SecretSpec("app_username", "username", item="demo-item")))
         self.assertEqual(resolved, {"app_username": "alice"})
 
     def test_item_defaults_to_tool_id(self):
-        # No item on the spec -> credentials/path derive from the tool id ("demo").
-        creds_dir = tempfile.mkdtemp()
-        Path(creds_dir, "demo.env").write_text(
-            "INFISICAL_CLIENT_ID=cid\nINFISICAL_CLIENT_SECRET=csecret\n")
-        b = InfisicalBackend(host="https://infisical.test", credentials_dir=creds_dir,
-                             environment="dev", default_vault="Proj")
+        # No item on the spec -> secret path derives from the tool id ("demo").
+        b = InfisicalBackend(
+            host="https://infisical.test",
+            client_id="cid",
+            client_secret="csecret",
+            environment="dev",
+            default_vault="Proj",
+        )
         b._request = lambda m, u, h, body: (
             {"accessToken": "t", "expiresIn": 600} if "login" in u
             else {"projects": [{"id": "p1", "slug": "Proj"}]} if "projects" in u
@@ -108,14 +111,26 @@ class Infisical(unittest.TestCase):
     def test_missing_field_raises(self):
         b = self._backend([{"secretKey": "other", "secretValue": "x"}])
         with self.assertRaises(KeyError):
-            b.resolve(_tool(SecretSpec("k", "missing", vault="Proj", item="demo-item")))
+            b.resolve(_tool(SecretSpec("k", "missing", item="demo-item")))
 
     def test_no_vault_raises(self):
-        creds_dir = tempfile.mkdtemp()
-        b = InfisicalBackend(host="https://infisical.test", credentials_dir=creds_dir,
-                             environment="dev")  # no default_vault
+        b = InfisicalBackend(
+            host="https://infisical.test",
+            client_id="cid",
+            client_secret="csecret",
+            environment="dev",
+        )  # no default_vault
         with self.assertRaises(ValueError):
             b.resolve(_tool(SecretSpec("k", "K", item="demo-item")))
+
+    def test_no_secret_tool_does_not_need_vault(self):
+        b = InfisicalBackend(
+            host="https://infisical.test",
+            client_id="cid",
+            client_secret="csecret",
+            environment="dev",
+        )
+        self.assertEqual(b.resolve(_tool()), {})
 
     def test_update_patches_writable_field(self):
         b = self._backend([])
@@ -130,7 +145,7 @@ class Infisical(unittest.TestCase):
             return {}
 
         b._request = fake_request
-        b.update(_tool(SecretSpec("tok", "TOKEN", writable=True, vault="Proj", item="demo-item")),
+        b.update(_tool(SecretSpec("tok", "TOKEN", writable=True, item="demo-item")),
                  "tok", "new-value")
         self.assertEqual(seen["method"], "PATCH")
         self.assertTrue(seen["url"].endswith("/api/v4/secrets/TOKEN"))
@@ -140,8 +155,33 @@ class Infisical(unittest.TestCase):
     def test_update_rejects_non_writable(self):
         b = self._backend([])
         with self.assertRaises(PermissionError):
-            b.update(_tool(SecretSpec("tok", "TOKEN", vault="Proj", item="demo-item")),
+            b.update(_tool(SecretSpec("tok", "TOKEN", item="demo-item")),
                      "tok", "x")
+
+    def test_from_env_uses_toolstack_wide_identity(self):
+        env = {
+            "TOOLSTACK_INFISICAL_HOST": "https://infisical.test",
+            "TOOLSTACK_INFISICAL_CLIENT_ID": "cid",
+            "TOOLSTACK_INFISICAL_CLIENT_SECRET": "csecret",
+            "TOOLSTACK_INFISICAL_ENVIRONMENT": "dev",
+            "TOOLSTACK_INFISICAL_VAULT": "Proj",
+        }
+        with mock.patch.dict(os.environ, env, clear=True):
+            b = InfisicalBackend.from_env()
+        self.assertEqual(b.credentials.client_id, "cid")
+        self.assertEqual(b.credentials.client_secret, "csecret")
+        self.assertEqual(b.default_vault, "Proj")
+        self.assertEqual(b.environment, "dev")
+
+    def test_from_env_accepts_infisical_standard_identity_names(self):
+        env = {
+            "TOOLSTACK_INFISICAL_HOST": "https://infisical.test",
+            "INFISICAL_CLIENT_ID": "cid",
+            "INFISICAL_CLIENT_SECRET": "csecret",
+        }
+        with mock.patch.dict(os.environ, env, clear=True):
+            b = InfisicalBackend.from_env()
+        self.assertEqual(b.credentials.client_id, "cid")
 
 
 class _FakeInfisical(BaseHTTPRequestHandler):
@@ -213,12 +253,10 @@ class InfisicalHTTP(unittest.TestCase):
         self.addCleanup(self.server.server_close)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.shutdown)
-        self.creds_dir = tempfile.mkdtemp()
-        Path(self.creds_dir, "demo.env").write_text(  # item defaults to the tool id "demo"
-            "INFISICAL_CLIENT_ID=cid\nINFISICAL_CLIENT_SECRET=csecret\n")
         self.backend = InfisicalBackend(
             host=f"http://127.0.0.1:{self.server.server_address[1]}",
-            credentials_dir=self.creds_dir, environment="dev", default_vault="Proj")
+            client_id="cid", client_secret="csecret", environment="dev",
+            default_vault="Proj")
 
     def _tool(self, field="API_KEY"):
         return _tool(SecretSpec("api_key", field, writable=True))
@@ -238,10 +276,13 @@ class InfisicalHTTP(unittest.TestCase):
         self.assertEqual(_FakeInfisical.login_count, 1)  # logged in once, token reused
 
     def test_http_error_becomes_runtime_error(self):
-        Path(self.creds_dir, "demo.env").write_text(  # wrong creds -> login 401
-            "INFISICAL_CLIENT_ID=wrong\nINFISICAL_CLIENT_SECRET=wrong\n")
-        b = InfisicalBackend(host=self.backend.host, credentials_dir=self.creds_dir,
-                             environment="dev", default_vault="Proj")
+        b = InfisicalBackend(
+            host=self.backend.host,
+            client_id="wrong",
+            client_secret="wrong",
+            environment="dev",
+            default_vault="Proj",
+        )
         with self.assertRaises(RuntimeError):
             b.resolve(self._tool())
 
@@ -251,18 +292,27 @@ class InfisicalHTTP(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    os.environ.get("TOOLSTACK_INFISICAL_HOST") and os.environ.get("TOOLSTACK_INFISICAL_TEST_VAULT"),
-    "set TOOLSTACK_INFISICAL_HOST + _TEST_VAULT/_TEST_ITEM/_TEST_FIELD (+ creds dir) for the live test",
+    os.environ.get("TOOLSTACK_INFISICAL_HOST")
+    and os.environ.get("TOOLSTACK_INFISICAL_VAULT")
+    and os.environ.get("TOOLSTACK_INFISICAL_TEST_FIELD")
+    and (
+        os.environ.get("TOOLSTACK_INFISICAL_CLIENT_ID")
+        or os.environ.get("INFISICAL_CLIENT_ID")
+    )
+    and (
+        os.environ.get("TOOLSTACK_INFISICAL_CLIENT_SECRET")
+        or os.environ.get("INFISICAL_CLIENT_SECRET")
+    ),
+    "set TOOLSTACK_INFISICAL_HOST + TOOLSTACK_INFISICAL_VAULT + client id/secret + _TEST_ITEM/_TEST_FIELD for the live test",
 )
 class InfisicalLive(unittest.TestCase):
     """Opt-in: verify the pinned v4 contract against a REAL Infisical. Reads
-    TOOLSTACK_INFISICAL_* (host/env/creds dir, via from_env) plus _TEST_VAULT/_TEST_ITEM/
-    _TEST_FIELD naming a secret the configured machine identity can read."""
+    TOOLSTACK_INFISICAL_* (host/env/client credentials, via from_env) plus
+    _TEST_ITEM/_TEST_FIELD naming a secret the configured identity can read."""
 
     def test_resolves_a_real_secret(self):
         backend = InfisicalBackend.from_env()
         spec = SecretSpec("probe", os.environ["TOOLSTACK_INFISICAL_TEST_FIELD"],
-                          vault=os.environ["TOOLSTACK_INFISICAL_TEST_VAULT"],
                           item=os.environ.get("TOOLSTACK_INFISICAL_TEST_ITEM"))
         resolved = backend.resolve(_tool(spec))
         self.assertIsInstance(resolved["probe"], str)
@@ -422,10 +472,13 @@ class InfisicalRetry(unittest.TestCase):
     """_request retries transient (429/5xx/network) failures, fails auth fast, then gives up."""
 
     def _backend(self):
-        import tempfile
-        return InfisicalBackend(host="https://infisical.test",
-                                credentials_dir=tempfile.mkdtemp(),
-                                environment="dev", default_vault="Proj")
+        return InfisicalBackend(
+            host="https://infisical.test",
+            client_id="cid",
+            client_secret="csecret",
+            environment="dev",
+            default_vault="Proj",
+        )
 
     @staticmethod
     def _http_error(code):

@@ -105,11 +105,17 @@ def secret_backend_info() -> dict:
     exposing any secret value."""
     name = secret_backend()
     if name == "infisical":
+        has_client_id = bool(os.environ.get("TOOLSTACK_INFISICAL_CLIENT_ID")
+                             or os.environ.get("INFISICAL_CLIENT_ID"))
+        has_client_secret = bool(os.environ.get("TOOLSTACK_INFISICAL_CLIENT_SECRET")
+                                 or os.environ.get("INFISICAL_CLIENT_SECRET"))
         return {
             "name": "infisical",
             "host": os.environ.get("TOOLSTACK_INFISICAL_HOST", ""),
             "environment": os.environ.get("TOOLSTACK_INFISICAL_ENVIRONMENT", "prod"),
             "default_vault": os.environ.get("TOOLSTACK_INFISICAL_VAULT", ""),
+            "organization_slug": os.environ.get("TOOLSTACK_INFISICAL_ORGANIZATION_SLUG", ""),
+            "identity_configured": has_client_id and has_client_secret,
         }
     if name == "vault":
         return {"name": "vault",

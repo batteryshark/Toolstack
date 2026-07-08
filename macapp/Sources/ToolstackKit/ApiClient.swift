@@ -102,6 +102,12 @@ public actor ApiClient {
         try await send("GET", "/api/audit", query: [URLQueryItem(name: "limit", value: String(limit))])
     }
 
+    @discardableResult
+    public func clearAudit() async throws -> Bool {
+        let result: OkResult = try await send("DELETE", "/api/audit")
+        return result.ok
+    }
+
     public func listTools() async throws -> [ToolInfo] {
         let response: ToolsResponse = try await send("GET", "/api/tools")
         return response.tools
@@ -111,6 +117,10 @@ public actor ApiClient {
         try await send("GET", "/api/secret-backend")
     }
 
+    public func parseOpenAPI(_ spec: String) async throws -> ParsedOpenAPI {
+        try await send("POST", "/api/tools/parse-openapi", body: ["spec": spec])
+    }
+
     /// Edit a tool's description and secret DECLARATIONS (its ops/entrypoint are preserved
     /// server-side). Secret *values* are never sent; these are declarations (name/field/...).
     @discardableResult
@@ -118,7 +128,6 @@ public actor ApiClient {
                            secrets: [SecretDecl]) async throws -> ToolEdit {
         let secretsBody: [[String: Any]] = secrets.map { s in
             var row: [String: Any] = ["name": s.name, "field": s.field, "writable": s.writable]
-            if let vault = s.vault, !vault.isEmpty { row["vault"] = vault }
             if let item = s.item, !item.isEmpty { row["item"] = item }
             return row
         }

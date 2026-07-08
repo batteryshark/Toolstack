@@ -53,6 +53,7 @@ class Submit(BrokerTestCase):
         out = lifecycle.submit(ctx, caller, "boom", "now", {}, CID)
         self.assertEqual(out.status, lifecycle.FAILED)
         self.assertEqual(out.error, "tool_failed")
+        self.assertIn("RuntimeError", out.detail)
         self.assertEqual(ctx.store.request(out.request_id)["status"], "failed")
 
     def test_unreachable_tool_maps_to_tool_unreachable(self):
@@ -62,6 +63,7 @@ class Submit(BrokerTestCase):
         out = lifecycle.submit(ctx, caller, "down", "now", {}, CID)
         self.assertEqual(out.status, lifecycle.FAILED)
         self.assertEqual(out.error, "tool_unreachable")
+        self.assertIn("ToolUnreachable", out.detail)
 
     def test_arguments_never_appear_in_audit(self):
         ctx, caller = self._setup(catalog={"echo": {"say": "low"}}, allow=["echo.say"])
@@ -76,6 +78,36 @@ class Submit(BrokerTestCase):
         self.assertIn("received", types)  # what the agent asked for
         self.assertIn("decision_allow", types)  # what was decided
         self.assertIn("execution_completed", types)  # what actually ran
+
+    def test_rest_audit_event_includes_outbound_metadata_without_body(self):
+        class RestRuntime:
+            def execute(self, tool_op, arguments, request_id, caller_name):
+                return {"status": 202, "headers": {}, "body": "accepted"}
+
+        meta = {
+            "verb": "POST",
+            "path_template": "/users/{user_id}",
+            "base_url_host": "api.example.test",
+            "body_kind": "text",
+        }
+        ctx = self.make_ctx(catalog={"jira": {"create_user": "write"}}, runtime=RestRuntime(),
+                            tool_type="rest", rest_meta=meta)
+        token = seed_caller(ctx.store, "hermes", allow=["jira.create_user"])
+        caller = authenticate(ctx.store, f"Bearer {token}")
+        out = lifecycle.submit(
+            ctx, caller, "jira", "create_user",
+            {"variables": {"user_id": "secret-user"}, "body": '{"password":"p@ss"}'}, CID,
+        )
+        events = ctx.store.audit_events(request_id=out.request_id)
+        completed = [e for e in events if e["component"] == "runtime" and e["event_type"] == "execution_completed"][0]
+        details = completed["details"]
+        self.assertEqual(details["outbound_host"], "api.example.test")
+        self.assertEqual(details["outbound_verb"], "POST")
+        self.assertEqual(details["outbound_path_template"], "/users/{user_id}")
+        self.assertEqual(details["outbound_status"], 202)
+        blob = json.dumps(events)
+        self.assertNotIn("secret-user", blob)
+        self.assertNotIn("p@ss", blob)
 
 
 if __name__ == "__main__":

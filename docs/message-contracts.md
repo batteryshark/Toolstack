@@ -57,7 +57,9 @@ GET  /v1/requests/<id>           poll a request (owner only) -> status + result 
 ### 2. Broker → Tool container (forwarding)
 
 ```text
-POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
+api:  POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
+mcp:  POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/mcp
+rest: POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/sendrequest
 ```
 
 - Both ingress framings converge here: whether a call arrived as HTTP `/v1/actions` or as a
@@ -81,6 +83,30 @@ POST /v1/actions/<tool>.<op>  ->  POST http://127.0.0.1:<port>/v1/actions/<op>
 - Security: the broker attaches **no workload** secrets. The tool already holds its own; the
   only thing the broker may add is the optional channel shared secret above.
 
+For `type = "rest"` the broker uses the same optional channel secret described
+above. The forwarder verifies `X-Toolstack-Secret` only when
+`$TOOLSTACK_SECRETS_DIR/broker_secret` exists. The forwarder request body is:
+
+```json
+{
+  "op": "get_item",
+  "arguments": {"variables": {"item_id": "i42"}, "headers": {}, "body": "{}"},
+  "broker_request_id": 123,
+  "caller": {"name": "hermes"}
+}
+```
+
+The forwarder always returns JSON. Success is an envelope:
+
+```json
+{"status": 200, "headers": {"content-type": "application/json"}, "body": "{\"id\":\"i42\"}"}
+```
+
+Failures are `{"error": "..."}` envelopes. `outbound_unreachable` maps to
+`tool_unreachable`; other forwarder errors map to `tool_failed`. REST tools are intentionally
+not exposed through broker-native `/mcp`; they remain HTTP action API only. See
+[rest-forwarder.md](rest-forwarder.md).
+
 ### 3. Toolyard → Secret backend (at container start)
 
 Toolyard resolves that tool's fields and injects them into the container's
@@ -88,13 +114,14 @@ Toolyard resolves that tool's fields and injects them into the container's
 backend is pluggable via `$TOOLSTACK_SECRET_BACKEND` (`toolyard.secrets.get_backend`):
 `file` (dev TOML), `vault` (a local **encrypted-at-rest** file: scrypt-stretched
 passphrase + Fernet AEAD, for laptop/self-contained deploys; needs the `cryptography`
-extra), or `infisical` (logs in with the per-tool machine identity). The broker holds no
+extra), or `infisical` (logs in with the Toolstack-wide machine identity). The broker holds no
 backend credential for any of them.
 
 ### 4. Tool container → Toolyard (writable secrets)
 
 Writable fields only, via `/run/toolyard/secrets.sock`. Toolyard enforces the
-descriptor allowlist and patches exactly `(vault, item, field)`. No backend
+descriptor allowlist and patches exactly `(item, field)` inside the configured
+deployment vault/project. No backend
 credential is ever mounted in the container.
 
 ### 5. Broker ↔ nod (approval)
@@ -128,6 +155,7 @@ Append-only, written by the broker's Audit module. Families:
 - `identity.*`: `token_validated`, `token_rejected` (per-request auth at the gateway;
   token *revocation* is an operator action, audited under `admin.token_revoked`)
 - `registry.*`: `tool_lookup_failed`
+- `registry.*`: `tool_lookup_failed`, `reloaded`
 - `policy.*`: `decision_allow`, `decision_deny`, `decision_review_required`
 - `request.*`: `received`, `completed`, `denied`, `failed`, `expired` (one terminal
   event per request; the producing component also records its own runtime/policy/approval event)

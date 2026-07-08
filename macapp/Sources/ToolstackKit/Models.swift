@@ -39,6 +39,10 @@ public struct RevokeResult: Codable, Sendable {
     public let name: String   // the revoke response is otherwise ignored
 }
 
+public struct OkResult: Codable, Sendable {
+    public let ok: Bool
+}
+
 public struct OpInfo: Codable, Sendable, Identifiable, Equatable {
     public let op: String
     public let risk: String
@@ -47,19 +51,17 @@ public struct OpInfo: Codable, Sendable, Identifiable, Equatable {
 }
 
 /// A tool's secret DECLARATION (not a value): the file the tool reads (`name`), the backend
-/// `field` it resolves from, whether the tool may write it back, and the Infisical vault/item.
+/// `field` it resolves from, whether the tool may write it back, and the Infisical path.
 public struct SecretDecl: Codable, Sendable, Identifiable, Equatable {
     public let name: String
     public let field: String
     public let writable: Bool
-    public let vault: String?
     public let item: String?
     public var id: String { name }
 
-    public init(name: String, field: String, writable: Bool,
-                vault: String? = nil, item: String? = nil) {
+    public init(name: String, field: String, writable: Bool, item: String? = nil) {
         self.name = name; self.field = field; self.writable = writable
-        self.vault = vault; self.item = item
+        self.item = item
     }
 }
 
@@ -122,19 +124,56 @@ public struct RemovedTool: Codable, Sendable {
     public let removed: String
 }
 
-/// The active secret backend (deployment-wide). `path` (file/vault) or `host`/`environment`/
-/// `defaultVault` (Infisical) are present depending on `name`.
+/// The active secret backend (deployment-wide). `path` (file/vault) or
+/// `host`/`environment`/`defaultVault`/`identityConfigured` (Infisical) are present
+/// depending on `name`.
 public struct SecretBackend: Codable, Sendable {
     public let name: String   // "file" | "vault" | "infisical"
     public let path: String?
     public let host: String?
     public let environment: String?
     public let defaultVault: String?
+    public let organizationSlug: String?
+    public let identityConfigured: Bool?
 }
 
 public struct ToolsResponse: Codable, Sendable {
     public let tools: [ToolInfo]
     public let error: String?
+}
+
+public struct ParsedOpenAPI: Codable, Sendable, Equatable {
+    public let baseUrl: String
+    public let authHeaders: [ParsedAuthHeader]
+    public let secrets: [SecretDecl]
+    public let operations: [ParsedRestOperation]
+}
+
+public struct ParsedAuthHeader: Codable, Sendable, Identifiable, Equatable {
+    public let name: String
+    public let value: String
+    public var id: String { name }
+}
+
+public struct ParsedRestOperation: Codable, Sendable, Identifiable, Equatable {
+    public let name: String
+    public let verb: String
+    public let path: String
+    public let risk: String
+    public let description: String
+    public let allowedHeaders: [String]
+    public let bodyKind: String
+    public let bodyContentType: String?
+    public let args: [ParsedArg]
+    public var id: String { name }
+}
+
+public struct ParsedArg: Codable, Sendable, Identifiable, Equatable {
+    public let name: String
+    public let type: String
+    public let required: Bool
+    public let description: String?
+    public var id: String { name }
 }
 
 /// A caller's policy: tool -> op -> effect ("allow" | "review"). An op absent from the map is
