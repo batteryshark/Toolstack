@@ -197,6 +197,9 @@ _TOOL_EDITOR_JS = """
       + '<input class="op-body-content-type" placeholder="body content type"></div>'
       + '<div class="op-rest rest-sub"><strong>Allowed headers</strong><div class="headers"></div>'
       + '<button type="button" class="add-header">add header</button></div>'
+      + '<div class="op-rest rest-sub"><strong>Response redaction</strong>'
+      + '<label class="op-redact"><input type="checkbox" class="op-redact-body"> Redact response body from the caller</label>'
+      + '<label class="op-redact"><input type="checkbox" class="op-redact-headers"> Redact response headers from the caller</label></div>'
       + '<div class="op-rest rest-sub"><strong>Secret writeback rules</strong><div class="rules"></div>'
       + '<button type="button" class="add-rule">add rule</button></div>'
       + '<div class="args"></div><button type="button" class="add-arg">add argument</button></div>');
@@ -207,6 +210,8 @@ _TOOL_EDITOR_JS = """
     card.querySelector('.op-body-kind').value = o.body_kind||'none';
     card.querySelector('.op-body-content-type').value = o.body_content_type||'';
     card._body_substitution = o.body_substitution;
+    card.querySelector('.op-redact-body').checked = !!o.redact_response_body;
+    card.querySelector('.op-redact-headers').checked = !!o.redact_response_headers;
     var args = card.querySelector('.args');
     var headers = card.querySelector('.headers');
     var rules = card.querySelector('.rules');
@@ -337,6 +342,8 @@ _TOOL_EDITOR_JS = """
                 body_kind: card.querySelector('.op-body-kind').value,
                 body_content_type: card.querySelector('.op-body-content-type').value,
                 body_substitution: card._body_substitution,
+                redact_response_body: card.querySelector('.op-redact-body').checked,
+                redact_response_headers: card.querySelector('.op-redact-headers').checked,
                 secret_update_rules: rules,
                 args: [].map.call(card.querySelectorAll('.argrow'), function(r){
                   return {name: r.querySelector('.arg-name').value,

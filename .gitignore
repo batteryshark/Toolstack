@@ -36,3 +36,5 @@ deploy/docker/data/
 # ~/.local/share/toolstack/tools and are never tracked here.) The generic client
 # skill at client/SKILL.md is unaffected.
 client/skills/
+/toolstack-writeup
+/.agents

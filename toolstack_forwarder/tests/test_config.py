@@ -46,6 +46,23 @@ class ConfigLoad(unittest.TestCase):
         self.assertIsNone(op.body_content_type)
         self.assertFalse(op.body_substitution)
         self.assertIn("x-trace", op.allowed_headers)
+        self.assertFalse(op.redact_response_body)
+        self.assertFalse(op.redact_response_headers)
+
+    def test_parses_redaction_flags(self):
+        cfg = load_config(self._write(BASE + """
+redact_response_body = true
+redact_response_headers = true
+"""))
+        op = cfg.operations["get_user"]
+        self.assertTrue(op.redact_response_body)
+        self.assertTrue(op.redact_response_headers)
+
+    def test_rejects_non_boolean_redaction_flag(self):
+        with self.assertRaises(ConfigError):
+            load_config(self._write(BASE + """
+redact_response_body = "yes"
+"""))
 
     def test_post_defaults_to_text_json_body(self):
         cfg = load_config(self._write(BASE + """

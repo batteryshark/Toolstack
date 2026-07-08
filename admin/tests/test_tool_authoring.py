@@ -166,6 +166,27 @@ class RestAuthoring(unittest.TestCase):
         self.assertEqual(parsed["operations"][1]["body_content_type"], "application/json")
         self.assertEqual(parsed["operations"][1]["secret_update_rules"][0]["secret_name"], "auth_token")
 
+    def test_redaction_flags_round_trip_and_default_off(self):
+        data = tool_authoring.normalize({**REST_FULL, "operations": [
+            {**REST_FULL["operations"][0], "redact_response_body": True, "redact_response_headers": True},
+            REST_FULL["operations"][1],
+        ]})
+        parsed = tomllib.loads(tool_authoring.to_toml(data))
+        self.assertTrue(parsed["operations"][0]["redact_response_body"])
+        self.assertTrue(parsed["operations"][0]["redact_response_headers"])
+        # Off by default: omitted from the TOML rather than written as false.
+        self.assertNotIn("redact_response_body", parsed["operations"][1])
+        self.assertNotIn("redact_response_headers", parsed["operations"][1])
+        # And the forwarder reads them back as the operation's flags.
+        from toolstack_forwarder.config import load_config as load_rest_config
+        tmp = tempfile.mkdtemp(prefix="admin-rest-redact-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        tool_authoring.write(tmp, data, runner="process")
+        cfg = load_rest_config(Path(tmp, "toolyard.toml"))
+        self.assertTrue(cfg.operations["get_user"].redact_response_body)
+        self.assertTrue(cfg.operations["get_user"].redact_response_headers)
+        self.assertFalse(cfg.operations["login"].redact_response_body)
+
     def test_rejects_rest_without_base_url(self):
         data = tool_authoring.normalize({**REST_FULL, "base_url": ""})
         self.assertTrue(any("base_url" in e for e in tool_authoring.validate(data)))
