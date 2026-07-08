@@ -38,3 +38,6 @@ deploy/docker/data/
 client/skills/
 /toolstack-writeup
 /.agents
+
+# Per-tool runtime logs written by the toolyard process runner (<tool>/logs/tool.log).
+tools/*/logs/
