@@ -110,6 +110,23 @@ class ApprovalFlow(BrokerTestCase):
         self.assertIn("bob", surface.opened[1].details)
         self.assertNotEqual(surface.opened[0].details, surface.opened[1].details)
 
+    def test_rest_review_card_carries_endpoint_template_not_values(self):
+        surface = FakeSurface(approval.PENDING)
+        meta = {
+            "verb": "POST",
+            "path_template": "/users/{user_id}",
+            "base_url_host": "api.example.test",
+            "body_kind": "text",
+        }
+        ctx = self.make_ctx(catalog={"jira": {"create_user": "high"}}, surface=surface,
+                            tool_type="rest", rest_meta=meta)
+        token = seed_caller(ctx.store, "hermes", review=["jira.create_user"])
+        caller = authenticate(ctx.store, f"Bearer {token}")
+        lifecycle.submit(ctx, caller, "jira", "create_user",
+                         {"variables": {"user_id": "secret-user"}, "body": "{}"}, CID)
+        self.assertEqual(surface.opened[0].endpoint, "POST api.example.test /users/{user_id}")
+        self.assertNotIn("secret-user", surface.opened[0].endpoint)
+
     def test_no_surface_is_unavailable(self):
         ctx, caller = self._setup(surface=None)
         out = lifecycle.submit(ctx, caller, "echo", "shout", {}, CID)

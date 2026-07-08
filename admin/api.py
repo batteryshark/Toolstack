@@ -14,12 +14,14 @@ Covers the full operator surface: auth, broker status/control, callers/policies/
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 
 from broker import operations
 from broker.registry import Registry
+from toolyard import openapi_import
 
 from . import (auth, broker_config, secret_values, settings, supervisor,
                tool_authoring, tool_sources, toolyard_ops)
@@ -220,6 +222,12 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             return {"audit": store.recent_audit(limit=limit),
                     "requests": _rows(store.list_requests(limit=limit))}
 
+    @app.delete("/api/audit")
+    async def api_clear_audit(user: str = Depends(require_user)):
+        with open_store(broker_config.load()) as store:
+            store.clear_audit()
+        return {"ok": True}
+
     @app.get("/api/tools")
     async def api_tools(user: str = Depends(require_user)):
         config = broker_config.load()
@@ -236,7 +244,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         except Exception as exc:
             log.warning("could not read tool ops for the policy editor: %s", exc)
             # tools still listed (without ops) if the registry can't be read
-        # attach each tool's secret DECLARATIONS (name/field/writable/vault/item) for display.
+        # attach each tool's secret DECLARATIONS (name/field/writable/item) for display.
         # The broker registry ignores [[secrets]], but the admin (control plane) may show them;
         # these are declarations, never values.
         try:
@@ -249,7 +257,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             td = defs.get(tool["id"])
             tool["description"] = td.description if td else ""
             tool["secrets"] = [
-                {"name": s.name, "field": s.field, "writable": s.writable, "vault": s.vault, "item": s.item}
+                {"name": s.name, "field": s.field, "writable": s.writable, "item": s.item}
                 for s in (td.secrets if td else ())
             ]
             tool["source"] = tool_sources.read_source(tool["path"])  # sidecar (path/github) or null
@@ -292,6 +300,19 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         with open_store(config) as store:
             operations.record_admin_event(store, user, "tool_created", {"tool": tool["id"], "dir": tool["path"]})
         return tool
+
+    @app.post("/api/tools/parse-openapi")
+    async def api_parse_openapi(request: Request, user: str = Depends(require_user)):
+        data = await _json_object(request)
+        if "spec" not in data:
+            raise HTTPException(status_code=400, detail="spec is required")
+        try:
+            return openapi_import.parse_spec(_parse_openapi_value(data["spec"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            log.warning("could not parse OpenAPI spec: %s", exc)
+            raise HTTPException(status_code=400, detail=f"could not parse spec: {type(exc).__name__}")
 
     @app.post("/api/tools/{tool_id}")
     async def api_edit_tool(tool_id: str, request: Request, user: str = Depends(require_user)):
@@ -514,3 +535,25 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
     @app.get("/api/secret-backend")
     async def api_secret_backend(user: str = Depends(require_user)):
         return settings.secret_backend_info()
+
+
+def _parse_openapi_value(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("spec must be an object or a non-empty string")
+    text = value.strip()
+    try:
+        spec = json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            import yaml
+        except ImportError:
+            raise ValueError("the spec is not valid JSON; install PyYAML for YAML")
+        try:
+            spec = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"the spec is not valid JSON or YAML: {exc}")
+    if not isinstance(spec, dict):
+        raise ValueError("the spec must be a JSON or YAML object")
+    return spec

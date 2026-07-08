@@ -437,8 +437,8 @@ struct ToolsPane: View {
                 Text("writable").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
                     .background(.orange.opacity(0.2), in: .capsule)
             }
-            if let vault = secret.vault, !vault.isEmpty {
-                Text(vault).font(.caption2).foregroundStyle(.secondary)
+            if let item = secret.item, !item.isEmpty {
+                Text(item).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
         }
@@ -668,8 +668,7 @@ struct ToolEditor: View {
                     .buttonStyle(.borderless)
             }
             HStack {
-                TextField("vault (Infisical, optional)", text: sec.vault)
-                TextField("item (Infisical, optional)", text: sec.item)
+                TextField("path (Infisical, optional)", text: sec.item)
             }
             .font(.caption).foregroundStyle(.secondary)
         }
@@ -690,12 +689,10 @@ struct ToolEditor: View {
         let decls: [SecretDecl] = secrets.compactMap { row in
             let name = row.name.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return nil }   // a blank row is dropped, mirroring the server
-            let vault = row.vault.trimmingCharacters(in: .whitespaces)
             let item = row.item.trimmingCharacters(in: .whitespaces)
             return SecretDecl(name: name,
                               field: row.field.trimmingCharacters(in: .whitespaces),
                               writable: row.writable,
-                              vault: vault.isEmpty ? nil : vault,
                               item: item.isEmpty ? nil : item)
         }
         await model.updateTool(id: tool.id, description: description, secrets: decls)
@@ -711,15 +708,14 @@ struct EditableSecret: Identifiable {
     var name: String
     var field: String
     var writable: Bool
-    var vault: String
     var item: String
 
     init(from decl: SecretDecl) {
         name = decl.name; field = decl.field; writable = decl.writable
-        vault = decl.vault ?? ""; item = decl.item ?? ""
+        item = decl.item ?? ""
     }
 
-    init() { name = ""; field = ""; writable = false; vault = ""; item = "" }
+    init() { name = ""; field = ""; writable = false; item = "" }
 }
 
 /// Provision a tool's secret VALUES into the local vault. Values are write-only: typed into a
@@ -902,9 +898,28 @@ struct AddToolSheet: View {
 struct EditableOp: Identifiable {
     let id = UUID()
     var name = ""
+    var verb = "GET"
+    var path = ""
+    var allowedHeaders: [EditableHeader] = []
+    var secretUpdateRules: [EditableSecretUpdateRule] = []
+    var bodyKind = "none"
+    var bodyContentType = ""
     var risk = "read"
     var description = ""
     var args: [EditableArg] = []
+}
+
+struct EditableHeader: Identifiable {
+    let id = UUID()
+    var name = ""
+}
+
+struct EditableSecretUpdateRule: Identifiable {
+    let id = UUID()
+    var secretName = ""
+    var responseType = "json"
+    var extractPath = ""
+    var matchStatus = "2xx"
 }
 
 /// A mutable argument row (→ an operation's `args` entry).
@@ -927,6 +942,7 @@ struct ToolAuthoringForm: View {
     @State private var id = ""
     @State private var type = "api"
     @State private var description = ""
+    @State private var baseURL = ""
     @State private var command = ""
     @State private var image = ""
     @State private var port = ""
@@ -935,7 +951,10 @@ struct ToolAuthoringForm: View {
     @State private var saveError: String?
 
     private let risks = ["read", "write", "destructive"]   // matches admin RISK_CHOICES
-    private let toolTypes = ["api", "mcp"]                  // matches admin TOOL_TYPES
+    private let toolTypes = ["api", "mcp", "rest"]          // matches admin TOOL_TYPES
+    private let restVerbs = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+    private let restBodyKinds = ["none", "text", "binary"]
+    private let restRuleTypes = ["json", "xml", "form", "plaintext"]
     private let argTypes = ["string", "number", "integer", "boolean", "object", "array"]
 
     var body: some View {
@@ -955,6 +974,9 @@ struct ToolAuthoringForm: View {
                         ForEach(toolTypes, id: \.self) { Text($0).tag($0) }
                     }
                     TextField("description (optional)", text: $description, axis: .vertical).lineLimit(1...3)
+                    if type == "rest" {
+                        TextField("base URL, e.g. https://api.example.com/v1", text: $baseURL)
+                    }
                 }
                 Section {
                     TextField("command, e.g. python3 app.py", text: $command)
@@ -992,6 +1014,8 @@ struct ToolAuthoringForm: View {
         switch type {
         case "mcp":
             return "An mcp tool is a streamable-HTTP MCP server: it serves /mcp on this port; the broker calls it via tools/call (op = MCP tool name)."
+        case "rest":
+            return "A rest tool runs the bundled forwarder on this port. Leave command blank to use python3 -m toolstack_forwarder."
         default:
             return "Give a command (process) or an image (docker), plus the port the tool serves on."
         }
@@ -1002,17 +1026,81 @@ struct ToolAuthoringForm: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 TextField("operation name", text: b.name)
-                Picker("", selection: b.risk) { ForEach(risks, id: \.self) { Text($0).tag($0) } }
-                    .labelsHidden().frame(width: 96)
+                if type == "rest" {
+                    Picker("", selection: b.verb) { ForEach(restVerbs, id: \.self) { Text($0).tag($0) } }
+                        .labelsHidden().frame(width: 96)
+                } else {
+                    Picker("", selection: b.risk) { ForEach(risks, id: \.self) { Text($0).tag($0) } }
+                        .labelsHidden().frame(width: 96)
+                }
                 Button(role: .destructive) { operations.removeAll { $0.id == op.id } } label: { Image(systemName: "trash") }
                     .buttonStyle(.borderless)
             }
             TextField("description (optional)", text: b.description).font(.caption)
-            ForEach(op.args) { arg in argEditor(op: op, arg: arg) }
-            Button { b.wrappedValue.args.append(EditableArg()) } label: { Label("Add argument", systemImage: "plus") }
-                .font(.caption2)
+            if type == "rest" {
+                TextField("/items/{item_id}", text: b.path).font(.caption)
+                HStack(spacing: 6) {
+                    Picker("", selection: b.bodyKind) {
+                        ForEach(restBodyKinds, id: \.self) { Text($0).tag($0) }
+                    }
+                    .labelsHidden().frame(width: 96)
+                }
+                if b.wrappedValue.bodyKind != "none" {
+                    TextField("body content type", text: b.bodyContentType).font(.caption)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Allowed headers").font(.caption2).foregroundStyle(.secondary)
+                    ForEach(op.allowedHeaders) { header in headerEditor(op: op, header: header) }
+                    Button { b.wrappedValue.allowedHeaders.append(EditableHeader()) } label: {
+                        Label("Add header", systemImage: "plus")
+                    }
+                    .font(.caption2)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Secret writeback rules").font(.caption2).foregroundStyle(.secondary)
+                    ForEach(op.secretUpdateRules) { rule in ruleEditor(op: op, rule: rule) }
+                    Button { b.wrappedValue.secretUpdateRules.append(EditableSecretUpdateRule()) } label: {
+                        Label("Add rule", systemImage: "plus")
+                    }
+                    .font(.caption2)
+                }
+            } else {
+                ForEach(op.args) { arg in argEditor(op: op, arg: arg) }
+                Button { b.wrappedValue.args.append(EditableArg()) } label: { Label("Add argument", systemImage: "plus") }
+                    .font(.caption2)
+            }
         }
         .padding(.vertical, 3)
+    }
+
+    private func headerEditor(op: EditableOp, header: EditableHeader) -> some View {
+        let h = headerBinding(op: op, header: header)
+        return HStack(spacing: 6) {
+            Image(systemName: "arrow.turn.down.right").font(.caption2).foregroundStyle(.secondary)
+            TextField("Header-Name", text: h.name).font(.caption)
+            Button(role: .destructive) { removeHeader(op: op, header: header) } label: { Image(systemName: "minus.circle") }
+                .buttonStyle(.borderless)
+        }
+    }
+
+    private func ruleEditor(op: EditableOp, rule: EditableSecretUpdateRule) -> some View {
+        let r = ruleBinding(op: op, rule: rule)
+        return HStack(spacing: 6) {
+            Image(systemName: "arrow.turn.down.right").font(.caption2).foregroundStyle(.secondary)
+            Picker("", selection: r.secretName) {
+                Text("secret").tag("")
+                ForEach(ruleSecretChoices(r.wrappedValue.secretName), id: \.self) { Text($0).tag($0) }
+            }
+            .labelsHidden().frame(width: 120)
+            Picker("", selection: r.responseType) {
+                ForEach(restRuleTypes, id: \.self) { Text($0).tag($0) }
+            }
+            .labelsHidden().frame(width: 96)
+            TextField("extract path", text: r.extractPath).font(.caption)
+            TextField("2xx or 200", text: r.matchStatus).font(.caption).frame(width: 90)
+            Button(role: .destructive) { removeRule(op: op, rule: rule) } label: { Image(systemName: "minus.circle") }
+                .buttonStyle(.borderless)
+        }
     }
 
     private func argEditor(op: EditableOp, arg: EditableArg) -> some View {
@@ -1057,9 +1145,43 @@ struct ToolAuthoringForm: View {
         guard let oi = operations.firstIndex(where: { $0.id == op.id }) else { return }
         operations[oi].args.removeAll { $0.id == arg.id }
     }
+    private func headerBinding(op: EditableOp, header: EditableHeader) -> Binding<EditableHeader> {
+        Binding(
+            get: { operations.first { $0.id == op.id }?.allowedHeaders.first { $0.id == header.id } ?? header },
+            set: { v in
+                guard let oi = operations.firstIndex(where: { $0.id == op.id }),
+                      let hi = operations[oi].allowedHeaders.firstIndex(where: { $0.id == header.id }) else { return }
+                operations[oi].allowedHeaders[hi] = v
+            })
+    }
+    private func removeHeader(op: EditableOp, header: EditableHeader) {
+        guard let oi = operations.firstIndex(where: { $0.id == op.id }) else { return }
+        operations[oi].allowedHeaders.removeAll { $0.id == header.id }
+    }
+    private func ruleBinding(op: EditableOp, rule: EditableSecretUpdateRule) -> Binding<EditableSecretUpdateRule> {
+        Binding(
+            get: { operations.first { $0.id == op.id }?.secretUpdateRules.first { $0.id == rule.id } ?? rule },
+            set: { v in
+                guard let oi = operations.firstIndex(where: { $0.id == op.id }),
+                      let ri = operations[oi].secretUpdateRules.firstIndex(where: { $0.id == rule.id }) else { return }
+                operations[oi].secretUpdateRules[ri] = v
+            })
+    }
+    private func removeRule(op: EditableOp, rule: EditableSecretUpdateRule) {
+        guard let oi = operations.firstIndex(where: { $0.id == op.id }) else { return }
+        operations[oi].secretUpdateRules.removeAll { $0.id == rule.id }
+    }
     private func secretBinding(_ sec: EditableSecret) -> Binding<EditableSecret> {
         Binding(get: { secrets.first { $0.id == sec.id } ?? sec },
                 set: { v in if let i = secrets.firstIndex(where: { $0.id == sec.id }) { secrets[i] = v } })
+    }
+    private var secretNames: [String] {
+        secrets.map { $0.name.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+    private func ruleSecretChoices(_ selected: String) -> [String] {
+        var names = secretNames
+        if !selected.isEmpty && !names.contains(selected) { names.insert(selected, at: 0) }
+        return names
     }
 
     private func create() async {
@@ -1070,11 +1192,31 @@ struct ToolAuthoringForm: View {
     /// Build the tool_authoring manifest dict the server expects (it normalizes + validates).
     private func manifest() -> [String: Any] {
         func s(_ v: String) -> String { v.trimmingCharacters(in: .whitespaces) }
+        let finalCommand = type == "rest" && s(command).isEmpty ? "python3 -m toolstack_forwarder" : s(command)
         return [
             "id": s(id), "type": s(type), "description": s(description),
-            "command": s(command), "image": s(image), "port": Int(s(port)) ?? 0,
+            "base_url": s(baseURL),
+            "command": finalCommand, "image": s(image), "port": Int(s(port)) ?? 0,
             "operations": operations.compactMap { op -> [String: Any]? in
                 guard !s(op.name).isEmpty else { return nil }
+                if type == "rest" {
+                    var row: [String: Any] = [
+                        "name": s(op.name), "verb": s(op.verb), "path": s(op.path),
+                        "description": s(op.description), "body_kind": s(op.bodyKind),
+                    ]
+                    let headers = op.allowedHeaders.map { s($0.name) }.filter { !$0.isEmpty }
+                    if !headers.isEmpty { row["allowed_headers"] = headers }
+                    let rules = op.secretUpdateRules.compactMap { rule -> [String: Any]? in
+                        let target = s(rule.secretName)
+                        guard !target.isEmpty else { return nil }
+                        return ["secret_name": target, "response_type": s(rule.responseType),
+                                "extract_path": s(rule.extractPath),
+                                "match_status": s(rule.matchStatus).isEmpty ? "2xx" : s(rule.matchStatus)]
+                    }
+                    if !rules.isEmpty { row["secret_update_rules"] = rules }
+                    if !s(op.bodyContentType).isEmpty { row["body_content_type"] = s(op.bodyContentType) }
+                    return row
+                }
                 return ["name": s(op.name), "risk": op.risk, "description": s(op.description),
                         "args": op.args.compactMap { a -> [String: Any]? in
                             s(a.name).isEmpty ? nil : ["name": s(a.name), "type": a.type, "required": a.required] }]
@@ -1082,7 +1224,6 @@ struct ToolAuthoringForm: View {
             "secrets": secrets.compactMap { sec -> [String: Any]? in
                 guard !s(sec.name).isEmpty else { return nil }
                 var d: [String: Any] = ["name": s(sec.name), "field": s(sec.field), "writable": sec.writable]
-                if !s(sec.vault).isEmpty { d["vault"] = s(sec.vault) }
                 if !s(sec.item).isEmpty { d["item"] = s(sec.item) }
                 return d
             },
@@ -1108,6 +1249,9 @@ struct ActivityPane: View {
                 }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: 220)
                 Spacer()
                 if model.busy { ProgressView().controlSize(.small) }
+                Button { Task { await model.clearAudit() } } label: { Image(systemName: "trash") }
+                    .help("Clear audit log")
+                    .disabled(model.busy || (model.audit?.audit.isEmpty ?? true))
                 Button { Task { await model.refreshAudit() } } label: { Image(systemName: "arrow.clockwise") }
                     .help("Refresh")
             }

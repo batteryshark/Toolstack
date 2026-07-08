@@ -36,3 +36,8 @@ deploy/docker/data/
 # ~/.local/share/toolstack/tools and are never tracked here.) The generic client
 # skill at client/SKILL.md is unaffected.
 client/skills/
+/toolstack-writeup
+/.agents
+
+# Per-tool runtime logs written by the toolyard process runner (<tool>/logs/tool.log).
+tools/*/logs/

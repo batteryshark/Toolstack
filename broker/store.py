@@ -317,6 +317,10 @@ class Store:
         ).fetchall()
         return [self._audit_row(r) for r in reversed(rows)]
 
+    def clear_audit(self) -> None:
+        self._conn.execute("DELETE FROM audit_events")
+        self._conn.commit()
+
     @staticmethod
     def _audit_row(row) -> dict:
         event = dict(row)

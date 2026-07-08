@@ -82,7 +82,7 @@ records to the Audit module.
 |---|---|---|
 | Agent → Broker | Tailscale Serve (tailnet-only) | Bearer token bound to one caller |
 | Broker → Tool container | localhost HTTP / JSON-RPC | Optional per-tool shared secret (defense in depth) |
-| Toolyard → Secret backend | HTTP | Per-tool machine identity kept on the host |
+| Toolyard → Secret backend | HTTP | Toolstack-wide machine identity kept on the host |
 | Tool container → Secret backend | none | Reads `/run/secrets/<name>`; writable fields via toolyard's Unix socket |
 | Broker → nod | HTTP over tailnet | nod issuer token (on the broker host) |
 | nod → Broker (callback), *not implemented, not planned* | - | No callback route exists; resolution is poll-only. Rejected on security grounds: nod posts callbacks unauthenticated, so a receiver would let anyone forge an approval. |

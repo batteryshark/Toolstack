@@ -95,7 +95,7 @@ class NodSurface:
                 {"label": "Operation", "value": card.op},
                 {"label": "Risk", "value": card.risk},
                 {"label": "Policy", "value": card.reason},
-            ],
+            ] + ([{"label": "Endpoint", "value": card.endpoint}] if card.endpoint else []),
             "options": [
                 {"id": "approve", "label": "Approve", "kind": "approve"},
                 {"id": "reject", "label": "Reject", "kind": "reject_with_text",

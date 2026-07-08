@@ -41,6 +41,7 @@ class Outcome:
     result: dict | None = None
     reason: str | None = None
     error: str | None = None
+    detail: str | None = None
     approver: str | None = None  # who decided (from the approval surface)
     note: str | None = None  # the approver's note, surfaced back to the agent
     decided_at: str | None = None  # when the human answered, per the surface (ISO 8601)
@@ -75,7 +76,7 @@ def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Out
     if decision == policy_rules.REVIEW:
         audit.record("policy", "decision_review_required", PENDING, correlation_id,
                      request_id=request_id, details={"tool": tool, "op": op, "risk": tool_op.risk})
-        return _open_approval(ctx, request_id, caller.name, tool, op, tool_op.risk,
+        return _open_approval(ctx, request_id, caller.name, tool, op, tool_op,
                               arguments, correlation_id, reason)
 
     # allow
@@ -84,7 +85,7 @@ def submit(ctx, caller, tool, op, arguments, correlation_id, reason=None) -> Out
     return execute_request(ctx, request_id, tool, op, arguments, correlation_id, caller.name)
 
 
-def _open_approval(ctx, request_id, caller_name, tool, op, risk, arguments, correlation_id,
+def _open_approval(ctx, request_id, caller_name, tool, op, tool_op, arguments, correlation_id,
                    reason=None) -> Outcome:
     if ctx.surface is None:
         ctx.store.update_request(request_id, status="failed", error="approval_unavailable")
@@ -95,9 +96,9 @@ def _open_approval(ctx, request_id, caller_name, tool, op, risk, arguments, corr
     # keep arguments for deferred execution (control-plane store, never audited)
     ctx.store.update_request(request_id, arguments_json=json.dumps(arguments))
     # the agent's reason (redacted) rides along to the human on the card
-    card = approval.build_card(request_id, caller_name, tool, op, risk,
+    card = approval.build_card(request_id, caller_name, tool, op, tool_op.risk,
                                reason="policy review", justification=redact(reason),
-                               details=redact_request(arguments))
+                               details=redact_request(arguments), endpoint=_rest_endpoint(tool_op))
     try:
         ref = ctx.surface.open(card)
     except Exception as exc:
@@ -110,7 +111,7 @@ def _open_approval(ctx, request_id, caller_name, tool, op, risk, arguments, corr
     ctx.store.create_approval(request_id, ref, time.time() + ctx.approval_ttl)
     ctx.store.update_request(request_id, status="pending_approval")
     ctx.audit.record("approval", "opened", PENDING, correlation_id,
-                     request_id=request_id, details={"tool": tool, "op": op, "risk": risk})
+                     request_id=request_id, details={"tool": tool, "op": op, "risk": tool_op.risk})
     return Outcome(PENDING, request_id=request_id)
 
 
@@ -130,25 +131,49 @@ def execute_request(ctx, request_id, tool, op, arguments, correlation_id, caller
     try:
         result = ctx.runtime.execute(tool_op, arguments, request_id, caller_name)
     except ToolUnreachable as exc:  # the broker couldn't reach the tool: it's probably not running
-        log.warning("tool %s.%s unreachable: %s", tool, op, exc)
+        detail = _error_detail(exc)
+        log.warning("tool %s.%s unreachable: %s", tool, op, detail)
         ctx.store.update_request(request_id, status="failed", error="tool_unreachable",
                                  arguments_json=None)
         audit.record("runtime", "execution_failed", FAILED, correlation_id,
-                     request_id=request_id, details={"tool": tool, "op": op, "error": "unreachable"})
-        return Outcome(FAILED, request_id=request_id, error="tool_unreachable")
+                     request_id=request_id,
+                     details={"tool": tool, "op": op, "error": "unreachable", "detail": detail})
+        return Outcome(FAILED, request_id=request_id, error="tool_unreachable", detail=detail)
     except Exception as exc:  # the tool ran but errored; a tool failure must not crash the broker
-        log.warning("tool %s.%s failed: %s: %s", tool, op, type(exc).__name__, exc)
+        detail = _error_detail(exc)
+        log.warning("tool %s.%s failed: %s", tool, op, detail)
         ctx.store.update_request(request_id, status="failed", error="tool_failed",
                                  arguments_json=None)
         audit.record("runtime", "execution_failed", FAILED, correlation_id,
-                     request_id=request_id, details={"tool": tool, "op": op, "error": type(exc).__name__})
-        return Outcome(FAILED, request_id=request_id, error="tool_failed")
+                     request_id=request_id,
+                     details={"tool": tool, "op": op, "error": type(exc).__name__, "detail": detail})
+        return Outcome(FAILED, request_id=request_id, error="tool_failed", detail=detail)
 
     ctx.store.update_request(request_id, status="completed",
                              result_json=json.dumps(result), arguments_json=None)
+    details = {"tool": tool, "op": op}
+    if tool_op.type == "rest":
+        details.update({
+            "outbound_host": tool_op.base_url_host,
+            "outbound_verb": tool_op.verb,
+            "outbound_path_template": tool_op.path_template,
+            "outbound_status": result.get("status") if isinstance(result, dict) else None,
+        })
     audit.record("runtime", "execution_completed", "ok", correlation_id,
-                 request_id=request_id, details={"tool": tool, "op": op})
+                 request_id=request_id, details=details)
     return Outcome(OK, request_id=request_id, result=result)
+
+
+def _rest_endpoint(tool_op) -> str | None:
+    if tool_op.type != "rest":
+        return None
+    bits = [tool_op.verb or "", tool_op.base_url_host or "", tool_op.path_template or ""]
+    return " ".join(b for b in bits if b) or None
+
+
+def _error_detail(exc: Exception) -> str:
+    text = f"{type(exc).__name__}: {exc}"
+    return redact(text)[:500]
 
 
 def _expire_approval(ctx, approval_id, request_id, surface_ref, tool, op, correlation_id) -> None:

@@ -1,0 +1,37 @@
+id = "rest_demo"
+type = "rest"
+description = "Demo REST API forwarded through the generic Toolstack forwarder"
+base_url = "http://127.0.0.1:49999"
+
+[entrypoint]
+command = "python3 -m toolstack_forwarder"
+port = 4621
+
+[[operations]]
+name = "get_item"
+risk = "read"
+description = "Fetch an item by id"
+verb = "GET"
+path = "/items/{item_id}"
+args = [
+  { name = "item_id", type = "string", required = true, description = "Single path segment item id" },
+]
+allowed_headers = ["X-Demo-Trace"]
+body_kind = "none"
+
+[[operations]]
+name = "login"
+risk = "write"
+description = "Demo login that writes a returned token back to the tool secret store"
+verb = "POST"
+path = "/login"
+body_kind = "text"
+body_content_type = "application/json"
+secret_update_rules = [
+  { secret_name = "auth_token", response_type = "json", extract_path = "session.token", match_status = "200" },
+]
+
+[[secrets]]
+name = "auth_token"
+field = "REST_DEMO_AUTH_TOKEN"
+writable = true

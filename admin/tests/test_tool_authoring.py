@@ -22,6 +22,24 @@ FULL = {
     "secrets": [{"name": "api_key", "field": "API_KEY", "writable": False}],
 }
 
+REST_FULL = {
+    "id": "jira", "type": "rest", "command": "", "image": "",
+    "description": "Jira API", "base_url": "https://api.example.test/v1", "port": 4621,
+    "operations": [
+        {"name": "get_user", "verb": "GET", "path": "/users/{user_id}",
+         "risk": "write", "description": "Get a user",
+         "allowed_headers": ["X-Trace"], "body_kind": "none",
+         "args": [{"name": "user_id", "type": "string", "required": True}]},
+        {"name": "login", "verb": "POST", "path": "/login",
+         "body_kind": "text", "body_content_type": "application/json",
+         "secret_update_rules": [
+             {"secret_name": "auth_token", "response_type": "json",
+              "extract_path": "session.token", "match_status": "2xx"},
+         ]},
+    ],
+    "secrets": [{"name": "auth_token", "field": "AUTH_TOKEN", "writable": True}],
+}
+
 class Serialize(unittest.TestCase):
     def test_to_toml_parses_back(self):
         parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(FULL)))
@@ -33,23 +51,27 @@ class Serialize(unittest.TestCase):
         self.assertTrue(parsed["operations"][0]["args"][0]["required"])
         self.assertEqual(parsed["secrets"][0]["field"], "API_KEY")
 
-    def test_infisical_vault_item_round_trip(self):
-        # The Infisical coordinates survive normalize -> to_toml -> parse, so editing an
-        # Infisical-backed tool in the panel does not strip its vault/item.
+    def test_infisical_item_round_trip(self):
+        # The Infisical path survives normalize -> to_toml -> parse, so editing an
+        # Infisical-backed tool in the panel does not strip its path.
         data = tool_authoring.normalize({**FULL, "secrets": [
-            {"name": "api_key", "field": "API_KEY", "vault": "ToolServer",
-             "item": "weather-tool", "writable": True}]})
+            {"name": "api_key", "field": "API_KEY", "item": "weather-tool", "writable": True}]})
         parsed = tomllib.loads(tool_authoring.to_toml(data))
         sec = parsed["secrets"][0]
-        self.assertEqual((sec["vault"], sec["item"], sec["writable"]),
-                         ("ToolServer", "weather-tool", True))
+        self.assertEqual((sec["item"], sec["writable"]), ("weather-tool", True))
 
-    def test_blank_vault_item_are_omitted(self):
-        # No vault/item declared -> no keys emitted (so file-backend tools stay clean and
-        # the backend defaults apply).
+    def test_blank_item_is_omitted(self):
+        # No item declared -> no key emitted (so file-backend tools stay clean and the
+        # backend default applies).
         parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(FULL)))
-        self.assertNotIn("vault", parsed["secrets"][0])
         self.assertNotIn("item", parsed["secrets"][0])
+
+    def test_vault_is_not_serialized_from_editor_input(self):
+        data = tool_authoring.normalize({**FULL, "secrets": [
+            {"name": "api_key", "field": "API_KEY", "vault": "ToolServer", "item": "weather-tool"}]})
+        sec = tomllib.loads(tool_authoring.to_toml(data))["secrets"][0]
+        self.assertNotIn("vault", sec)
+        self.assertEqual(sec["item"], "weather-tool")
 
     def test_escapes_quotes_in_description(self):
         data = tool_authoring.normalize(
@@ -120,11 +142,93 @@ class Validate(unittest.TestCase):
         # mcp is an authorable transport (same entrypoint form, broker calls it over MCP)
         self.assertEqual(self._errs(type="mcp"), [])
 
-    def test_rest_type_rejected(self):
-        self.assertTrue(any("type must be one of" in e for e in self._errs(type="rest")))
+    def test_rest_type_is_valid_with_rest_fields(self):
+        self.assertEqual(tool_authoring.validate(tool_authoring.normalize(REST_FULL)), [])
 
     def test_unknown_type_rejected(self):
         self.assertTrue(any("type must be one of" in e for e in self._errs(type="banana")))
+
+
+class RestAuthoring(unittest.TestCase):
+    def test_normalize_defaults_forwarder_without_broker_channel(self):
+        data = tool_authoring.normalize(REST_FULL)
+        self.assertEqual(data["command"], "python3 -m toolstack_forwarder")
+        self.assertEqual(data["operations"][0]["risk"], "read")  # derived from GET
+        self.assertNotIn("broker_channel", {s["name"] for s in data["secrets"]})
+
+    def test_to_toml_writes_forwarder_contract_shape(self):
+        parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(REST_FULL)))
+        self.assertEqual(parsed["base_url"], "https://api.example.test/v1")
+        self.assertEqual(parsed["entrypoint"]["command"], "python3 -m toolstack_forwarder")
+        self.assertEqual(parsed["operations"][0]["verb"], "GET")
+        self.assertEqual(parsed["operations"][0]["path"], "/users/{user_id}")
+        self.assertEqual(parsed["operations"][0]["allowed_headers"], ["X-Trace"])
+        self.assertEqual(parsed["operations"][1]["body_content_type"], "application/json")
+        self.assertEqual(parsed["operations"][1]["secret_update_rules"][0]["secret_name"], "auth_token")
+
+    def test_redaction_flags_round_trip_and_default_off(self):
+        data = tool_authoring.normalize({**REST_FULL, "operations": [
+            {**REST_FULL["operations"][0], "redact_response_body": True, "redact_response_headers": True},
+            REST_FULL["operations"][1],
+        ]})
+        parsed = tomllib.loads(tool_authoring.to_toml(data))
+        self.assertTrue(parsed["operations"][0]["redact_response_body"])
+        self.assertTrue(parsed["operations"][0]["redact_response_headers"])
+        # Off by default: omitted from the TOML rather than written as false.
+        self.assertNotIn("redact_response_body", parsed["operations"][1])
+        self.assertNotIn("redact_response_headers", parsed["operations"][1])
+        # And the forwarder reads them back as the operation's flags.
+        from toolstack_forwarder.config import load_config as load_rest_config
+        tmp = tempfile.mkdtemp(prefix="admin-rest-redact-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        tool_authoring.write(tmp, data, runner="process")
+        cfg = load_rest_config(Path(tmp, "toolyard.toml"))
+        self.assertTrue(cfg.operations["get_user"].redact_response_body)
+        self.assertTrue(cfg.operations["get_user"].redact_response_headers)
+        self.assertFalse(cfg.operations["login"].redact_response_body)
+
+    def test_rejects_rest_without_base_url(self):
+        data = tool_authoring.normalize({**REST_FULL, "base_url": ""})
+        self.assertTrue(any("base_url" in e for e in tool_authoring.validate(data)))
+
+    def test_rejects_bad_rest_path_and_header(self):
+        bad = {**REST_FULL, "operations": [
+            {"name": "get_user", "verb": "GET", "path": "users/{user_id}",
+             "allowed_headers": ["bad space"]},
+        ]}
+        errs = tool_authoring.validate(tool_authoring.normalize(bad))
+        self.assertTrue(any("path must" in e for e in errs))
+        self.assertTrue(any("allowed header" in e for e in errs))
+
+    def test_allows_query_text_in_rest_path(self):
+        data = tool_authoring.normalize({**REST_FULL, "operations": [
+            {**REST_FULL["operations"][0], "path": "/users?email={email}"}
+        ]})
+        self.assertEqual(tool_authoring.validate(data), [])
+
+    def test_rejects_secret_update_to_non_writable_secret(self):
+        bad = {**REST_FULL, "secrets": [{"name": "auth_token", "field": "AUTH_TOKEN", "writable": False}]}
+        errs = tool_authoring.validate(tool_authoring.normalize(bad))
+        self.assertTrue(any("non-writable" in e for e in errs))
+
+    def test_written_rest_tool_is_consumable_by_stack(self):
+        tmp = tempfile.mkdtemp(prefix="admin-rest-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        tool_authoring.write(tmp, tool_authoring.normalize(REST_FULL), runner="process")
+        op = Registry.from_sources(None, [tmp]).lookup("jira", "get_user")
+        self.assertEqual((op.type, op.verb, op.path_template, op.body_kind),
+                         ("rest", "GET", "/users/{user_id}", "none"))
+        self.assertEqual(load_tool(Path(tmp, "toolyard.toml")).type, "rest")
+        from toolstack_forwarder.config import load_config as load_rest_config
+        cfg = load_rest_config(Path(tmp, "toolyard.toml"))
+        self.assertIn("login", cfg.operations)
+
+    def test_rest_docker_runner_needs_no_tool_dockerfile(self):
+        tmp = tempfile.mkdtemp(prefix="admin-rest-docker-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        data = tool_authoring.normalize(REST_FULL)
+        self.assertIsNone(tool_authoring.entrypoint_error(data, tmp, runner="docker"))
+        self.assertEqual(tool_authoring.write(tmp, data, runner="docker").name, "toolyard.toml")
 
 
 class ReadWrite(unittest.TestCase):

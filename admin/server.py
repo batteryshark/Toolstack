@@ -11,6 +11,7 @@ here at all.
 from __future__ import annotations
 
 import logging
+import json
 import os
 import sqlite3
 from pathlib import Path
@@ -21,6 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from broker import operations
 from broker.registry import Registry
+from toolyard import openapi_import
 
 from . import (api, auth, broker_config, loginguard, settings, supervisor,
                tool_authoring, tool_sources, toolyard_ops, views)
@@ -294,6 +296,18 @@ def create_app() -> FastAPI:
                                     surface=config.build_surface())
         return redirect("/")
 
+    @app.post("/audit/clear")
+    async def clear_audit(request: Request):
+        user = current_user(request)
+        if not user:
+            return redirect("/login")
+        data = await read_form(request)
+        if not csrf_ok(request, data):
+            return render_dashboard(request, user, error="Invalid CSRF token.")
+        with open_store(broker_config.load()) as store:
+            store.clear_audit()
+        return redirect("/#audit")
+
     # --- policy ---------------------------------------------------------------
     @app.get("/callers/{name}/policy")
     async def edit_policy(request: Request, name: str):
@@ -438,6 +452,23 @@ def create_app() -> FastAPI:
             return redirect("/login")
         return HTMLResponse(views.tool_editor_view(
             user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool={}, dir_value=""))
+
+    @app.post("/tools/parse-openapi")
+    async def parse_openapi(request: Request):
+        user = current_user(request)
+        if not user:
+            return JSONResponse({"error": "auth"}, status_code=401)
+        data = await read_form(request)
+        if not csrf_ok(request, data):
+            return JSONResponse({"error": "invalid CSRF token"}, status_code=400)
+        try:
+            spec = _parse_openapi_text(data.get("spec") or "")
+            return JSONResponse(openapi_import.parse_spec(spec))
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        except Exception as exc:
+            log.warning("could not parse OpenAPI spec: %s", exc)
+            return JSONResponse({"error": f"could not parse spec: {type(exc).__name__}"}, status_code=400)
 
     @app.post("/tools/new")
     async def create_tool(request: Request):
@@ -649,6 +680,26 @@ def _tool_from_form(data: dict) -> dict:
         return tool_authoring.from_json(data.get("tool_json") or "{}")
     except Exception:
         return tool_authoring.normalize({})
+
+
+def _parse_openapi_text(raw: str) -> dict:
+    text = (raw or "").strip()
+    if not text:
+        raise ValueError("the spec is empty")
+    try:
+        spec = json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            import yaml
+        except ImportError:
+            raise ValueError("the spec is not valid JSON; install PyYAML for YAML")
+        try:
+            spec = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"the spec is not valid JSON or YAML: {exc}")
+    if not isinstance(spec, dict):
+        raise ValueError("the spec must be a JSON or YAML object")
+    return spec
 
 
 def _config_from_form(data: dict, current) -> "broker_config.BrokerRunConfig":

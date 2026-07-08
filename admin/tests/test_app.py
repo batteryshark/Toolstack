@@ -38,6 +38,14 @@ def _token_from_banner(html_text: str) -> str:
     return m.group(1)
 
 
+def _has_yaml() -> bool:
+    try:
+        import yaml  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 class AdminApp(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="admin-app-")
@@ -287,6 +295,41 @@ class AdminApp(unittest.TestCase):
         self.assertIn("id must", r.text)
         self.assertFalse((newdir / "toolyard.toml").exists())
 
+    def test_parse_openapi_returns_forwarder_ops(self):
+        self._login()
+        csrf = _csrf(self.client.get("/tools/new").text)
+        spec = {"openapi": "3.0.0",
+                "servers": [{"url": "https://api.example.com/v1"}],
+                "components": {"securitySchemes": {"b": {"type": "http", "scheme": "bearer"}}},
+                "paths": {"/items/{id}": {"get": {"operationId": "getItem",
+                          "parameters": [{"name": "id", "in": "path", "required": True}]}}}}
+        r = self.client.post("/tools/parse-openapi", data={"spec": json.dumps(spec), "_csrf": csrf})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["base_url"], "https://api.example.com/v1")
+        self.assertEqual(body["operations"][0]["name"], "getItem")
+        self.assertEqual(body["operations"][0]["path"], "/items/{id}")
+        self.assertEqual(body["operations"][0]["args"][0]["name"], "variables")
+        self.assertEqual(body["auth_headers"][0]["name"], "Authorization")
+
+    def test_parse_openapi_rejects_bad_json(self):
+        self._login()
+        csrf = _csrf(self.client.get("/tools/new").text)
+        r = self.client.post("/tools/parse-openapi", data={"spec": "{not valid", "_csrf": csrf})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("not valid", r.json()["error"].lower())
+
+    @unittest.skipUnless(_has_yaml(), "PyYAML not installed")
+    def test_parse_openapi_accepts_yaml(self):
+        self._login()
+        csrf = _csrf(self.client.get("/tools/new").text)
+        spec = ("openapi: 3.0.0\n"
+                "servers:\n  - url: https://api.example.com/v1\n"
+                "paths:\n  /items/{id}:\n    get:\n      operationId: getItem\n")
+        r = self.client.post("/tools/parse-openapi", data={"spec": spec, "_csrf": csrf})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["operations"][0]["name"], "getItem")
+
     def test_remove_tool_unregisters_but_keeps_files(self):
         self._login()
         csrf = _csrf(self.client.get("/tools/new").text)
@@ -308,6 +351,19 @@ class AdminApp(unittest.TestCase):
         self.assertIn("data-filter-sel='audit-table'", html)       # audit outcome dropdown
         self.assertIn("data-filter-for='requests-table'", html)    # requests text filter
         self.assertIn("All statuses", html)
+        self.assertIn("Clear audit", html)
+        self.assertIn("<th>Time</th>", html)
+
+    def test_clear_audit_route_removes_events(self):
+        self._login()
+        csrf = _csrf(self.client.get("/").text)
+        store = self._store()
+        self.addCleanup(store.close)
+        store.append_audit(123, "admin", "thing_happened", "ok", "corr", None, {})
+        self.assertTrue(store.recent_audit())
+        r = self.client.post("/audit/clear", data={"_csrf": csrf})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(store.recent_audit(), [])
 
     def test_remove_root_tool_deletes_its_folder(self):
         self._login()

@@ -148,6 +148,21 @@ class NodSurfaceHTTP(unittest.TestCase):
         self.assertIn("2026-07-01", body["body_markdown"])
         self.assertEqual(set(body) - NOD_CREATE_FIELDS, set())
 
+    def test_open_includes_endpoint_field_when_present(self):
+        card = OperationCard(
+            request_id=7, title="Approve jira.login for caller hermes", caller="hermes",
+            tool="jira", op="login", risk="write", reason="policy review",
+            endpoint="POST api.example.test /login",
+        )
+        self.surface.open(card)
+        fields = {f["label"]: f["value"] for f in _FakeNod.created["body"]["fields"]}
+        self.assertEqual(fields["Endpoint"], "POST api.example.test /login")
+
+    def test_open_omits_endpoint_field_for_api_tools(self):
+        self.surface.open(CARD)
+        fields = {f["label"]: f["value"] for f in _FakeNod.created["body"]["fields"]}
+        self.assertNotIn("Endpoint", fields)
+
     def test_open_payload_obeys_nod_create_contract(self):
         """Every field the adapter sends is one nod actually accepts, and every
         option kind is a real OptionKind, the doc-vs-code drift this task closed."""

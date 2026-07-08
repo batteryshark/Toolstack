@@ -5,17 +5,19 @@ the toolyard runs it on a loopback port and the broker forwards approved calls t
 
 ## Choosing a transport (`type`)
 
-Every tool declares one of two transports in its `toolyard.toml`. The broker dispatches on
+Every tool declares one of three transports in its `toolyard.toml`. The broker dispatches on
 it ([../broker/runtime.py](../broker/runtime.py)); policy, approval, and audit work identically
-across both; ops are always the unit of policy (`<tool>.<op>`).
+across all three; ops are always the unit of policy (`<tool>.<op>`).
 
 | `type` | The tool is... | The broker... | Example |
 |---|---|---|---|
 | `api`  | an HTTP service answering `POST /v1/actions/<op>` | POSTs the op + arguments, returns the tool's JSON | [echo_api/](echo_api/) |
 | `mcp`  | a streamable-HTTP **MCP server** at `/mcp` | is the MCP **client**: runs `initialize`, then `tools/call` with the op as the tool name | [echo_mcp/](echo_mcp/) |
+| `rest` | a manifest plus the generic `toolstack_forwarder` process | POSTs `/sendrequest`; the forwarder builds outbound HTTP from `base_url`, `verb`, `path`, headers/body rules | [rest_demo/](rest_demo/) |
 
 - Pick **api** for a normal action-style tool (one op per capability).
 - Pick **mcp** to put an existing MCP server behind the broker's policy/approval.
+- Pick **rest** to expose named operations from an existing HTTP API without writing tool code.
 
 Both are served on a loopback port the toolyard assigns; see
 [../toolyard/README.md](../toolyard/README.md) for the manifest, runners, and secrets.
@@ -25,3 +27,4 @@ Both are served on a loopback port the toolyard assigns; see
 - **[echo_api/](echo_api/)**, `type = "api"`, the tool template: serves `/v1/actions/<op>`,
   reads its own secret from `$TOOLSTACK_SECRETS_DIR`, with an optional broker shared-secret check.
 - **[echo_mcp/](echo_mcp/)**, `type = "mcp"`, the same echo exposed as a streamable-HTTP MCP server.
+- **[rest_demo/](rest_demo/)**, `type = "rest"`, a manifest-only example for the generic forwarder.

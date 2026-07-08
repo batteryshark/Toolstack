@@ -10,6 +10,9 @@ auditing it would bury the real trail.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import os
 import uuid
 from dataclasses import dataclass
 
@@ -35,6 +38,7 @@ REQUESTS_PREFIX = "/v1/requests/"
 TOOLS_PATH = "/v1/tools"
 TOOLS_PREFIX = "/v1/tools/"
 MCP_PATH = "/mcp"  # broker-native MCP (JSON-RPC) framing; see broker/mcp.py
+DEFAULT_REST_BODY_MAX = 20 * 1024 * 1024
 
 # request-lifecycle outcome -> HTTP status
 _OUTCOME_STATUS = {
@@ -197,6 +201,11 @@ def _action(path, body, ctx, caller, correlation_id) -> Response:
     if not isinstance(arguments, dict):
         return Response(400, {"error": "invalid",
                               "detail": "arguments must be an object"}, correlation_id)
+    tool_op = ctx.registry.lookup(tool, op)
+    if tool_op is not None and tool_op.type == "rest":
+        invalid = _validate_rest_arguments(tool_op, arguments)
+        if invalid is not None:
+            return Response(400, {"error": "invalid_envelope", "detail": invalid}, correlation_id)
 
     outcome = lifecycle.submit(ctx, caller, tool, op, arguments, correlation_id,
                                reason=body.get("reason"))
@@ -227,6 +236,8 @@ def _outcome_body(outcome) -> dict:
         body["reason"] = outcome.reason
     if outcome.error is not None:
         body["error"] = outcome.error
+    if getattr(outcome, "detail", None) is not None:
+        body["detail"] = outcome.detail
     if outcome.approver is not None:
         body["approver"] = outcome.approver
     if outcome.note is not None:
@@ -234,3 +245,41 @@ def _outcome_body(outcome) -> dict:
     if outcome.decided_at is not None:
         body["decided_at"] = outcome.decided_at
     return body
+
+
+def _rest_body_max() -> int:
+    try:
+        return int(os.environ.get("TOOLSTACK_REST_BODY_MAX", str(DEFAULT_REST_BODY_MAX)))
+    except ValueError:
+        return DEFAULT_REST_BODY_MAX
+
+
+def _validate_rest_arguments(tool_op, arguments: dict) -> str | None:
+    for key in ("variables", "headers"):
+        value = arguments.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            return f"{key} must be an object"
+        if not all(isinstance(k, str) and isinstance(v, str) for k, v in value.items()):
+            return f"{key} must contain only string keys and values"
+    body_kind = tool_op.body_kind or "none"
+    has_body = "body" in arguments
+    body = arguments.get("body")
+    if body_kind == "none":
+        if has_body:
+            return "body must be absent for this operation"
+        return None
+    if not isinstance(body, str):
+        return "body must be a string"
+    if body_kind == "binary":
+        try:
+            raw = base64.b64decode(body, validate=True)
+        except (binascii.Error, ValueError):
+            return "binary body must be base64"
+        size = len(raw)
+    else:
+        size = len(body.encode("utf-8"))
+    if size > _rest_body_max():
+        return "body exceeds TOOLSTACK_REST_BODY_MAX"
+    return None
