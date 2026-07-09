@@ -29,7 +29,8 @@ from broker.registry import Registry, ToolOp
 from broker.runtime import HttpRuntime
 from broker.server import build_server
 from toolyard.config import load
-from toolyard.runner import DockerRunner, ProcessRunner
+from toolyard.runner import DockerRunner, ProcessRunner, SeatbeltRunner, _SANDBOX_EXEC, _seatbelt_profile
+from toolyard.sandbox import EgressPolicy, SandboxPolicy
 
 REPO = Path(__file__).resolve().parents[2]
 TOOL_TOML = REPO / "tools" / "echo_api" / "toolyard.toml"
@@ -355,6 +356,84 @@ class RestRunnerConfig(unittest.TestCase):
         self.assertIn("python:3.13-slim", run)
         self.assertIn("-w", run)
         self.assertEqual(run[-3:], ["python3", "-m", "toolstack_forwarder"])
+
+
+def _seatbelt_ok() -> bool:
+    return sys.platform == "darwin" and shutil.which("sandbox-exec") is not None
+
+
+class SeatbeltProfile(unittest.TestCase):
+    """The generated SBPL confines the network -- the property the process and (as
+    configured) docker backends lack -- while still letting a tool serve its loopback port.
+    Pure string generation, so it runs on any platform."""
+
+    def test_default_profile_denies_network_allows_loopback(self):
+        p = _seatbelt_profile(SandboxPolicy(), allow_unix_egress=False)
+        self.assertIn("(deny network*)", p)
+        self.assertIn("network-bind", p)
+        self.assertIn("network-inbound", p)
+        self.assertNotIn("unix-socket", p)  # no write-proxy -> no unix egress at all
+
+    def test_unix_egress_only_when_proxy_present(self):
+        self.assertIn("unix-socket",
+                      _seatbelt_profile(SandboxPolicy(), allow_unix_egress=True))
+
+    def test_per_host_egress_not_yet_supported(self):
+        # Until the loopback egress proxy lands, an allowlist must fail loudly, not silently
+        # degrade to deny-all.
+        policy = SandboxPolicy(egress=EgressPolicy(allow=("api.example.com",)))
+        with self.assertRaises(NotImplementedError):
+            _seatbelt_profile(policy, allow_unix_egress=False)
+
+
+@unittest.skipUnless(_seatbelt_ok(), "macOS + sandbox-exec required")
+class SeatbeltRunnerE2E(unittest.TestCase):
+    """The macOS-native runner starts the real echo tool under sandbox-exec and the broker's
+    HttpRuntime reaches it -- same contract as the process backend, now network-confined."""
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
+        self.runner = SeatbeltRunner()
+        self.running = self.runner.start(self.tool, {"api_key": SECRET})
+        self.addCleanup(self.runner.stop, self.running)
+        if not _wait_for_tool(self.tool.port):
+            self.fail("sandboxed echo tool did not start")
+
+    def test_broker_reaches_sandboxed_tool_and_it_reads_its_secret(self):
+        self.assertEqual(_call(self.tool.port, "say", {"m": "hi"}), {"echoed": {"m": "hi"}})
+        status = _call(self.tool.port, "secret_status", {})
+        self.assertTrue(status["has_api_key"])
+        self.assertEqual(status["api_key_len"], len(SECRET))
+        self.assertNotIn(SECRET, json.dumps(status))  # secret never returns through the broker
+
+    def test_records_seatbelt_backend(self):
+        self.assertEqual(self.running.backend, "seatbelt")
+
+
+@unittest.skipUnless(_seatbelt_ok(), "macOS + sandbox-exec required")
+class SeatbeltConfinement(unittest.TestCase):
+    """The profile the runner emits actually blocks outbound network while permitting the
+    loopback listen a tool needs -- exercised through sandbox-exec, the real enforcer."""
+
+    def test_outbound_denied_loopback_bind_allowed(self):
+        profile = _seatbelt_profile(SandboxPolicy(), allow_unix_egress=False)
+        probe = (
+            "import socket\n"
+            "s = socket.socket()\n"
+            "try:\n"
+            "    s.bind(('127.0.0.1', 0)); s.listen(1); print('bind:OK')\n"
+            "except Exception as e:\n"
+            "    print('bind:FAIL', e)\n"
+            "try:\n"
+            "    socket.create_connection(('1.1.1.1', 80), timeout=3); print('out:ALLOWED')\n"
+            "except Exception:\n"
+            "    print('out:BLOCKED')\n"
+        )
+        r = subprocess.run([_SANDBOX_EXEC, "-p", profile, sys.executable, "-c", probe],
+                           capture_output=True, text=True, timeout=30)
+        self.assertIn("bind:OK", r.stdout)
+        self.assertIn("out:BLOCKED", r.stdout)
+        self.assertNotIn("out:ALLOWED", r.stdout)
 
 
 def _docker_ok() -> bool:
