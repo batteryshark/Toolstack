@@ -8,7 +8,7 @@ runners build against, so the seam is fixed before either backend exists.
 import dataclasses
 import unittest
 
-from toolyard.runner import DockerRunner, ProcessRunner, get_runner, native_backend
+from toolyard.runner import DockerRunner, ProcessRunner, SeatbeltRunner, get_runner, native_backend
 from toolyard.sandbox import EgressPolicy, ResourceCaps, SandboxPolicy
 
 
@@ -57,12 +57,20 @@ class GetRunnerTest(unittest.TestCase):
         self.assertIsInstance(get_runner("process"), ProcessRunner)
         self.assertIsInstance(get_runner("docker"), DockerRunner)
 
-    def test_native_backends_not_yet_implemented(self):
-        # Explicit native names, plus "sandbox" which resolves to this host's native
-        # backend (mac or Linux) -- both raise NotImplementedError until the runner lands.
-        for backend in ("seatbelt", "bwrap", "sandbox"):
+    def test_seatbelt_backend_returns_runner(self):
+        # The class exists on every platform; it only *works* on macOS (sandbox-exec).
+        self.assertIsInstance(get_runner("seatbelt"), SeatbeltRunner)
+
+    def test_bwrap_not_yet_implemented(self):
+        with self.assertRaises(NotImplementedError):
+            get_runner("bwrap")
+
+    def test_sandbox_resolves_to_this_hosts_native_backend(self):
+        if native_backend() == "seatbelt":
+            self.assertIsInstance(get_runner("sandbox"), SeatbeltRunner)
+        else:  # linux -> bwrap, not built yet
             with self.assertRaises(NotImplementedError):
-                get_runner(backend)
+                get_runner("sandbox")
 
     def test_unknown_backend(self):
         with self.assertRaises(ValueError):

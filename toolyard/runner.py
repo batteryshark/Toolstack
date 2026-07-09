@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .config import ToolDef
+from .sandbox import ResourceCaps, SandboxPolicy
 
 # Container-internal mount point for the writable-secret socket (message-contracts
 # §4); matches the tool's default TOOLYARD_SECRETS_SOCKET.
@@ -231,6 +232,13 @@ class Runner(Protocol):
 class ProcessRunner:
     backend = "process"
 
+    def _spawn_argv(self, tool_def: ToolDef, inner_script: str,
+                    proxy_dir: str | None) -> tuple[str, list[str]]:
+        """Executable + argv to posix_spawn for the tool. ProcessRunner runs it under a
+        bare shell; SeatbeltRunner overrides this to wrap the same launch in sandbox-exec.
+        This is the single point of variation between the two process-based backends."""
+        return "/bin/sh", ["/bin/sh", "-c", inner_script]
+
     def start(self, tool_def: ToolDef, secrets: dict[str, str], *,
               secret_backend: str | None = None, secrets_file: str | None = None) -> RunningTool:
         if not tool_def.command:
@@ -252,13 +260,14 @@ class ProcessRunner:
                 env["TOOLYARD_SECRETS_SOCKET"] = str(Path(proxy_dir) / "secrets.sock")
             # posix_spawn (not Popen) so the detached child has no lifecycle object to
             # warn about; setpgroup=0 gives it its own group so stop() can killpg it.
-            script = f"cd {shlex.quote(str(tool_def.path))} && exec {_bind_interpreter(tool_def.command)}"
+            inner_script = f"cd {shlex.quote(str(tool_def.path))} && exec {_bind_interpreter(tool_def.command)}"
+            executable, argv = self._spawn_argv(tool_def, inner_script, proxy_dir)
             # Capture the tool's stdout/stderr onto a per-tool logfile (the child's fd 1/2) so a
             # crash or a noisy start is diagnosable, not lost into the toolyard's own stream.
             log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
             try:
                 pid = os.posix_spawn(
-                    "/bin/sh", ["/bin/sh", "-c", script], env, setpgroup=0,
+                    executable, argv, env, setpgroup=0,
                     file_actions=[(os.POSIX_SPAWN_DUP2, log_fd, 1),
                                   (os.POSIX_SPAWN_DUP2, log_fd, 2),
                                   (os.POSIX_SPAWN_CLOSE, log_fd)],
@@ -304,6 +313,62 @@ class ProcessRunner:
             # PermissionError==dead is load-bearing for the start() readiness check: on Darwin a
             # just-exited (zombie) process-group leader answers killpg(pid, 0) with EPERM, not ESRCH.
             return False
+
+
+_SANDBOX_EXEC = "/usr/bin/sandbox-exec"  # macOS Seatbelt wrapper
+
+
+def _seatbelt_profile(policy: SandboxPolicy, *, allow_unix_egress: bool) -> str:
+    """Render an SBPL profile (macOS Seatbelt) for one tool from its SandboxPolicy.
+
+    Baseline: let the process run normally (read files, fork, exec) but cut all network,
+    then re-open exactly what a loopback-served tool needs -- bind + accept on localhost so
+    the broker can reach it. Arbitrary outbound stays denied, which is the isolation the
+    process and (as configured) docker runners don't provide. Filesystem-write confinement
+    and a read-path allowlist are a later tightening; this profile confines the network.
+
+    `allow_unix_egress` re-opens unix-socket egress for the writable-secret proxy. macOS 26
+    SBPL does not honour a path filter on unix-socket, so the allowance is broad -- it is
+    therefore emitted only for a tool that actually has a proxy (a tool with no writable
+    secrets gets no unix egress at all)."""
+    if policy.egress.allow:
+        # Per-host egress runs through a broker loopback proxy that does not exist yet (it
+        # lands with the shared egress layer). Fail loudly rather than silently deny.
+        raise NotImplementedError(
+            "per-host egress allowlists need the loopback egress proxy (not wired yet)")
+    if policy.resources != ResourceCaps():
+        # There is no cgroups on macOS; Seatbelt cannot cap memory/cpu/pids. Say so rather
+        # than drop the caps silently -- a hard cap on macOS is the microVM tier's job.
+        log.warning("resource caps are not enforced by the macOS Seatbelt runner "
+                    "(use the Linux backend or the microVM tier): %s", policy.resources)
+    lines = [
+        "(version 1)",
+        "(allow default)",
+        "(deny network*)",
+        '(allow network-bind (local ip "localhost:*"))',
+        '(allow network-inbound (local ip "localhost:*"))',
+    ]
+    if allow_unix_egress:
+        lines.append("(allow network-outbound (remote unix-socket))")
+    return "\n".join(lines) + "\n"
+
+
+class SeatbeltRunner(ProcessRunner):
+    """macOS-native tool sandbox: the same process model as ProcessRunner, but the launch is
+    wrapped in `sandbox-exec` with a per-tool Seatbelt profile so the tool cannot open
+    arbitrary outbound network connections. No container runtime, no VM. start/stop/is_alive
+    are inherited unchanged -- the handle is the pid, exactly as for the process backend."""
+
+    backend = "seatbelt"
+
+    def _spawn_argv(self, tool_def: ToolDef, inner_script: str,
+                    proxy_dir: str | None) -> tuple[str, list[str]]:
+        # TODO(egress-proxy step): derive per-tool egress/caps from toolyard.toml instead of
+        # this deny-all default. sandbox-exec applies the profile then execs the shell, which
+        # execs the tool, so the pid we get back is the tool -- pgroup kill/reap is unchanged.
+        policy = SandboxPolicy()
+        profile = _seatbelt_profile(policy, allow_unix_egress=proxy_dir is not None)
+        return _SANDBOX_EXEC, ["sandbox-exec", "-p", profile, "/bin/sh", "-c", inner_script]
 
 
 class DockerRunner:
@@ -437,13 +502,14 @@ def get_runner(backend: str) -> Runner:
         return ProcessRunner()
     if backend == "docker":
         return DockerRunner()
-    # OS-native sandbox backends. "sandbox" resolves to the right one for this host; the
-    # concrete runners land next on this branch (Seatbelt first, then bubblewrap), so the
-    # name dispatch is wired now and the classes drop in without touching any caller.
+    # OS-native sandbox backends. "sandbox" resolves to the right one for this host.
     if backend == "sandbox":
         backend = native_backend()
-    if backend in ("seatbelt", "bwrap"):
+    if backend == "seatbelt":
+        return SeatbeltRunner()
+    if backend == "bwrap":
+        # The Linux backend (bubblewrap + Landlock + seccomp) lands next on this branch.
         raise NotImplementedError(
-            f"the {backend!r} sandbox runner is not implemented yet "
-            f"(native-sandbox-runner branch); use 'process' or 'docker' for now")
+            "the 'bwrap' (Linux) sandbox runner is not implemented yet "
+            "(native-sandbox-runner branch); use 'process' or 'docker' for now")
     raise ValueError(f"unknown runner backend: {backend}")
