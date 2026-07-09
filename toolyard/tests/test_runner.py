@@ -29,6 +29,7 @@ from broker.registry import Registry, ToolOp
 from broker.runtime import HttpRuntime
 from broker.server import build_server
 from toolyard.config import load
+from toolyard.egress_proxy import serve as _serve_egress_proxy
 from toolyard.runner import DockerRunner, ProcessRunner, SeatbeltRunner, _SANDBOX_EXEC, _seatbelt_profile
 from toolyard.sandbox import EgressPolicy, SandboxPolicy
 
@@ -362,6 +363,14 @@ def _seatbelt_ok() -> bool:
     return sys.platform == "darwin" and shutil.which("sandbox-exec") is not None
 
 
+def _pid_alive(pid) -> bool:
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        return False
+
+
 class SeatbeltProfile(unittest.TestCase):
     """The generated SBPL confines the network -- the property the process and (as
     configured) docker backends lack -- while still letting a tool serve its loopback port.
@@ -378,11 +387,16 @@ class SeatbeltProfile(unittest.TestCase):
         self.assertIn("unix-socket",
                       _seatbelt_profile(SandboxPolicy(), allow_unix_egress=True))
 
-    def test_per_host_egress_not_yet_supported(self):
-        # Until the loopback egress proxy lands, an allowlist must fail loudly, not silently
-        # degrade to deny-all.
+    def test_egress_rule_is_port_scoped_to_the_proxy(self):
+        # A tool with an allowlist may reach only its egress proxy port -- the SBPL rule is
+        # port-scoped (verified against sandbox-exec in the confinement tests).
         policy = SandboxPolicy(egress=EgressPolicy(allow=("api.example.com",)))
-        with self.assertRaises(NotImplementedError):
+        p = _seatbelt_profile(policy, allow_unix_egress=False, egress_port=6123)
+        self.assertIn('(allow network-outbound (remote ip "localhost:6123"))', p)
+
+    def test_egress_allowlist_without_a_port_is_a_runner_bug(self):
+        policy = SandboxPolicy(egress=EgressPolicy(allow=("api.example.com",)))
+        with self.assertRaises(ValueError):
             _seatbelt_profile(policy, allow_unix_egress=False)
 
 
@@ -434,6 +448,67 @@ class SeatbeltConfinement(unittest.TestCase):
         self.assertIn("bind:OK", r.stdout)
         self.assertIn("out:BLOCKED", r.stdout)
         self.assertNotIn("out:ALLOWED", r.stdout)
+
+
+@unittest.skipUnless(_seatbelt_ok(), "macOS + sandbox-exec required")
+class SeatbeltEgressE2E(unittest.TestCase):
+    """A tool that declares an egress allowlist: the runner starts a per-tool egress proxy,
+    the tool still serves under the sandbox, and the proxy is reaped on stop."""
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port(), egress=("example.com",))
+        self.runner = SeatbeltRunner()
+        self.running = self.runner.start(self.tool, {"api_key": SECRET})
+        self.addCleanup(self.runner.stop, self.running)
+        if not _wait_for_tool(self.tool.port):
+            self.fail("sandboxed echo tool did not start")
+
+    def test_egress_proxy_started_and_tool_serves(self):
+        self.assertIsNotNone(self.running.egress_pid)
+        self.assertTrue(_pid_alive(self.running.egress_pid))
+        self.assertEqual(_call(self.tool.port, "say", {"m": "hi"}), {"echoed": {"m": "hi"}})
+
+    def test_stop_reaps_the_egress_proxy(self):
+        self.runner.stop(self.running)
+        time.sleep(0.3)
+        self.assertFalse(_pid_alive(self.running.egress_pid))
+
+
+@unittest.skipUnless(_seatbelt_ok(), "macOS + sandbox-exec required")
+class SeatbeltEgressConfinement(unittest.TestCase):
+    """The egress profile the runner emits permits outbound only to the tool's proxy port; a
+    direct connection to any other loopback service is blocked by the sandbox itself."""
+
+    def test_only_the_proxy_port_is_reachable(self):
+        proxy = _serve_egress_proxy(_free_port(), ["127.0.0.1"])
+        threading.Thread(target=proxy.serve_forever, daemon=True).start()
+        self.addCleanup(proxy.server_close)
+        self.addCleanup(proxy.shutdown)
+        proxy_port = proxy.server_address[1]
+
+        other = socket.socket()  # a second loopback service the tool must NOT reach directly
+        other.bind(("127.0.0.1", 0))
+        other.listen(1)
+        self.addCleanup(other.close)
+        other_port = other.getsockname()[1]
+
+        profile = _seatbelt_profile(SandboxPolicy(egress=EgressPolicy(allow=("127.0.0.1",))),
+                                    allow_unix_egress=False, egress_port=proxy_port)
+        probe = (
+            "import socket, sys\n"
+            "def t(p):\n"
+            "    try:\n"
+            "        socket.create_connection(('127.0.0.1', p), timeout=3).close(); return 'OK'\n"
+            "    except Exception:\n"
+            "        return 'BLOCKED'\n"
+            "print('proxy_port:', t(int(sys.argv[1])))\n"
+            "print('other_port:', t(int(sys.argv[2])))\n"
+        )
+        r = subprocess.run([_SANDBOX_EXEC, "-p", profile, sys.executable, "-c", probe,
+                            str(proxy_port), str(other_port)],
+                           capture_output=True, text=True, timeout=30)
+        self.assertIn("proxy_port: OK", r.stdout)
+        self.assertIn("other_port: BLOCKED", r.stdout)
 
 
 def _docker_ok() -> bool:

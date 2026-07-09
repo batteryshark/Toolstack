@@ -45,6 +45,7 @@ class ToolDef:
     secrets: tuple[SecretSpec, ...]
     path: Path  # directory containing toolyard.toml (and the tool's files)
     description: str = ""  # optional tool-level summary (the broker registry ignores it)
+    egress: tuple[str, ...] = ()  # [sandbox] egress: hosts a sandboxed tool may reach outbound
 
 
 def load(toml_path: str | Path) -> ToolDef:
@@ -93,6 +94,11 @@ def load(toml_path: str | Path) -> ToolDef:
         )
         for s in data.get("secrets", [])
     )
+    # [sandbox] egress: the outbound hosts a sandboxed tool may reach (enforced by the
+    # native runners via the egress proxy). Rejected at load if malformed, like port/id.
+    egress = data.get("sandbox", {}).get("egress", [])
+    if not isinstance(egress, list) or not all(isinstance(h, str) and h for h in egress):
+        raise ValueError(f"{path}: [sandbox] egress must be a list of non-empty host strings")
     return ToolDef(
         id=tool_id,
         type=tool_type,
@@ -102,6 +108,7 @@ def load(toml_path: str | Path) -> ToolDef:
         secrets=secrets,
         path=path.parent,
         description=data.get("description", ""),
+        egress=tuple(egress),
     )
 
 

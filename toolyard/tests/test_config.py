@@ -198,5 +198,34 @@ class IdValidation(unittest.TestCase):
         self.assertEqual(tool.id, "my-cool_tool2")
 
 
+class EgressConfig(unittest.TestCase):
+    """[sandbox] egress: the outbound host allowlist a native runner enforces."""
+
+    def _write(self, body: str) -> Path:
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        (d / "toolyard.toml").write_text(body)
+        return d / "toolyard.toml"
+
+    def test_defaults_to_empty(self):
+        self.assertEqual(load(TOOL_TOML).egress, ())
+
+    def test_parses_host_list(self):
+        tool = load(self._write(
+            'id = "t"\ntype = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n'
+            '[sandbox]\negress = ["api.example.com", "auth.example.com"]\n'))
+        self.assertEqual(tool.egress, ("api.example.com", "auth.example.com"))
+
+    def test_rejects_non_list(self):
+        with self.assertRaises(ValueError):
+            load(self._write('id = "t"\ntype = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n'
+                             '[sandbox]\negress = "api.example.com"\n'))
+
+    def test_rejects_non_string_entries(self):
+        with self.assertRaises(ValueError):
+            load(self._write('id = "t"\ntype = "api"\n[entrypoint]\nport = 4700\ncommand = "x"\n'
+                             '[sandbox]\negress = ["ok", 123]\n'))
+
+
 if __name__ == "__main__":
     unittest.main()
