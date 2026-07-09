@@ -28,6 +28,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from .config import ToolDef
 
@@ -209,6 +210,22 @@ def _bind_interpreter(command: str) -> str:
         return command
     rest = parts[1] if len(parts) > 1 else ""
     return f"{shlex.quote(sys.executable)} {rest}".rstrip()
+
+
+class Runner(Protocol):
+    """The runner contract every backend satisfies: a `backend` tag plus start / stop /
+    is_alive over a `RunningTool`. `get_runner` returns one of these. ProcessRunner and
+    DockerRunner implement it structurally (no inheritance needed), and the coming native
+    sandbox runners will too -- this names the seam they all build against."""
+
+    backend: str
+
+    def start(self, tool_def: ToolDef, secrets: dict[str, str], *,
+              secret_backend: str | None = ..., secrets_file: str | None = ...) -> RunningTool: ...
+
+    def stop(self, running: RunningTool) -> None: ...
+
+    def is_alive(self, running: RunningTool) -> bool: ...
 
 
 class ProcessRunner:
@@ -403,9 +420,30 @@ class DockerRunner:
         return result.stdout.strip() == "true"
 
 
-def get_runner(backend: str):
+def native_backend(platform: str | None = None) -> str:
+    """The OS-native sandbox backend for this platform: `seatbelt` on macOS, `bwrap`
+    (bubblewrap + Landlock + seccomp) on Linux. Windows is out of scope. Split out from
+    get_runner so the platform mapping is testable without the runner classes existing."""
+    plat = platform if platform is not None else sys.platform
+    if plat == "darwin":
+        return "seatbelt"
+    if plat.startswith("linux"):
+        return "bwrap"
+    raise RuntimeError(f"no native tool sandbox for platform {plat!r} (macOS and Linux only)")
+
+
+def get_runner(backend: str) -> Runner:
     if backend == "process":
         return ProcessRunner()
     if backend == "docker":
         return DockerRunner()
+    # OS-native sandbox backends. "sandbox" resolves to the right one for this host; the
+    # concrete runners land next on this branch (Seatbelt first, then bubblewrap), so the
+    # name dispatch is wired now and the classes drop in without touching any caller.
+    if backend == "sandbox":
+        backend = native_backend()
+    if backend in ("seatbelt", "bwrap"):
+        raise NotImplementedError(
+            f"the {backend!r} sandbox runner is not implemented yet "
+            f"(native-sandbox-runner branch); use 'process' or 'docker' for now")
     raise ValueError(f"unknown runner backend: {backend}")
