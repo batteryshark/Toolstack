@@ -40,7 +40,7 @@ class OutboundRequest:
 _TEMPLATE_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _SECRET_REF = re.compile(r"\{\{secret:([A-Za-z0-9_-]+)\}\}")
 _HEADER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*\Z")
-_FORBIDDEN_PATH_VARIABLE_CHARS = set("/\\.")
+_FORBIDDEN_PATH_VARIABLE_CHARS = set("/\\")
 
 
 def build_request(config: RestConfig, op_name: str, arguments: dict, secrets_dir: str | Path,
@@ -104,11 +104,15 @@ def _validate_path_variable(name: str, raw: str) -> str:
     value = _validate_variable_common(name, raw)
     if any(c in _FORBIDDEN_PATH_VARIABLE_CHARS for c in value):
         raise RequestBuildError("invalid_variable", "path variable contains a forbidden character", name=name)
+    if ".." in value:
+        raise RequestBuildError("invalid_variable", "path variable contains '..'", name=name)
     decoded = urllib.parse.unquote(value)
     if any(ord(c) <= 0x20 or ord(c) == 0x7f or ord(c) > 0x7f for c in decoded):
         raise RequestBuildError("invalid_variable", "path variable contains an encoded forbidden character", name=name)
     if any(c in _FORBIDDEN_PATH_VARIABLE_CHARS for c in decoded):
         raise RequestBuildError("invalid_variable", "path variable contains an encoded forbidden character", name=name)
+    if ".." in decoded:
+        raise RequestBuildError("invalid_variable", "path variable contains '..'", name=name)
     return value
 
 
