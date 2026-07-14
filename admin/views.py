@@ -55,6 +55,16 @@ pre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:aut
 .argrow input,.headerrow input{min-width:120px;}
 .rulerow input,.rulerow select{min-width:130px;}
 .rest-sub{display:grid;gap:6px;margin-top:8px;}
+details.opcard-acc>summary,details.sub-acc>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:2px 0;}
+details.opcard-acc>summary::-webkit-details-marker,details.sub-acc>summary::-webkit-details-marker{display:none;}
+details.opcard-acc>summary::before,details.sub-acc>summary::before{content:'\\25B8';color:var(--muted);transition:transform .1s ease;}
+details[open].opcard-acc>summary::before,details[open].sub-acc>summary::before{transform:rotate(90deg);}
+details.opcard-acc>summary{font-weight:600;}
+.op-title.muted{font-weight:400;}
+.op-sub,.acc-count{color:var(--muted);font-weight:400;font-size:12px;}
+.sub-acc{border-top:1px dashed var(--line);padding-top:6px;}
+.linkish{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:2px 6px;font:inherit;font-size:12px;text-decoration:underline;}
+.linkish:hover{color:var(--ink);}
 .sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}
 .sechead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 2px;}
 .secrow input{min-width:0;width:100%;}
@@ -160,14 +170,14 @@ _TOOL_EDITOR_JS = """
     row.querySelector('.rm').onclick = function(){row.remove();};
     return row;
   }
-  function headerRow(h){
+  function headerRow(h, onChange){
     var row = mk('<div class="headerrow"><input class="header-name" placeholder="Header-Name">'
       + '<button type="button" class="rm">remove</button></div>');
     row.querySelector('.header-name').value = h||'';
-    row.querySelector('.rm').onclick = function(){row.remove();};
+    row.querySelector('.rm').onclick = function(){row.remove(); if(onChange)onChange();};
     return row;
   }
-  function ruleRow(r){
+  function ruleRow(r, onChange){
     r = r||{};
     var row = mk('<div class="rulerow">'
       + '<select class="rule-secret"></select>'
@@ -180,29 +190,34 @@ _TOOL_EDITOR_JS = """
     if (r.secret_name) row.querySelector('.rule-secret').value = r.secret_name;
     row.querySelector('.rule-extract-path').value = r.extract_path||'';
     row.querySelector('.rule-match-status').value = r.match_status||'2xx';
-    row.querySelector('.rm').onclick = function(){row.remove();};
+    row.querySelector('.rm').onclick = function(){row.remove(); if(onChange)onChange();};
     return row;
   }
-  function opCard(o){
+  function opCard(o, open){
     o = o||{};
-    var card = mk('<div class="card opcard"><div class="row">'
+    var card = mk('<div class="card opcard"><details class="opcard-acc"><summary>'
+      + '<span class="op-title"></span><span class="op-sub"></span></summary>'
+      + '<div class="row">'
       + '<input class="op-name" placeholder="operation name">'
       + '<select class="op-risk">'+opts(riskOpts(o.risk||'read'), o.risk||'read')+'</select>'
       + '<input class="op-desc" placeholder="description">'
-      + '<button type="button" class="rm">remove op</button></div>'
+      + '<button type="button" class="dup-op">duplicate op</button>'
+      + '<button type="button" class="rm rm-op">remove op</button></div>'
       + '<div class="row op-rest">'
       + '<select class="op-verb">'+opts(REST_VERBS, o.verb||'GET')+'</select>'
       + '<input class="op-path" placeholder="/items/{item_id}">'
       + '<select class="op-body-kind">'+opts(REST_BODY_KINDS, o.body_kind||'none')+'</select>'
       + '<input class="op-body-content-type" placeholder="body content type"></div>'
-      + '<div class="op-rest rest-sub"><strong>Allowed headers</strong><div class="headers"></div>'
-      + '<button type="button" class="add-header">add header</button></div>'
-      + '<div class="op-rest rest-sub"><strong>Response redaction</strong>'
+      + '<details class="op-rest rest-sub sub-acc"><summary><strong>Allowed headers</strong><span class="acc-count headers-count"></span></summary>'
+      + '<div class="headers"></div>'
+      + '<button type="button" class="add-header">add header</button></details>'
+      + '<details class="op-rest rest-sub sub-acc"><summary><strong>Response redaction</strong><span class="acc-count redact-count"></span></summary>'
       + '<label class="op-redact"><input type="checkbox" class="op-redact-body"> Redact response body from the caller</label>'
-      + '<label class="op-redact"><input type="checkbox" class="op-redact-headers"> Redact response headers from the caller</label></div>'
-      + '<div class="op-rest rest-sub"><strong>Secret writeback rules</strong><div class="rules"></div>'
-      + '<button type="button" class="add-rule">add rule</button></div>'
-      + '<div class="args"></div><button type="button" class="add-arg">add argument</button></div>');
+      + '<label class="op-redact"><input type="checkbox" class="op-redact-headers"> Redact response headers from the caller</label></details>'
+      + '<details class="op-rest rest-sub sub-acc"><summary><strong>Secret writeback rules</strong><span class="acc-count rules-count"></span></summary>'
+      + '<div class="rules"></div>'
+      + '<button type="button" class="add-rule">add rule</button></details>'
+      + '<div class="args"></div><button type="button" class="add-arg">add argument</button></details></div>');
     card.querySelector('.op-name').value = o.name||'';
     card.querySelector('.op-desc').value = o.description||'';
     card.querySelector('.op-verb').value = o.verb||'GET';
@@ -215,14 +230,77 @@ _TOOL_EDITOR_JS = """
     var args = card.querySelector('.args');
     var headers = card.querySelector('.headers');
     var rules = card.querySelector('.rules');
+    var headersCount = card.querySelector('.headers-count');
+    var rulesCount = card.querySelector('.rules-count');
+    function updHeaders(){var n=headers.children.length; headersCount.textContent = n ? ' ('+n+')' : '';}
+    function updRules(){var n=rules.children.length; rulesCount.textContent = n ? ' ('+n+')' : '';}
+    var redactBody = card.querySelector('.op-redact-body');
+    var redactHeaders = card.querySelector('.op-redact-headers');
+    var redactCount = card.querySelector('.redact-count');
+    function updRedact(){redactCount.textContent = (redactBody.checked || redactHeaders.checked) ? ' (on)' : '';}
+    var titleEl = card.querySelector('.op-title');
+    var subEl = card.querySelector('.op-sub');
+    function updTitle(){
+      var name = card.querySelector('.op-name').value.trim();
+      titleEl.textContent = name || '(unnamed operation)';
+      titleEl.classList.toggle('muted', !name);
+      var isRest = document.getElementById('f_type').value === 'rest';
+      var path = card.querySelector('.op-path').value.trim();
+      subEl.textContent = isRest ? (card.querySelector('.op-verb').value + (path ? ' ' + path : '')) : '';
+    }
+    card._updTitle = updTitle;
     (o.args||[]).forEach(function(a){args.appendChild(argRow(a));});
-    (o.allowed_headers||[]).forEach(function(h){headers.appendChild(headerRow(h));});
-    (o.secret_update_rules||[]).forEach(function(r){rules.appendChild(ruleRow(r));});
+    (o.allowed_headers||[]).forEach(function(h){headers.appendChild(headerRow(h, updHeaders));});
+    (o.secret_update_rules||[]).forEach(function(r){rules.appendChild(ruleRow(r, updRules));});
+    updHeaders(); updRules(); updRedact(); updTitle();
+    // Sub-sections start expanded only when they already carry data.
+    if (headers.children.length) headers.closest('details').open = true;
+    if (rules.children.length) rules.closest('details').open = true;
+    if (redactBody.checked || redactHeaders.checked) redactBody.closest('details').open = true;
     card.querySelector('.add-arg').onclick = function(){args.appendChild(argRow());};
-    card.querySelector('.add-header').onclick = function(){headers.appendChild(headerRow());};
-    card.querySelector('.add-rule').onclick = function(){rules.appendChild(ruleRow()); refreshRuleSecretOptions();};
-    card.querySelector('.rm').onclick = function(){card.remove();};
+    card.querySelector('.add-header').onclick = function(){headers.appendChild(headerRow('', updHeaders)); updHeaders();};
+    card.querySelector('.add-rule').onclick = function(){rules.appendChild(ruleRow('', updRules)); refreshRuleSecretOptions(); updRules();};
+    card.querySelector('.op-name').addEventListener('input', updTitle);
+    card.querySelector('.op-path').addEventListener('input', updTitle);
+    card.querySelector('.op-verb').addEventListener('change', updTitle);
+    redactBody.addEventListener('change', updRedact);
+    redactHeaders.addEventListener('change', updRedact);
+    card.querySelector('.dup-op').onclick = function(){
+      var copy = serializeOp(card);
+      copy.name = copy.name ? copy.name + '_copy' : '';
+      card.after(opCard(copy, true));
+      syncType();
+    };
+    card.querySelector('.rm-op').onclick = function(){card.remove();};
+    card.querySelector('.opcard-acc').open = (open === undefined) ? !(o.name) : !!open;
     return card;
+  }
+  function serializeOp(card){
+    var headers = [].map.call(card.querySelectorAll('.headerrow .header-name'), function(h){return h.value.trim();}).filter(Boolean);
+    var rules = [].map.call(card.querySelectorAll('.rulerow'), function(r){
+      return {secret_name: r.querySelector('.rule-secret').value,
+              response_type: r.querySelector('.rule-response-type').value,
+              extract_path: r.querySelector('.rule-extract-path').value,
+              match_status: r.querySelector('.rule-match-status').value};
+    }).filter(function(r){return r.secret_name || r.extract_path;});
+    return {name: card.querySelector('.op-name').value,
+            risk: card.querySelector('.op-risk').value,
+            description: card.querySelector('.op-desc').value,
+            verb: card.querySelector('.op-verb').value,
+            path: card.querySelector('.op-path').value,
+            allowed_headers: headers,
+            body_kind: card.querySelector('.op-body-kind').value,
+            body_content_type: card.querySelector('.op-body-content-type').value,
+            body_substitution: card._body_substitution,
+            redact_response_body: card.querySelector('.op-redact-body').checked,
+            redact_response_headers: card.querySelector('.op-redact-headers').checked,
+            secret_update_rules: rules,
+            args: [].map.call(card.querySelectorAll('.argrow'), function(r){
+              return {name: r.querySelector('.arg-name').value,
+                      type: r.querySelector('.arg-type').value,
+                      required: r.querySelector('.arg-req').checked,
+                      description: r.querySelector('.arg-desc').value};
+            })};
   }
   function secRow(s){
     s = s||{};
@@ -255,6 +333,9 @@ _TOOL_EDITOR_JS = """
   refreshRuleSecretOptions();
   document.getElementById('add-op').onclick = function(){ops.appendChild(opCard()); syncType();};
   document.getElementById('add-secret').onclick = function(){secs.appendChild(secRow()); refreshRuleSecretOptions();};
+  function setAllOps(open){[].forEach.call(ops.querySelectorAll('.opcard-acc'), function(d){d.open=open;});}
+  document.getElementById('ops-expand').onclick = function(){setAllOps(true);};
+  document.getElementById('ops-collapse').onclick = function(){setAllOps(false);};
   var f_type = document.getElementById('f_type');
 
   function syncType(){
@@ -265,6 +346,7 @@ _TOOL_EDITOR_JS = """
     if (isRest && !document.getElementById('f_command').value) {
       document.getElementById('f_command').value = 'python3 -m toolstack_forwarder';
     }
+    [].forEach.call(ops.querySelectorAll('.opcard'), function(c){ if(c._updTitle) c._updTitle(); });
   }
   f_type.addEventListener('change', syncType);
   syncType();
@@ -325,33 +407,7 @@ _TOOL_EDITOR_JS = """
       command: document.getElementById('f_command').value,
       image: document.getElementById('f_image').value,
       port: document.getElementById('f_port').value,
-      operations: [].map.call(ops.querySelectorAll('.opcard'), function(card){
-        var headers = [].map.call(card.querySelectorAll('.headerrow .header-name'), function(h){return h.value.trim();}).filter(Boolean);
-        var rules = [].map.call(card.querySelectorAll('.rulerow'), function(r){
-          return {secret_name: r.querySelector('.rule-secret').value,
-                  response_type: r.querySelector('.rule-response-type').value,
-                  extract_path: r.querySelector('.rule-extract-path').value,
-                  match_status: r.querySelector('.rule-match-status').value};
-        }).filter(function(r){return r.secret_name || r.extract_path;});
-        return {name: card.querySelector('.op-name').value,
-                risk: card.querySelector('.op-risk').value,
-                description: card.querySelector('.op-desc').value,
-                verb: card.querySelector('.op-verb').value,
-                path: card.querySelector('.op-path').value,
-                allowed_headers: headers,
-                body_kind: card.querySelector('.op-body-kind').value,
-                body_content_type: card.querySelector('.op-body-content-type').value,
-                body_substitution: card._body_substitution,
-                redact_response_body: card.querySelector('.op-redact-body').checked,
-                redact_response_headers: card.querySelector('.op-redact-headers').checked,
-                secret_update_rules: rules,
-                args: [].map.call(card.querySelectorAll('.argrow'), function(r){
-                  return {name: r.querySelector('.arg-name').value,
-                          type: r.querySelector('.arg-type').value,
-                          required: r.querySelector('.arg-req').checked,
-                          description: r.querySelector('.arg-desc').value};
-                })};
-      }),
+      operations: [].map.call(ops.querySelectorAll('.opcard'), serializeOp),
       secrets: [].map.call(secs.querySelectorAll('.secrow'), function(r){
         return {name: r.querySelector('.sec-name').value,
                 field: r.querySelector('.sec-field').value,
@@ -901,7 +957,10 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         "<p class='muted'>Leave both blank for a docker tool that builds the "
         "<code>Dockerfile</code> in its own directory.</p>"
         "<label class='field'>port <input id='f_port' type='number' placeholder='4700' required></label>"
-        "<h3>Operations</h3><div id='ops'></div>"
+        "<div class='row'><h3>Operations</h3>"
+        "<button type='button' id='ops-expand' class='linkish'>Expand all</button>"
+        "<button type='button' id='ops-collapse' class='linkish'>Collapse all</button></div>"
+        "<div id='ops'></div>"
         "<button type='button' id='add-op'>Add operation</button>"
         "<h3>Secrets <span class='muted'>(declarations only; values stay in the secret backend)</span></h3>"
         f"{_secret_backend_note(backend)}"
