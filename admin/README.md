@@ -72,7 +72,10 @@ by binding a public interface.
 
 - `__main__.py`: `serve` and `set-password`.
 - `server.py`: the FastAPI app: routes, the session + CSRF gate, wiring.
-- `views.py`: server-rendered HTML (f-strings + `html.escape`, no template engine).
+- `views/`: server-rendered HTML (f-strings + `html.escape`, no template engine),
+  split by screen: `layout` (page shell + esc/CSRF), `components` (shared fragments),
+  `assets` (CSS/JS), and one module each for `login`, `dashboard`, `config`, `tools`,
+  and `callers`. `views/__init__.py` re-exports the public surface.
 - `auth.py`: scrypt password, HMAC session, CSRF tokens (all stdlib).
 - `supervisor.py`: broker process lifecycle (posix_spawn / killpg / `/v1/health`).
 - `broker_config.py`: the `BrokerRunConfig` the broker is started from (→ env).
