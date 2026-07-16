@@ -15,6 +15,7 @@ start so they never touch host disk; the bind mount here is the simpler form.)
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import re
@@ -112,6 +113,7 @@ class RunningTool:
     log_pid: str | None = None  # docker log follower pid (process runner logs directly)
     log_path: str | None = None
     egress_pid: str | None = None  # per-tool egress proxy pid (tools with an egress allowlist)
+    launcher_pid: str | None = None  # sudo/netguard launcher pid to reap (bwrap backend)
 
 
 def _write_secrets(tool_id: str, secrets: dict[str, str]) -> str:
@@ -429,6 +431,158 @@ class SeatbeltRunner(ProcessRunner):
         return _SANDBOX_EXEC, ["sandbox-exec", "-p", profile, "/bin/sh", "-c", inner_script]
 
 
+_CGROUP_ROOT = "/sys/fs/cgroup"
+_NETGUARD_PARENT = "toolyard"          # tool cgroups: /sys/fs/cgroup/toolyard/<id> (see netguard)
+_SANDBOX_READINESS_WAIT = 1.0          # sudo + netguard + (bwrap) start is slower than a bare spawn
+
+
+_SUDO = shutil.which("sudo") or "/usr/bin/sudo"   # absolute: start() launches it via posix_spawn
+
+
+def _netguard_argv(*args: str) -> list[str]:
+    """The privileged netguard invocation. Run under ``sudo -n`` (non-interactive) using the
+    broker's own interpreter so ``-m toolyard.netguard`` resolves in the same environment. A
+    locked-down NOPASSWD sudoers rule for exactly this command is what keeps the broker itself
+    unprivileged (see ``toolyard/netguard.py``). ``sudo`` is resolved to an absolute path because
+    ``start()`` launches it with ``posix_spawn`` (which, unlike subprocess, does not search PATH)."""
+    return [_SUDO, "-n", sys.executable, "-m", "toolyard.netguard", *args]
+
+
+@functools.lru_cache(maxsize=1)
+def _bwrap_usable() -> bool:
+    """Whether bwrap can create its (unprivileged) user namespace in the real launch context.
+    Some hosts block it -- e.g. Ubuntu 24.04 with ``apparmor_restrict_unprivileged_userns=1`` --
+    and there the native runner still confines egress via cgroup+nft but skips bwrap's filesystem
+    isolation (the same scope the macOS Seatbelt runner has today). Probed once through the actual
+    sudo->netguard path so the answer matches how tools are launched, and cached for the process."""
+    if shutil.which("bwrap") is None:
+        return False
+    probe = "bwrapprobe"
+    ok = False
+    try:
+        r = subprocess.run(_netguard_argv("run", "--tool", probe, "--",
+                                          "bwrap", "--dev-bind", "/", "/", "/bin/true"),
+                           capture_output=True, text=True, timeout=15)
+        ok = r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        ok = False
+    finally:
+        subprocess.run(_netguard_argv("teardown", "--tool", probe), capture_output=True, timeout=15)
+    if not ok:
+        log.warning("bwrap unavailable in the sandbox launch context (unprivileged user "
+                    "namespaces are likely restricted); the Linux native runner will confine "
+                    "egress only, with no filesystem isolation (matching the Seatbelt runner)")
+    return ok
+
+
+class BwrapRunner:
+    """Linux-native tool sandbox. Confines a tool's outbound network with a per-tool cgroup v2 +
+    nftables rule through the privileged ``netguard`` helper -- deny-all egress by default, new
+    outbound only to the tool's loopback egress proxy when it has an allowlist -- and, when the
+    host permits an unprivileged user namespace, additionally wraps the launch in bubblewrap for
+    filesystem/pid/ipc isolation. The tool runs as the broker's own (non-root) user. Lifecycle is
+    keyed to the cgroup (``cgroup.kill`` / reading ``cgroup.procs``), not a pid, since the launch
+    goes through ``sudo`` and the broker can neither signal nor reap the resulting root process.
+
+    This is the Linux counterpart of :class:`SeatbeltRunner`; both confine the network today, with
+    filesystem/syscall tightening (Landlock + seccomp here) as the next step."""
+
+    backend = "bwrap"
+
+    def _policy(self, tool_def: ToolDef) -> SandboxPolicy:
+        return SandboxPolicy(egress=EgressPolicy(allow=tuple(tool_def.egress)))
+
+    def _cgroup_procs(self, tool_id: str) -> str:
+        return f"{_CGROUP_ROOT}/{_NETGUARD_PARENT}/{tool_id}/cgroup.procs"
+
+    def start(self, tool_def: ToolDef, secrets: dict[str, str], *,
+              secret_backend: str | None = None, secrets_file: str | None = None) -> RunningTool:
+        if not tool_def.command:
+            raise ValueError(f"tool {tool_def.id} has no entrypoint.command")
+        _check_port_free(tool_def.port)
+        secrets_dir = _write_secrets(tool_def.id, secrets)
+        proxy_pid = proxy_dir = None
+        egress_pid = egress_port = None
+        launcher_pid = None
+        log_path = _tool_log_path(tool_def)
+        try:
+            proxy_pid, proxy_dir = _start_write_proxy(tool_def, secret_backend, secrets_file)
+            policy = self._policy(tool_def)
+            if policy.egress.allow:
+                egress_pid, egress_port = _start_egress_proxy(policy.egress.allow)
+            # sudo scrubs the environment, so the tool's env is set inside the inner shell
+            # instead of inherited -- the values (paths/port/proxy URL, never secret values)
+            # reach the tool regardless of sudo, and the sudoers rule needs no SETENV.
+            env_assign = {
+                "TOOLSTACK_SECRETS_DIR": secrets_dir,
+                "TOOLSTACK_PORT": str(tool_def.port),
+                "TOOLSTACK_TOOL_CONFIG": str(tool_def.path / "toolyard.toml"),
+            }
+            if proxy_dir:
+                env_assign["TOOLYARD_SECRETS_SOCKET"] = str(Path(proxy_dir) / "secrets.sock")
+            if egress_port:
+                proxy_url = f"http://127.0.0.1:{egress_port}"
+                for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+                    env_assign[var] = proxy_url
+            assigns = " ".join(f"{k}={shlex.quote(v)}" for k, v in env_assign.items())
+            inner = (f"cd {shlex.quote(str(tool_def.path))} && "
+                     f"{assigns} exec {_bind_interpreter(tool_def.command)}")
+            launch = ["/bin/sh", "-c", inner]
+            if _bwrap_usable():
+                # Share the host net ns (the cgroup+nft rule enforces egress); isolate fs/pid/ipc.
+                launch = ["bwrap", "--dev-bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
+                          "--unshare-pid", "--unshare-ipc", "--die-with-parent", *launch]
+            ng = _netguard_argv("run", "--tool", tool_def.id)
+            if egress_port:
+                ng += ["--proxy-port", str(egress_port)]
+            argv = [*ng, "--", *launch]
+            log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            try:
+                launcher_pid = os.posix_spawn(
+                    argv[0], argv, os.environ, setpgroup=0,
+                    file_actions=[(os.POSIX_SPAWN_DUP2, log_fd, 1),
+                                  (os.POSIX_SPAWN_DUP2, log_fd, 2),
+                                  (os.POSIX_SPAWN_CLOSE, log_fd)],
+                )
+            finally:
+                os.close(log_fd)
+            running = RunningTool(tool_def.id, tool_def.port, self.backend, tool_def.id,
+                                  secrets_dir, proxy_pid, proxy_dir, log_path=str(log_path),
+                                  egress_pid=egress_pid, launcher_pid=str(launcher_pid))
+            # Readiness: netguard joins the cgroup before exec, so after a short settle a live
+            # tool leaves the cgroup non-empty while one that exited at once leaves it empty.
+            time.sleep(_SANDBOX_READINESS_WAIT)
+            if not self.is_alive(running):
+                raise RuntimeError(f"tool {tool_def.id} did not start under the sandbox: see {log_path}")
+            log.info("started tool %s on 127.0.0.1:%s under %s (cgroup %s, log %s)",
+                     tool_def.id, tool_def.port, self.backend, tool_def.id, log_path)
+            return running
+        except BaseException:
+            subprocess.run(_netguard_argv("teardown", "--tool", tool_def.id),
+                           capture_output=True, timeout=15)  # remove the cgroup + nft rule
+            _cleanup_partial_start(secrets_dir, proxy_pid, proxy_dir,
+                                   child_pid=launcher_pid, egress_pid=egress_pid)
+            raise
+
+    def stop(self, running: RunningTool) -> None:
+        # cgroup.kill (via teardown) SIGKILLs the tool even though the broker can't signal it
+        # directly; then reap the sudo launcher and clean up the proxies + secrets dir.
+        subprocess.run(_netguard_argv("teardown", "--tool", running.handle),
+                       capture_output=True, timeout=15)
+        _terminate(running.launcher_pid)
+        _stop_proxy(running)
+        _stop_egress_proxy(running)
+        shutil.rmtree(running.workdir, ignore_errors=True)
+        log.info("stopped tool %s (cgroup %s)", running.tool_id, running.handle)
+
+    def is_alive(self, running: RunningTool) -> bool:
+        try:
+            with open(self._cgroup_procs(running.handle)) as f:
+                return bool(f.read().strip())
+        except OSError:
+            return False
+
+
 class DockerRunner:
     backend = "docker"
 
@@ -566,8 +720,5 @@ def get_runner(backend: str) -> Runner:
     if backend == "seatbelt":
         return SeatbeltRunner()
     if backend == "bwrap":
-        # The Linux backend (bubblewrap + Landlock + seccomp) lands next on this branch.
-        raise NotImplementedError(
-            "the 'bwrap' (Linux) sandbox runner is not implemented yet "
-            "(native-sandbox-runner branch); use 'process' or 'docker' for now")
+        return BwrapRunner()
     raise ValueError(f"unknown runner backend: {backend}")

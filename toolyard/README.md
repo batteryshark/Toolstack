@@ -81,9 +81,26 @@ hands the values to the tool, never to the broker.
 
 - **`process`** (default, zero infra): runs the tool as a local subprocess with its
   secrets in a private `0700` dir pointed to by `$TOOLSTACK_SECRETS_DIR`. Binds
-  loopback only.
+  loopback only. No isolation.
 - **`docker`**: runs the tool in a container with its secrets mounted at
   `/run/secrets`, publishing the port to host loopback (`-p 127.0.0.1:...`).
+- **`sandbox`** (OS-native, no container/VM): resolves to **`seatbelt`** on macOS and
+  **`bwrap`** on Linux. Both confine the tool's **network**: outbound is denied by default,
+  and a tool with an `egress` allowlist reaches the broker's loopback egress proxy on a
+  single port and nothing else (the proxy enforces the host allow/deny). The tool still
+  serves the broker on its loopback port. Filesystem/syscall confinement is the next step.
+  - `seatbelt`: wraps the launch in `sandbox-exec` with a per-tool SBPL profile.
+  - `bwrap`: confines egress with a per-tool cgroup v2 + nftables rule installed by the
+    small privileged **`netguard`** helper, and adds bubblewrap fs/pid/ipc isolation when the
+    host permits an unprivileged user namespace (otherwise it confines egress only and logs a
+    warning). `netguard` needs root for nftables/cgroups; keep the broker unprivileged with a
+    locked-down NOPASSWD sudoers rule for exactly that helper, e.g.:
+
+    ```
+    # /etc/sudoers.d/toolyard-netguard
+    broker ALL=(root) NOPASSWD: /path/to/python -m toolyard.netguard run *, \
+                                /path/to/python -m toolyard.netguard teardown *
+    ```
 
 ## CLI
 

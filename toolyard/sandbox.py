@@ -15,12 +15,11 @@ two backend-neutral inputs, and that is all this module defines:
     (first-class) and best-effort rlimits on macOS (there is no cgroups; a hard cap
     on macOS is the microVM upgrade tier's job, not Seatbelt's).
 
-The runner *classes* for those backends are not here yet: they land as the Seatbelt
-then bubblewrap runners, and the shared process machinery is extracted from the two
-real implementations rather than guessed at now. This module is the fixed seam they
-build against -- `SandboxPolicy` is what a runner receives to confine a tool, whatever
-the OS underneath. Constructing any of these with no arguments yields the safe
-baseline: no outbound network, no caps set.
+Both backends are implemented against this seam -- `SeatbeltRunner` (macOS) and
+`BwrapRunner` (Linux, via the privileged `netguard` cgroup+nftables helper). `SandboxPolicy`
+is what a runner receives to confine a tool, whatever the OS underneath; today both enforce
+the egress policy (filesystem/syscall confinement is the next tightening). Constructing any
+of these with no arguments yields the safe baseline: no outbound network, no caps set.
 """
 
 from __future__ import annotations
