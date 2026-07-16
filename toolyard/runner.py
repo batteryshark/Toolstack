@@ -345,12 +345,25 @@ class ProcessRunner:
         log.info("stopped tool %s (pid %s)", running.tool_id, running.handle)
 
     def is_alive(self, running: RunningTool) -> bool:
+        pid = int(running.handle)
+        # Reap-aware liveness. The tool is our own posix_spawn child, so poll it with waitpid
+        # first: on Linux a just-exited child that has not been reaped is a zombie whose pid still
+        # answers killpg(pid, 0) as "alive", which would let start()'s readiness check pass a tool
+        # that already crashed. waitpid(WNOHANG) reports (and reaps) the exit; (0, 0) means it is
+        # still running. ChildProcessError means it is not ours to reap (already reaped, or a
+        # handle carried across processes) -- fall back to the signal probe below.
         try:
-            os.killpg(int(running.handle), 0)
+            reaped, _ = os.waitpid(pid, os.WNOHANG)
+            if reaped:
+                return False
+        except ChildProcessError:
+            pass
+        try:
+            os.killpg(pid, 0)
             return True
         except (ProcessLookupError, PermissionError):
-            # PermissionError==dead is load-bearing for the start() readiness check: on Darwin a
-            # just-exited (zombie) process-group leader answers killpg(pid, 0) with EPERM, not ESRCH.
+            # On macOS a just-exited (zombie) group leader answers killpg with EPERM, not ESRCH;
+            # both mean dead here. (Linux's zombie case is caught by the waitpid poll above.)
             return False
 
 
