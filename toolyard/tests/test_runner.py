@@ -30,7 +30,8 @@ from broker.runtime import HttpRuntime
 from broker.server import build_server
 from toolyard.config import load
 from toolyard.egress_proxy import serve as _serve_egress_proxy
-from toolyard.runner import DockerRunner, ProcessRunner, SeatbeltRunner, _SANDBOX_EXEC, _seatbelt_profile
+from toolyard.runner import (BwrapRunner, DockerRunner, ProcessRunner, SeatbeltRunner,
+                             _SANDBOX_EXEC, _netguard_argv, _seatbelt_profile)
 from toolyard.sandbox import EgressPolicy, SandboxPolicy
 
 REPO = Path(__file__).resolve().parents[2]
@@ -509,6 +510,120 @@ class SeatbeltEgressConfinement(unittest.TestCase):
                            capture_output=True, text=True, timeout=30)
         self.assertIn("proxy_port: OK", r.stdout)
         self.assertIn("other_port: BLOCKED", r.stdout)
+
+
+def _bwrap_ok() -> bool:
+    """The Linux native runner needs nftables + cgroup v2 reachable through a non-interactive
+    sudo (the locked-down netguard rule). Gated so the suite still runs cleanly off-host."""
+    if not sys.platform.startswith("linux") or shutil.which("nft") is None:
+        return False
+    try:
+        return subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+@unittest.skipUnless(_bwrap_ok(), "Linux + nft + non-interactive sudo required")
+class BwrapRunnerE2E(unittest.TestCase):
+    """The Linux-native runner starts the real echo tool confined by netguard (cgroup + nft) and
+    the broker's HttpRuntime reaches it -- same contract as the process backend, now egress-confined."""
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
+        self.runner = BwrapRunner()
+        self.running = self.runner.start(self.tool, {"api_key": SECRET})
+        self.addCleanup(self.runner.stop, self.running)
+        if not _wait_for_tool(self.tool.port):
+            self.fail("sandboxed echo tool did not start")
+
+    def test_broker_reaches_sandboxed_tool_and_it_reads_its_secret(self):
+        self.assertEqual(_call(self.tool.port, "say", {"m": "hi"}), {"echoed": {"m": "hi"}})
+        status = _call(self.tool.port, "secret_status", {})
+        self.assertTrue(status["has_api_key"])
+        self.assertEqual(status["api_key_len"], len(SECRET))
+        self.assertNotIn(SECRET, json.dumps(status))  # secret never returns through the broker
+
+    def test_records_bwrap_backend(self):
+        self.assertEqual(self.running.backend, "bwrap")
+
+    def test_stop_removes_the_cgroup(self):
+        cg = f"/sys/fs/cgroup/toolyard/{self.tool.id}"
+        self.assertTrue(os.path.isdir(cg))          # created while running
+        self.runner.stop(self.running)
+        self.assertFalse(os.path.isdir(cg))          # netguard teardown removed it
+
+
+@unittest.skipUnless(_bwrap_ok(), "Linux + nft + non-interactive sudo required")
+class BwrapEgressE2E(unittest.TestCase):
+    """A tool that declares an egress allowlist: the runner starts a per-tool egress proxy, the
+    tool still serves under the sandbox, and the proxy is reaped on stop."""
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port(), egress=("example.com",))
+        self.runner = BwrapRunner()
+        self.running = self.runner.start(self.tool, {"api_key": SECRET})
+        self.addCleanup(self.runner.stop, self.running)
+        if not _wait_for_tool(self.tool.port):
+            self.fail("sandboxed echo tool did not start")
+
+    def test_egress_proxy_started_and_tool_serves(self):
+        self.assertIsNotNone(self.running.egress_pid)
+        self.assertTrue(_pid_alive(self.running.egress_pid))
+        self.assertEqual(_call(self.tool.port, "say", {"m": "hi"}), {"echoed": {"m": "hi"}})
+
+    def test_stop_reaps_the_egress_proxy(self):
+        self.runner.stop(self.running)
+        time.sleep(0.3)
+        self.assertFalse(_pid_alive(self.running.egress_pid))
+
+
+@unittest.skipUnless(_bwrap_ok(), "Linux + nft + non-interactive sudo required")
+class BwrapConfinement(unittest.TestCase):
+    """netguard's cgroup+nft rule actually confines a process it launches: new outbound reaches
+    only the tool's egress proxy port, while any other loopback service and all external hosts are
+    dropped -- exercised through the real sudo->netguard path, the enforcer the runner uses."""
+
+    def test_only_the_proxy_port_is_reachable(self):
+        proxy = _serve_egress_proxy(_free_port(), ["127.0.0.1"])
+        threading.Thread(target=proxy.serve_forever, daemon=True).start()
+        self.addCleanup(proxy.server_close)
+        self.addCleanup(proxy.shutdown)
+        proxy_port = proxy.server_address[1]
+
+        other = socket.socket()  # a second loopback service the tool must NOT reach directly
+        other.bind(("127.0.0.1", 0))
+        other.listen(1)
+        self.addCleanup(other.close)
+        other_port = other.getsockname()[1]
+
+        outfile = tempfile.NamedTemporaryFile(prefix="bwrap-confine-", delete=False)
+        outfile.close()
+        self.addCleanup(os.unlink, outfile.name)
+        probe = (
+            "import socket, sys\n"
+            "def t(host, p):\n"
+            "    try:\n"
+            "        s = socket.create_connection((host, p), 3); s.close(); return 'OK'\n"
+            "    except Exception:\n"
+            "        return 'BLOCKED'\n"
+            "open(sys.argv[3], 'w').write('proxy=%s other=%s external=%s' % (\n"
+            "    t('127.0.0.1', int(sys.argv[1])), t('127.0.0.1', int(sys.argv[2])),\n"
+            "    t('1.1.1.1', 443)))\n"
+        )
+        tool_id = "bwrapconfine"
+        try:
+            subprocess.run(
+                _netguard_argv("run", "--tool", tool_id, "--proxy-port", str(proxy_port), "--",
+                               sys.executable, "-c", probe,
+                               str(proxy_port), str(other_port), outfile.name),
+                capture_output=True, text=True, timeout=30)
+            result = Path(outfile.name).read_text()
+        finally:
+            subprocess.run(_netguard_argv("teardown", "--tool", tool_id),
+                           capture_output=True, timeout=15)
+        self.assertIn("proxy=OK", result)
+        self.assertIn("other=BLOCKED", result)
+        self.assertIn("external=BLOCKED", result)
 
 
 def _docker_ok() -> bool:
