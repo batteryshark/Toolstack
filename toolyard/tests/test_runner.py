@@ -29,7 +29,10 @@ from broker.registry import Registry, ToolOp
 from broker.runtime import HttpRuntime
 from broker.server import build_server
 from toolyard.config import load
-from toolyard.runner import DockerRunner, ProcessRunner
+from toolyard.egress_proxy import serve as _serve_egress_proxy
+from toolyard.runner import (BwrapRunner, DockerRunner, ProcessRunner, SeatbeltRunner,
+                             _SANDBOX_EXEC, _netguard_argv, _seatbelt_profile)
+from toolyard.sandbox import EgressPolicy, SandboxPolicy
 
 REPO = Path(__file__).resolve().parents[2]
 TOOL_TOML = REPO / "tools" / "echo_api" / "toolyard.toml"
@@ -355,6 +358,272 @@ class RestRunnerConfig(unittest.TestCase):
         self.assertIn("python:3.13-slim", run)
         self.assertIn("-w", run)
         self.assertEqual(run[-3:], ["python3", "-m", "toolstack_forwarder"])
+
+
+def _seatbelt_ok() -> bool:
+    return sys.platform == "darwin" and shutil.which("sandbox-exec") is not None
+
+
+def _pid_alive(pid) -> bool:
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        return False
+
+
+class SeatbeltProfile(unittest.TestCase):
+    """The generated SBPL confines the network -- the property the process and (as
+    configured) docker backends lack -- while still letting a tool serve its loopback port.
+    Pure string generation, so it runs on any platform."""
+
+    def test_default_profile_denies_network_allows_loopback(self):
+        p = _seatbelt_profile(SandboxPolicy(), allow_unix_egress=False)
+        self.assertIn("(deny network*)", p)
+        self.assertIn("network-bind", p)
+        self.assertIn("network-inbound", p)
+        self.assertNotIn("unix-socket", p)  # no write-proxy -> no unix egress at all
+
+    def test_unix_egress_only_when_proxy_present(self):
+        self.assertIn("unix-socket",
+                      _seatbelt_profile(SandboxPolicy(), allow_unix_egress=True))
+
+    def test_egress_rule_is_port_scoped_to_the_proxy(self):
+        # A tool with an allowlist may reach only its egress proxy port -- the SBPL rule is
+        # port-scoped (verified against sandbox-exec in the confinement tests).
+        policy = SandboxPolicy(egress=EgressPolicy(allow=("api.example.com",)))
+        p = _seatbelt_profile(policy, allow_unix_egress=False, egress_port=6123)
+        self.assertIn('(allow network-outbound (remote ip "localhost:6123"))', p)
+
+    def test_egress_allowlist_without_a_port_is_a_runner_bug(self):
+        policy = SandboxPolicy(egress=EgressPolicy(allow=("api.example.com",)))
+        with self.assertRaises(ValueError):
+            _seatbelt_profile(policy, allow_unix_egress=False)
+
+
+@unittest.skipUnless(_seatbelt_ok(), "macOS + sandbox-exec required")
+class SeatbeltRunnerE2E(unittest.TestCase):
+    """The macOS-native runner starts the real echo tool under sandbox-exec and the broker's
+    HttpRuntime reaches it -- same contract as the process backend, now network-confined."""
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
+        self.runner = SeatbeltRunner()
+        self.running = self.runner.start(self.tool, {"api_key": SECRET})
+        self.addCleanup(self.runner.stop, self.running)
+        if not _wait_for_tool(self.tool.port):
+            self.fail("sandboxed echo tool did not start")
+
+    def test_broker_reaches_sandboxed_tool_and_it_reads_its_secret(self):
+        self.assertEqual(_call(self.tool.port, "say", {"m": "hi"}), {"echoed": {"m": "hi"}})
+        status = _call(self.tool.port, "secret_status", {})
+        self.assertTrue(status["has_api_key"])
+        self.assertEqual(status["api_key_len"], len(SECRET))
+        self.assertNotIn(SECRET, json.dumps(status))  # secret never returns through the broker
+
+    def test_records_seatbelt_backend(self):
+        self.assertEqual(self.running.backend, "seatbelt")
+
+
+@unittest.skipUnless(_seatbelt_ok(), "macOS + sandbox-exec required")
+class SeatbeltConfinement(unittest.TestCase):
+    """The profile the runner emits actually blocks outbound network while permitting the
+    loopback listen a tool needs -- exercised through sandbox-exec, the real enforcer."""
+
+    def test_outbound_denied_loopback_bind_allowed(self):
+        profile = _seatbelt_profile(SandboxPolicy(), allow_unix_egress=False)
+        probe = (
+            "import socket\n"
+            "s = socket.socket()\n"
+            "try:\n"
+            "    s.bind(('127.0.0.1', 0)); s.listen(1); print('bind:OK')\n"
+            "except Exception as e:\n"
+            "    print('bind:FAIL', e)\n"
+            "try:\n"
+            "    socket.create_connection(('1.1.1.1', 80), timeout=3); print('out:ALLOWED')\n"
+            "except Exception:\n"
+            "    print('out:BLOCKED')\n"
+        )
+        r = subprocess.run([_SANDBOX_EXEC, "-p", profile, sys.executable, "-c", probe],
+                           capture_output=True, text=True, timeout=30)
+        self.assertIn("bind:OK", r.stdout)
+        self.assertIn("out:BLOCKED", r.stdout)
+        self.assertNotIn("out:ALLOWED", r.stdout)
+
+
+@unittest.skipUnless(_seatbelt_ok(), "macOS + sandbox-exec required")
+class SeatbeltEgressE2E(unittest.TestCase):
+    """A tool that declares an egress allowlist: the runner starts a per-tool egress proxy,
+    the tool still serves under the sandbox, and the proxy is reaped on stop."""
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port(), egress=("example.com",))
+        self.runner = SeatbeltRunner()
+        self.running = self.runner.start(self.tool, {"api_key": SECRET})
+        self.addCleanup(self.runner.stop, self.running)
+        if not _wait_for_tool(self.tool.port):
+            self.fail("sandboxed echo tool did not start")
+
+    def test_egress_proxy_started_and_tool_serves(self):
+        self.assertIsNotNone(self.running.egress_pid)
+        self.assertTrue(_pid_alive(self.running.egress_pid))
+        self.assertEqual(_call(self.tool.port, "say", {"m": "hi"}), {"echoed": {"m": "hi"}})
+
+    def test_stop_reaps_the_egress_proxy(self):
+        self.runner.stop(self.running)
+        time.sleep(0.3)
+        self.assertFalse(_pid_alive(self.running.egress_pid))
+
+
+@unittest.skipUnless(_seatbelt_ok(), "macOS + sandbox-exec required")
+class SeatbeltEgressConfinement(unittest.TestCase):
+    """The egress profile the runner emits permits outbound only to the tool's proxy port; a
+    direct connection to any other loopback service is blocked by the sandbox itself."""
+
+    def test_only_the_proxy_port_is_reachable(self):
+        proxy = _serve_egress_proxy(_free_port(), ["127.0.0.1"])
+        threading.Thread(target=proxy.serve_forever, daemon=True).start()
+        self.addCleanup(proxy.server_close)
+        self.addCleanup(proxy.shutdown)
+        proxy_port = proxy.server_address[1]
+
+        other = socket.socket()  # a second loopback service the tool must NOT reach directly
+        other.bind(("127.0.0.1", 0))
+        other.listen(1)
+        self.addCleanup(other.close)
+        other_port = other.getsockname()[1]
+
+        profile = _seatbelt_profile(SandboxPolicy(egress=EgressPolicy(allow=("127.0.0.1",))),
+                                    allow_unix_egress=False, egress_port=proxy_port)
+        probe = (
+            "import socket, sys\n"
+            "def t(p):\n"
+            "    try:\n"
+            "        socket.create_connection(('127.0.0.1', p), timeout=3).close(); return 'OK'\n"
+            "    except Exception:\n"
+            "        return 'BLOCKED'\n"
+            "print('proxy_port:', t(int(sys.argv[1])))\n"
+            "print('other_port:', t(int(sys.argv[2])))\n"
+        )
+        r = subprocess.run([_SANDBOX_EXEC, "-p", profile, sys.executable, "-c", probe,
+                            str(proxy_port), str(other_port)],
+                           capture_output=True, text=True, timeout=30)
+        self.assertIn("proxy_port: OK", r.stdout)
+        self.assertIn("other_port: BLOCKED", r.stdout)
+
+
+def _bwrap_ok() -> bool:
+    """The Linux native runner needs nftables + cgroup v2 reachable through a non-interactive
+    sudo (the locked-down netguard rule). Gated so the suite still runs cleanly off-host."""
+    if not sys.platform.startswith("linux") or shutil.which("nft") is None:
+        return False
+    try:
+        return subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+@unittest.skipUnless(_bwrap_ok(), "Linux + nft + non-interactive sudo required")
+class BwrapRunnerE2E(unittest.TestCase):
+    """The Linux-native runner starts the real echo tool confined by netguard (cgroup + nft) and
+    the broker's HttpRuntime reaches it -- same contract as the process backend, now egress-confined."""
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
+        self.runner = BwrapRunner()
+        self.running = self.runner.start(self.tool, {"api_key": SECRET})
+        self.addCleanup(self.runner.stop, self.running)
+        if not _wait_for_tool(self.tool.port):
+            self.fail("sandboxed echo tool did not start")
+
+    def test_broker_reaches_sandboxed_tool_and_it_reads_its_secret(self):
+        self.assertEqual(_call(self.tool.port, "say", {"m": "hi"}), {"echoed": {"m": "hi"}})
+        status = _call(self.tool.port, "secret_status", {})
+        self.assertTrue(status["has_api_key"])
+        self.assertEqual(status["api_key_len"], len(SECRET))
+        self.assertNotIn(SECRET, json.dumps(status))  # secret never returns through the broker
+
+    def test_records_bwrap_backend(self):
+        self.assertEqual(self.running.backend, "bwrap")
+
+    def test_stop_removes_the_cgroup(self):
+        cg = f"/sys/fs/cgroup/toolyard/{self.tool.id}"
+        self.assertTrue(os.path.isdir(cg))          # created while running
+        self.runner.stop(self.running)
+        self.assertFalse(os.path.isdir(cg))          # netguard teardown removed it
+
+
+@unittest.skipUnless(_bwrap_ok(), "Linux + nft + non-interactive sudo required")
+class BwrapEgressE2E(unittest.TestCase):
+    """A tool that declares an egress allowlist: the runner starts a per-tool egress proxy, the
+    tool still serves under the sandbox, and the proxy is reaped on stop."""
+
+    def setUp(self):
+        self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port(), egress=("example.com",))
+        self.runner = BwrapRunner()
+        self.running = self.runner.start(self.tool, {"api_key": SECRET})
+        self.addCleanup(self.runner.stop, self.running)
+        if not _wait_for_tool(self.tool.port):
+            self.fail("sandboxed echo tool did not start")
+
+    def test_egress_proxy_started_and_tool_serves(self):
+        self.assertIsNotNone(self.running.egress_pid)
+        self.assertTrue(_pid_alive(self.running.egress_pid))
+        self.assertEqual(_call(self.tool.port, "say", {"m": "hi"}), {"echoed": {"m": "hi"}})
+
+    def test_stop_reaps_the_egress_proxy(self):
+        self.runner.stop(self.running)
+        time.sleep(0.3)
+        self.assertFalse(_pid_alive(self.running.egress_pid))
+
+
+@unittest.skipUnless(_bwrap_ok(), "Linux + nft + non-interactive sudo required")
+class BwrapConfinement(unittest.TestCase):
+    """netguard's cgroup+nft rule actually confines a process it launches: new outbound reaches
+    only the tool's egress proxy port, while any other loopback service and all external hosts are
+    dropped -- exercised through the real sudo->netguard path, the enforcer the runner uses."""
+
+    def test_only_the_proxy_port_is_reachable(self):
+        proxy = _serve_egress_proxy(_free_port(), ["127.0.0.1"])
+        threading.Thread(target=proxy.serve_forever, daemon=True).start()
+        self.addCleanup(proxy.server_close)
+        self.addCleanup(proxy.shutdown)
+        proxy_port = proxy.server_address[1]
+
+        other = socket.socket()  # a second loopback service the tool must NOT reach directly
+        other.bind(("127.0.0.1", 0))
+        other.listen(1)
+        self.addCleanup(other.close)
+        other_port = other.getsockname()[1]
+
+        outfile = tempfile.NamedTemporaryFile(prefix="bwrap-confine-", delete=False)
+        outfile.close()
+        self.addCleanup(os.unlink, outfile.name)
+        probe = (
+            "import socket, sys\n"
+            "def t(host, p):\n"
+            "    try:\n"
+            "        s = socket.create_connection((host, p), 3); s.close(); return 'OK'\n"
+            "    except Exception:\n"
+            "        return 'BLOCKED'\n"
+            "open(sys.argv[3], 'w').write('proxy=%s other=%s external=%s' % (\n"
+            "    t('127.0.0.1', int(sys.argv[1])), t('127.0.0.1', int(sys.argv[2])),\n"
+            "    t('1.1.1.1', 443)))\n"
+        )
+        tool_id = "bwrapconfine"
+        try:
+            subprocess.run(
+                _netguard_argv("run", "--tool", tool_id, "--proxy-port", str(proxy_port), "--",
+                               sys.executable, "-c", probe,
+                               str(proxy_port), str(other_port), outfile.name),
+                capture_output=True, text=True, timeout=30)
+            result = Path(outfile.name).read_text()
+        finally:
+            subprocess.run(_netguard_argv("teardown", "--tool", tool_id),
+                           capture_output=True, timeout=15)
+        self.assertIn("proxy=OK", result)
+        self.assertIn("other=BLOCKED", result)
+        self.assertIn("external=BLOCKED", result)
 
 
 def _docker_ok() -> bool:
