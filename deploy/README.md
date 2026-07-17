@@ -11,6 +11,7 @@ supervises the **broker**; the toolyard and tools run as the admin app starts th
 | File | What it is |
 |---|---|
 | [`toolstack-admin.service`](toolstack-admin.service) | systemd unit **template** for the admin panel (+ the broker it supervises). Ships with placeholders; copy and edit, don't symlink. |
+| [`toolstack-tools.service`](toolstack-tools.service) | systemd unit **template** for the boot-time tool reconcile. Also placeholders; its `User=` / paths / state settings must match the admin unit exactly. See "Tools after a reboot" below. |
 | [`toolstack-admin.env.example`](toolstack-admin.env.example) | example `EnvironmentFile`: the site config (secret backend, Infisical host/vault, toolyard runner). Copy, fill in, `chmod 600`. |
 | [`redeploy-toolstack`](redeploy-toolstack) | one command to pull + refresh the venv + restart the service + restart registered tools. |
 
@@ -96,6 +97,48 @@ systemd restart on its own; the dashboard surfaces broker health, and the unit's
 `Restart=on-failure` only covers the panel. If you'd rather systemd own the broker directly,
 run `python -m broker.server` as its own unit (with the same `EnvironmentFile`) and drop the
 `ExecStartPost`/`ExecStopPost` lines.
+
+## Tools after a reboot
+
+Tool secrets are resolved at start and injected into the tool; the values live nowhere
+else on disk (message-contracts §3). They are written to a temp dir under `/tmp`, which
+the host **clears at boot** (`systemd-tmpfiles`: `D /tmp ...`) — while the container
+runtime **restores the containers that mount it**. The result is the worst kind of
+failure, because it looks fine:
+
+```
+docker ps   ->  toolyard-todoist   Up 4 seconds        # looks healthy
+curl .../health -> 503 {"detail":"missing injected secret: api_key"}
+```
+
+Nothing else re-resolves them: `toolstack-admin`'s `ExecStartPost` starts the *broker*,
+not the tools. So install [`toolstack-tools.service`](toolstack-tools.service) alongside
+the admin unit:
+
+```bash
+sudo cp deploy/toolstack-tools.service /etc/systemd/system/    # edit the EDIT: lines first
+sudo systemctl daemon-reload && sudo systemctl enable --now toolstack-tools
+```
+
+It runs `python -m admin reconcile-tools`, which restarts each tool whose injected secret
+files are missing or whose process is gone, and leaves healthy tools alone. It's
+idempotent and safe to run at any time (`sudo systemctl restart toolstack-tools`), not
+just at boot. A tool you deliberately stopped stays stopped: not-running is an operator
+decision, so only tools recorded as running are repaired.
+
+Two things to get right, both of which silently defeat it:
+
+- **State settings must match the admin unit** (`StateDirectory` / `XDG_*`, or the absence
+  of them). They decide which state file records what's running; if the two units
+  disagree, reconcile reads a foreign or empty state file and cheerfully repairs nothing.
+- **`PrivateTmp` must be off** under the docker runner, in *both* units. The runner
+  bind-mounts a `/tmp` secrets dir into the container, but dockerd resolves that path in
+  the **host** mount namespace — so a private `/tmp` mounts an empty dir and causes
+  exactly the 503 above. (The admin template ships `PrivateTmp=true`; turn it off there
+  when you switch to `TOOLSTACK_RUNNER=docker`.)
+
+Verify it once on a box you can reboot: `sudo reboot`, then `systemctl status
+toolstack-tools` and confirm each tool answers 200 on `/health`.
 
 ## Redeploying
 

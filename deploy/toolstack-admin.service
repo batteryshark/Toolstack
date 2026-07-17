@@ -91,7 +91,13 @@ ReadWritePaths=/opt/toolstack
 #   2. A writable docker config. ProtectHome=true hides ~/.docker, so point DOCKER_CONFIG
 #      at the state dir (set unconditionally below; harmless for the process runner, it
 #      just stops the "Error loading config file: ~/.docker/config.json" warning).
+#   3. PrivateTmp=false. Turn OFF the PrivateTmp=true set above: the runner writes each
+#      tool's secrets to a temp dir and bind-mounts it into the container, but dockerd
+#      resolves that path in the HOST mount namespace. With a private /tmp the container
+#      mounts an empty dir instead, and every tool with secrets serves 503 (its /health
+#      reports "missing injected secret") while the container still reads Up.
 #SupplementaryGroups=docker
+#PrivateTmp=false
 Environment=DOCKER_CONFIG=/var/lib/toolstack/.docker
 
 [Install]

@@ -1,0 +1,85 @@
+# Toolstack tool reconcile: systemd unit TEMPLATE.
+#
+# Why this exists
+#   Toolyard resolves each tool's secrets at start and injects them into the tool's
+#   container; the values deliberately live nowhere else on disk (message-contracts §3).
+#   They are written to a temp dir the host clears at boot (systemd-tmpfiles: `D /tmp`),
+#   while the container runtime restores the containers that mount that dir. So after a
+#   reboot every tool with secrets comes back reading `Up` -- and serves 503 from an empty
+#   /run/secrets. Nothing else re-resolves them: toolstack-admin's ExecStartPost starts the
+#   broker, not the tools. This unit re-resolves and restarts exactly the broken tools, once
+#   the container runtime is up. It is idempotent: healthy tools are left alone, and a tool
+#   you deliberately stopped stays stopped.
+#
+# To deploy (mirrors toolstack-admin.service):
+#   1. cp deploy/toolstack-tools.service /etc/systemd/system/toolstack-tools.service
+#   2. Edit every line marked "EDIT:" -- the service account and the install root --
+#      to match your toolstack-admin.service exactly.
+#   3. systemctl daemon-reload && systemctl enable --now toolstack-tools
+#
+# Verify it does what it claims (do this once, on a box you can reboot):
+#   sudo reboot; then after boot:  systemctl status toolstack-tools
+#   and confirm each tool answers 200:  curl -s localhost:<tool port>/health
+
+[Unit]
+Description=Toolstack tool reconcile (re-resolve secrets the host wiped at boot)
+# docker.service: a repair recreates containers, so the daemon must be up first.
+# toolstack-admin.service: the broker should be serving before its tools return.
+After=network-online.target docker.service toolstack-admin.service
+Wants=network-online.target toolstack-admin.service
+Requires=docker.service
+
+[Service]
+# oneshot + RemainAfterExit: this is a boot-time repair that runs to completion, not a
+# daemon. RemainAfterExit keeps it "active" afterwards so the repair is visible in
+# `systemctl status` rather than looking dead, and so it isn't re-run on every daemon-reload.
+Type=oneshot
+RemainAfterExit=yes
+# EDIT: the service account that owns the Toolstack checkout (same as toolstack-admin).
+User=toolstack
+Group=toolstack
+# EDIT: absolute path to the Toolstack checkout (same root as the ExecStart below).
+WorkingDirectory=/opt/toolstack
+# The same site config toolstack-admin reads: secret backend, Infisical host/vault/
+# credentials dir, and the toolyard runner. Reconcile MUST see identical values, or it
+# would repair tools onto a different runner or backend than the panel started them with.
+EnvironmentFile=-/etc/toolstack/admin.env
+# EDIT: absolute path to the admin venv's python.
+ExecStart=/opt/toolstack/admin/.venv/bin/python -m admin reconcile-tools
+# A repair may pull or build a tool image. Don't let systemd kill it mid-build; the
+# default start timeout (90s) is far too short for a cold image build.
+TimeoutStartSec=900
+
+# --- State location -----------------------------------------------------------
+# MUST match toolstack-admin.service line for line. These route the app to the state
+# file that records which tools are running; if they disagree with the admin unit, this
+# reads an empty/foreign state file and silently repairs nothing. If your admin unit
+# omits these (running as a normal user with a real $HOME), omit them here too.
+StateDirectory=toolstack
+Environment=XDG_STATE_HOME=/var/lib
+Environment=XDG_CONFIG_HOME=/var/lib
+
+# --- Docker tool runner (only when TOOLSTACK_RUNNER=docker) --------------------
+# Same two requirements as toolstack-admin.service: the docker socket (via the docker
+# group) and a writable docker config.
+#SupplementaryGroups=docker
+Environment=DOCKER_CONFIG=/var/lib/toolstack/.docker
+
+# --- Sandboxing (systemd hardening) -------------------------------------------
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# EDIT: point this at your install root (the same root as WorkingDirectory).
+ReadWritePaths=/opt/toolstack
+#
+# PrivateTmp: LEAVE OFF under the docker runner. Toolyard writes each tool's secrets to a
+# temp dir and bind-mounts it into the container, but dockerd resolves that path in the
+# HOST mount namespace -- so with a private /tmp the container mounts an empty dir and every
+# tool with secrets 503s: precisely the failure this unit exists to repair. The same applies
+# to toolstack-admin.service, whose template enables it.
+
+[Install]
+WantedBy=multi-user.target

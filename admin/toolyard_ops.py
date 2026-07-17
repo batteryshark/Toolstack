@@ -102,6 +102,49 @@ def restart(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend
     start(tool_id, tools_root, tool_dirs, secrets_file, backend)
 
 
+def reconcile(tools_root: str, tool_dirs, secrets_file: str,
+              backend: str = "process") -> dict[str, list[str]]:
+    """Restart tools recorded as running whose injected secrets did not survive the host.
+
+    Secrets are resolved at start into a temp dir the host wipes on boot, while the
+    container runtime restores the containers that mount it -- so after a reboot a tool
+    reads ``Up`` while serving 503 from an empty ``/run/secrets``, which is exactly the
+    failure this repairs (message-contracts §3: resolve and inject at boot). Re-resolving
+    is the only fix: the values are deliberately nowhere else on disk.
+
+    Restarts a tool when its injected secret *files* are gone or it isn't alive; a healthy
+    tool is left running, so this is safe to run at any time, not just at boot. Tools absent
+    from the state file are *not* started: not-running is an operator decision, not damage.
+
+    Returns ``{"repaired": [...], "failed": ["id: why", ...]}``. One tool's failure never
+    aborts the rest -- a boot repair should fix what it can and report the remainder, so
+    the caller decides what a partial repair means rather than losing it to an exception.
+    """
+    defs = _all_defs(tools_root, tool_dirs)
+    repaired: list[str] = []
+    failed: list[str] = []
+    for tool_id, record in sorted(_load_state().items()):
+        tool_def = defs.get(tool_id)
+        if tool_def is None:
+            continue  # unregistered since it was started; leave the record for the operator
+        running = RunningTool(**record)
+        # Test for the secret *files*, not the dir: the container runtime recreates a missing
+        # bind-mount source as an empty dir at container start, so the dir is always there and
+        # its existence proves nothing. The tool then reads an empty /run/secrets and 503s
+        # while its container still reports Up. Empty `secrets` -> any() is False -> a tool
+        # with no secrets is never "lost" (nothing to re-resolve).
+        workdir = Path(running.workdir)
+        secrets_lost = any(not (workdir / spec.name).is_file() for spec in tool_def.secrets)
+        if not secrets_lost and get_runner(running.backend).is_alive(running):
+            continue
+        try:
+            restart(tool_id, tools_root, tool_dirs, secrets_file, backend)
+            repaired.append(tool_id)
+        except Exception as exc:  # noqa: BLE001 - report every failure, repair the rest
+            failed.append(f"{tool_id}: {exc}")
+    return {"repaired": repaired, "failed": failed}
+
+
 def remove(tool_id: str, tools_root: str, tool_dirs=()) -> None:
     """Stop a tool if running, then delete its managed folder under ``tools_root``.
 

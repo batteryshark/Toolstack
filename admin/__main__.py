@@ -2,6 +2,7 @@
 
     python3 -m admin set-password         # set/replace the admin login password
     python3 -m admin serve [--port 8780]  # serve on 127.0.0.1 (loopback only)
+    python3 -m admin reconcile-tools      # re-resolve secrets for tools the host broke (boot)
 
 The server refuses to start until a password has been set (fail closed: there
 are no default credentials). ``serve`` imports FastAPI/uvicorn lazily, so
@@ -44,6 +45,29 @@ def _serve(args) -> None:
     uvicorn.run(create_app(), host=settings.admin_host(), port=args.port)
 
 
+def _reconcile_tools(args) -> None:
+    """Repair tools the host left running-but-broken; the boot half of message-contracts §3.
+
+    Runs as its own unit rather than the admin's ``ExecStartPost`` (which starts the broker):
+    a repair may pull or build an image, and blocking the panel's startup on that -- against
+    systemd's start timeout -- would turn a slow tool into a down control plane.
+    """
+    from . import broker_config, settings as _settings, toolyard_ops
+
+    config = broker_config.load()
+    result = toolyard_ops.reconcile(
+        config.tools_root, config.tool_dirs,
+        _settings.tool_secrets_file(), _settings.tool_runner_backend())
+    for tool_id in result["repaired"]:
+        print(f"repaired: {tool_id}")
+    for failure in result["failed"]:
+        print(f"FAILED:   {failure}", file=sys.stderr)
+    if not result["repaired"] and not result["failed"]:
+        print("nothing to repair")
+    if result["failed"]:  # a partial repair is still a failure: surface it to systemd
+        raise SystemExit(1)
+
+
 def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=os.environ.get("TOOLSTACK_LOG_LEVEL", "INFO").upper(),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -56,6 +80,10 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("serve", help="serve the admin web app on 127.0.0.1")
     p.add_argument("--port", type=int, default=8780)
     p.set_defaults(func=_serve)
+
+    p = sub.add_parser("reconcile-tools",
+                       help="restart tools whose injected secrets the host wiped (e.g. at boot)")
+    p.set_defaults(func=_reconcile_tools)
 
     args = parser.parse_args(argv)
     args.func(args)

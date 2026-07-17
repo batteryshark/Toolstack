@@ -72,9 +72,45 @@ def _check_port_free(port: int) -> None:
         s.close()
 
 
+@functools.cache
+def _boot_id() -> str | None:
+    """An id that changes on every reboot, or None where we can't determine one.
+
+    Stamped into each state record so a PID recorded before a reboot is never mistaken for a
+    live process of ours; see `_pids_are_ours`.
+    """
+    try:  # Linux
+        return Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        pass
+    try:  # macOS/BSD: boot time is as good as an id -- it changes on every boot
+        out = subprocess.run(["sysctl", "-n", "kern.boottime"],
+                             capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() or None if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _pids_are_ours(running: "RunningTool") -> bool:
+    """Whether this record's PIDs can still name the processes we spawned.
+
+    The state file outlives the processes in it: after a reboot every PID it holds has been
+    recycled by unrelated processes, and we signal *process groups*, so terminating one would
+    take out a whole innocent group. (`admin.supervisor._is_broker` guards the broker PID for
+    the same reason.) A record stamped with a different -- or unknown -- boot is therefore
+    never signalled; those processes are already dead, so there is nothing to reap anyway.
+    """
+    boot = _boot_id()
+    return boot is not None and running.boot_id == boot
+
+
 def _terminate(pid: str | int | None) -> None:
     """SIGTERM a detached process group (a setpgroup=0 leader) and reap it; best-effort.
-    Shared by the write proxy, the egress proxy, the log follower, and start()'s cleanup."""
+    Shared by the write proxy, the egress proxy, the log follower, and start()'s cleanup.
+
+    Callers holding a *persisted* pid must gate this on `_pids_are_ours` first; the pid is
+    taken at face value here, which is only safe for one we spawned in this process.
+    """
     if pid is None:
         return
     try:
@@ -114,6 +150,9 @@ class RunningTool:
     log_path: str | None = None
     egress_pid: str | None = None  # per-tool egress proxy pid (tools with an egress allowlist)
     launcher_pid: str | None = None  # sudo/netguard launcher pid to reap (bwrap backend)
+    # Boot this record's pids belong to. Defaults to None so a record written before this
+    # field existed reads back as "unknown boot" -> its pids are never signalled.
+    boot_id: str | None = None
 
 
 def _write_secrets(tool_id: str, secrets: dict[str, str]) -> str:
@@ -195,17 +234,20 @@ def _start_egress_proxy(allow: tuple[str, ...]) -> tuple[str, int]:
 
 
 def _stop_proxy(running: RunningTool) -> None:
-    _terminate(running.proxy_pid)
+    if _pids_are_ours(running):
+        _terminate(running.proxy_pid)
     if running.proxy_dir:
         shutil.rmtree(running.proxy_dir, ignore_errors=True)
 
 
 def _stop_log_follower(running: RunningTool) -> None:
-    _terminate(running.log_pid)
+    if _pids_are_ours(running):
+        _terminate(running.log_pid)
 
 
 def _stop_egress_proxy(running: RunningTool) -> None:
-    _terminate(running.egress_pid)
+    if _pids_are_ours(running):
+        _terminate(running.egress_pid)
 
 
 def _start_docker_log_follower(container: str, log_path: Path) -> str:
@@ -329,7 +371,8 @@ class ProcessRunner:
                 os.close(log_fd)
             child_pid = pid  # track so a readiness failure (below) reaps it, not just kills it
             running = RunningTool(tool_def.id, tool_def.port, self.backend, str(pid), secrets_dir,
-                                  proxy_pid, proxy_dir, log_path=str(log_path), egress_pid=egress_pid)
+                                  proxy_pid, proxy_dir, log_path=str(log_path), egress_pid=egress_pid,
+                                  boot_id=_boot_id())
             # Readiness: a bad command (missing file, import error) execs and exits at once.
             # Catch it now (with the logfile to diagnose) instead of recording a phantom
             # "running" tool that 502s every call.
@@ -344,15 +387,18 @@ class ProcessRunner:
             raise
 
     def stop(self, running: RunningTool) -> None:
-        pid = int(running.handle)
-        try:
-            os.killpg(pid, signal.SIGTERM)  # pgid == pid (setpgroup=0)
-        except (ProcessLookupError, PermissionError):
-            pass
-        try:
-            os.waitpid(pid, 0)  # reap if it is our child (no-op across processes)
-        except (ChildProcessError, ProcessLookupError):
-            pass
+        # The handle is a pid here, so it is only safe to signal while it still names our
+        # process: after a reboot it is some unrelated process's group (see _pids_are_ours).
+        if _pids_are_ours(running):
+            pid = int(running.handle)
+            try:
+                os.killpg(pid, signal.SIGTERM)  # pgid == pid (setpgroup=0)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                os.waitpid(pid, 0)  # reap if it is our child (no-op across processes)
+            except (ChildProcessError, ProcessLookupError):
+                pass
         _stop_proxy(running)
         _stop_log_follower(running)
         _stop_egress_proxy(running)
@@ -561,7 +607,8 @@ class BwrapRunner:
                 os.close(log_fd)
             running = RunningTool(tool_def.id, tool_def.port, self.backend, tool_def.id,
                                   secrets_dir, proxy_pid, proxy_dir, log_path=str(log_path),
-                                  egress_pid=egress_pid, launcher_pid=str(launcher_pid))
+                                  egress_pid=egress_pid, launcher_pid=str(launcher_pid),
+                                  boot_id=_boot_id())
             # Readiness: netguard joins the cgroup before exec, so after a short settle a live
             # tool leaves the cgroup non-empty while one that exited at once leaves it empty.
             time.sleep(_SANDBOX_READINESS_WAIT)
@@ -582,7 +629,8 @@ class BwrapRunner:
         # directly; then reap the sudo launcher and clean up the proxies + secrets dir.
         subprocess.run(_netguard_argv("teardown", "--tool", running.handle),
                        capture_output=True, timeout=15)
-        _terminate(running.launcher_pid)
+        if _pids_are_ours(running):
+            _terminate(running.launcher_pid)
         _stop_proxy(running)
         _stop_egress_proxy(running)
         shutil.rmtree(running.workdir, ignore_errors=True)
@@ -662,7 +710,8 @@ class DockerRunner:
             self._docker(run_args, _DOCKER_RUN_TIMEOUT, check=True)
             log_pid = _start_docker_log_follower(name, log_path)
             running = RunningTool(tool_def.id, tool_def.port, self.backend, name, secrets_dir,
-                                  proxy_pid, proxy_dir, log_pid=log_pid, log_path=str(log_path))
+                                  proxy_pid, proxy_dir, log_pid=log_pid, log_path=str(log_path),
+                                  boot_id=_boot_id())
             # Readiness: a container that exits at once (bad image / port clash) must not record
             # as running, then 502 every call. Settle briefly first: `docker run -d` returns at
             # create, so an immediate crash can still read Running=true for a moment.

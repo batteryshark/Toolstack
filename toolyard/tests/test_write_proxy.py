@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 from toolyard.config import SecretSpec, ToolDef, load
-from toolyard.runner import RunningTool, _start_write_proxy, _stop_proxy
+from toolyard.runner import RunningTool, _boot_id, _start_write_proxy, _stop_proxy
 from toolyard.secrets import FileBackend
 from toolyard.write_proxy import serve
 
@@ -100,9 +100,11 @@ class WriteProxyThroughRunner(unittest.TestCase):
         proxy_pid, proxy_dir = _start_write_proxy(tool, "file", str(secrets_file))
         self.assertIsNotNone(proxy_pid)
         self.assertIsNotNone(proxy_dir)
+        # boot_id: only a record stamped with the *current* boot has its pids signalled,
+        # so a hand-built record standing in for a live start must claim this boot too.
         running = RunningTool(tool_id="demo", port=4601, backend="process", handle="0",
                               workdir=str(secrets_file.parent),
-                              proxy_pid=proxy_pid, proxy_dir=proxy_dir)
+                              proxy_pid=proxy_pid, proxy_dir=proxy_dir, boot_id=_boot_id())
         self.addCleanup(_stop_proxy, running)  # never leak the subprocess if we fail
 
         sock = Path(proxy_dir) / "secrets.sock"
@@ -121,6 +123,34 @@ class WriteProxyThroughRunner(unittest.TestCase):
         _stop_proxy(running)
         self.assertFalse(Path(proxy_dir).exists())
         self.assertFalse(_pid_alive(int(proxy_pid)), "proxy process survived stop")
+
+    def test_stop_never_signals_pids_from_another_boot(self):
+        """A state record outlives the processes in it: after a reboot every pid it holds
+        has been recycled by something unrelated, and _stop_proxy signals a process *group*.
+        A record stamped with a foreign (or absent) boot must therefore be left alone -- its
+        real processes are already dead, so there is nothing to reap and everything to lose."""
+        tool = self._write_tool(writable=True)
+        secrets_dir = tempfile.mkdtemp(prefix="tsr-boot-sec-")
+        self.addCleanup(shutil.rmtree, secrets_dir, ignore_errors=True)
+        secrets_file = Path(secrets_dir) / "secrets.toml"
+        secrets_file.write_text('[demo]\nTOKEN = "old"\n')
+
+        proxy_pid, proxy_dir = _start_write_proxy(tool, "file", str(secrets_file))
+        live = RunningTool(tool_id="demo", port=4601, backend="process", handle="0",
+                           workdir=str(secrets_file.parent),
+                           proxy_pid=proxy_pid, proxy_dir=proxy_dir, boot_id=_boot_id())
+        self.addCleanup(_stop_proxy, live)  # real cleanup, whatever the assertions do
+
+        for stale_boot in ("a-previous-boot", None):
+            with self.subTest(boot_id=stale_boot):
+                stale = RunningTool(tool_id="demo", port=4601, backend="process", handle="0",
+                                    workdir=str(secrets_file.parent), proxy_pid=proxy_pid,
+                                    proxy_dir=None,  # None: don't rmtree the live proxy's dir
+                                    boot_id=stale_boot)
+                _stop_proxy(stale)
+                self.assertTrue(_pid_alive(int(proxy_pid)),
+                                f"stop killed a pid from boot {stale_boot!r}; it could name "
+                                "any unrelated process now")
 
     def test_no_proxy_when_no_writable_secret(self):
         tool = self._write_tool(writable=False)
