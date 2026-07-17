@@ -12,6 +12,7 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -38,6 +39,16 @@ REPO = Path(__file__).resolve().parents[2]
 TOOL_TOML = REPO / "tools" / "echo_api" / "toolyard.toml"
 TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
 SECRET = "dev-secret-123"
+
+# A pid value used as a mock-return value in tests that simulate `posix_spawn`. Why
+# this high: if a future refactor accidentally lets the value reach `os.killpg` / `os.kill`
+# without the test's mock being in scope, the OS will report `ProcessLookupError` (no
+# such pid) rather than signal something real. Picked 2_147_483_647 (INT_MAX) per the
+# repo-wide safety note in AGENTS.md: it is greater than the typical `pid_max` on Linux
+# (default 4_194_304, max 2_147_483_647) and macOS (99_999). The chance of a live process
+# ever carrying that exact pid is negligible (≈1 in 2^31). Belt-and-suspenders for the
+# "I don't ever want a test to kill pid 1 again" guarantee.
+_TEST_PID = 2_147_483_647
 
 
 def _free_port() -> int:
@@ -303,11 +314,11 @@ class RestRunnerConfig(unittest.TestCase):
              mock.patch("toolyard.runner._write_secrets", return_value=str(self.secrets_dir)), \
              mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
              mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
-             mock.patch("os.posix_spawn", return_value=123) as spawn:
+             mock.patch("os.posix_spawn", return_value=_TEST_PID) as spawn:
             running = ProcessRunner().start(self.tool, {})
         env = spawn.call_args.args[2]
         self.assertEqual(env["TOOLSTACK_TOOL_CONFIG"], str(self.tool_dir / "toolyard.toml"))
-        self.assertEqual(running.handle, "123")
+        self.assertEqual(running.handle, str(_TEST_PID))
 
     def test_process_runner_binds_forwarder_to_this_interpreter(self):
         # The forwarder's `python3 -m toolstack_forwarder` must run under the broker's own
@@ -317,7 +328,7 @@ class RestRunnerConfig(unittest.TestCase):
              mock.patch("toolyard.runner._write_secrets", return_value=str(self.secrets_dir)), \
              mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
              mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
-             mock.patch("os.posix_spawn", return_value=123) as spawn:
+             mock.patch("os.posix_spawn", return_value=_TEST_PID) as spawn:
             ProcessRunner().start(self.tool, {})
         script = spawn.call_args.args[1][2]  # ["/bin/sh", "-c", script]
         self.assertIn(f"exec {shlex.quote(sys.executable)} -m toolstack_forwarder", script)
@@ -370,6 +381,79 @@ def _pid_alive(pid) -> bool:
         return True
     except OSError:
         return False
+
+
+class TerminateSafety(unittest.TestCase):
+    """Belt-and-suspenders: `_terminate` must refuse to signal pids that POSIX interprets
+    as "everyone" (-1, 0) or "init" (1). The runner only ever calls it with its own
+    posix_spawn children's pids, so any value <= 1 reaching this code path means a
+    sentinel leaked through; never signal wrongly. The two signal APIs (`killpg`,
+    `waitpid`) are mocked so a regression would surface as `killpg` / `waitpid`
+    being called with an unsafe value."""
+
+    def test_terminate_refuses_pid_minus_one(self):
+        from toolyard.runner import _terminate
+        with mock.patch("toolyard.runner.os.killpg") as killpg, \
+             mock.patch("toolyard.runner.os.waitpid") as waitpid:
+            _terminate(-1)
+        killpg.assert_not_called()
+        waitpid.assert_not_called()
+
+    def test_terminate_refuses_pid_zero(self):
+        from toolyard.runner import _terminate
+        with mock.patch("toolyard.runner.os.killpg") as killpg, \
+             mock.patch("toolyard.runner.os.waitpid") as waitpid:
+            _terminate(0)
+        killpg.assert_not_called()
+        waitpid.assert_not_called()
+
+    def test_terminate_refuses_pid_one(self):
+        from toolyard.runner import _terminate
+        with mock.patch("toolyard.runner.os.killpg") as killpg, \
+             mock.patch("toolyard.runner.os.waitpid") as waitpid:
+            _terminate(1)
+        killpg.assert_not_called()
+        waitpid.assert_not_called()
+
+    def test_terminate_refuses_string_zero(self):
+        from toolyard.runner import _terminate
+        with mock.patch("toolyard.runner.os.killpg") as killpg, \
+             mock.patch("toolyard.runner.os.waitpid") as waitpid:
+            _terminate("0")
+        killpg.assert_not_called()
+        waitpid.assert_not_called()
+
+    def test_terminate_refuses_non_numeric_handle(self):
+        # Docker container names land here as `running.handle`; they're not killpg targets.
+        from toolyard.runner import _terminate
+        with mock.patch("toolyard.runner.os.killpg") as killpg, \
+             mock.patch("toolyard.runner.os.waitpid") as waitpid:
+            _terminate("toolyard-echo")
+        killpg.assert_not_called()
+        waitpid.assert_not_called()
+
+    def test_terminate_swallows_already_gone_pids(self):
+        # A real runner cleanup usually calls _terminate with a pid that has just exited
+        # (or one we never spawned, after a crash). The existing ProcessLookupError path
+        # is what we want here, NOT the new <=1 refusal.
+        from toolyard.runner import _terminate
+        with mock.patch("toolyard.runner.os.killpg",
+                        side_effect=ProcessLookupError) as killpg, \
+             mock.patch("toolyard.runner.os.waitpid",
+                        side_effect=ChildProcessError) as waitpid:
+            _terminate(_TEST_PID)  # safe sentinel value (well above any pid_max)
+        killpg.assert_called_once_with(_TEST_PID, signal.SIGTERM)
+        waitpid.assert_called_once_with(_TEST_PID, 0)
+
+    def test_terminate_none_is_a_noop(self):
+        # Already handled by the early `if pid is None: return`, but pinned so a future
+        # refactor can't break it.
+        from toolyard.runner import _terminate
+        with mock.patch("toolyard.runner.os.killpg") as killpg, \
+             mock.patch("toolyard.runner.os.waitpid") as waitpid:
+            _terminate(None)
+        killpg.assert_not_called()
+        waitpid.assert_not_called()
 
 
 class SeatbeltProfile(unittest.TestCase):
@@ -710,6 +794,116 @@ class DockerRunnerE2E(unittest.TestCase):
         self.assertEqual(_post_unix(sock, "api_key", "rotated"), 200)
         with secrets_file.open("rb") as f:
             self.assertEqual(tomllib.load(f)["echowp"]["API_KEY"], "rotated")
+
+
+class SpsRegistration(unittest.TestCase):
+    """Phase 2: the runner mints an E_SECRET, registers the tool with SPS, and
+    injects TOOLSTACK_E_SECRET + SPS connection params into the child env. The
+    `secrets` arg is supplied for backward compat (legacy host-disk path); the
+    SPS path uses `tool_def.secrets` for the CS_TUPLE list."""
+
+    def _tool(self):
+        # Same shape as the echo_api fixture but with [[secrets]] entries
+        # so the SPS CS_TUPLE list is non-empty.
+        d = Path(tempfile.mkdtemp(prefix="tsr-sps-"))
+        self.addCleanup(shutil.rmtree, str(d), ignore_errors=True)
+        (d / "toolyard.toml").write_text(
+            'id = "echosps"\ntype = "api"\n'
+            '[entrypoint]\nport = 4701\ncommand = "python3 echo.py"\n'
+            '[[secrets]]\nname = "api_key"\nfield = "API_KEY"\nwritable = false\n'
+        )
+        return dataclasses.replace(load(d / "toolyard.toml"), port=_free_port())
+
+    def test_runner_mints_e_secret_and_registers(self):
+        tool = self._tool()
+        runner = ProcessRunner()
+
+        with mock.patch("toolyard.runner._check_port_free"), \
+             mock.patch("toolyard.runner._check_sps_env"), \
+             mock.patch("toolyard.runner._sps_register") as reg, \
+             mock.patch("toolyard.runner._sps_unregister"), \
+             mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+             mock.patch("toolyard.runner._start_egress_proxy", return_value=("999", 0)), \
+             mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
+             mock.patch("os.posix_spawn", return_value=123) as spawn, \
+             mock.patch.dict(os.environ,
+                              {"TOOLSTACK_SPS_ENV": "/tmp/spfake.env", "TOOLSTACK_SPS_SKIP": "0"},
+                              clear=False):
+            with mock.patch("os.path.exists", return_value=True):
+                running = runner.start(tool, {})
+
+        self.assertIsNotNone(running.e_secret)
+        self.assertGreaterEqual(len(running.e_secret), 32)
+        reg.assert_called_once()
+        args = reg.call_args.args
+        self.assertEqual(args[0].id, "echosps")
+        self.assertEqual(args[1], running.e_secret)
+
+        env = spawn.call_args.args[2]
+        self.assertEqual(env["TOOLSTACK_E_SECRET"], running.e_secret)
+        self.assertIn("TOOLSTACK_SPS_HOST", env)
+        self.assertIn("TOOLSTACK_SPS_PORT", env)
+        self.assertIn("TOOLSTACK_SPS_CA", env)
+
+    def test_runner_skips_sps_when_env_skip_set(self):
+        tool = self._tool()
+        runner = ProcessRunner()
+        with mock.patch("toolyard.runner._check_port_free"), \
+             mock.patch("toolyard.runner._sps_register") as reg, \
+             mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+             mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
+             mock.patch("os.posix_spawn", return_value=123) as spawn, \
+             mock.patch.dict(os.environ, {"TOOLSTACK_SPS_SKIP": "1"}, clear=False):
+            running = runner.start(tool, {})
+        reg.assert_not_called()
+        self.assertIsNone(running.e_secret)
+        env = spawn.call_args.args[2]
+        self.assertNotIn("TOOLSTACK_E_SECRET", env)
+
+    def test_runner_skips_sps_when_env_file_missing(self):
+        tool = self._tool()
+        runner = ProcessRunner()
+        with mock.patch("toolyard.runner._check_port_free"), \
+             mock.patch("toolyard.runner._sps_register") as reg, \
+             mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+             mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
+             mock.patch("os.posix_spawn", return_value=123), \
+             mock.patch.dict(os.environ, {"TOOLSTACK_SPS_ENV": "/tmp/does-not-exist.env",
+                                          "TOOLSTACK_SPS_SKIP": "0"}, clear=False):
+            running = runner.start(tool, {})
+        reg.assert_not_called()
+        self.assertIsNone(running.e_secret)
+
+    def test_stop_calls_sps_unregister(self):
+        tool = self._tool()
+        runner = ProcessRunner()
+        with mock.patch("toolyard.runner._check_port_free"), \
+             mock.patch("toolyard.runner._check_sps_env"), \
+             mock.patch("toolyard.runner._sps_register"), \
+             mock.patch("toolyard.runner._sps_unregister") as unreg, \
+             mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+             mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
+             mock.patch("os.posix_spawn", return_value=123), \
+             mock.patch.dict(os.environ,
+                              {"TOOLSTACK_SPS_ENV": "/tmp/spfake.env", "TOOLSTACK_SPS_SKIP": "0"},
+                              clear=False), \
+             mock.patch("os.path.exists", return_value=True):
+            running = runner.start(tool, {})
+            runner.stop(running)
+        unreg.assert_called_once()
+        self.assertEqual(unreg.call_args.args[0], "echosps")
+
+
+class MintEphemeral(unittest.TestCase):
+    """Phase 2: E_SECRET is 64 random bytes -> 128 hex chars."""
+
+    def test_e_secret_shape(self):
+        from toolyard.runner import _mint_e_secret
+        e1 = _mint_e_secret()
+        e2 = _mint_e_secret()
+        self.assertEqual(len(e1), 128)
+        self.assertTrue(all(c in "0123456789abcdef" for c in e1))
+        self.assertNotEqual(e1, e2)
 
 
 if __name__ == "__main__":
