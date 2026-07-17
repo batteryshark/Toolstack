@@ -100,7 +100,13 @@ class WriteProxyThroughRunner(unittest.TestCase):
         proxy_pid, proxy_dir = _start_write_proxy(tool, "file", str(secrets_file))
         self.assertIsNotNone(proxy_pid)
         self.assertIsNotNone(proxy_dir)
-        running = RunningTool(tool_id="demo", port=4601, backend="process", handle="0",
+        # `handle` is the tool's process pid; in this test we never spawn the tool itself
+        # (only the write proxy), so `handle` is not used for any kill. Use an obvious
+        # non-numeric sentinel so that, if a future test starts passing `handle` through a
+        # `_terminate(pid)` path, `int(...)` raises ValueError instead of silently calling
+        # `os.killpg(0, ...)` (signals the caller's process group) or `os.killpg(1, ...)`
+        # (signals init). Belt-and-suspenders for the "kill pid 1" footgun.
+        running = RunningTool(tool_id="demo", port=4601, backend="process", handle="unused",
                               workdir=str(secrets_file.parent),
                               proxy_pid=proxy_pid, proxy_dir=proxy_dir)
         self.addCleanup(_stop_proxy, running)  # never leak the subprocess if we fail
