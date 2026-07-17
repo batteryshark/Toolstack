@@ -42,7 +42,7 @@ sps = "sps.cli:main"                       # the secrets procurement service
 [tool.setuptools]
 # Explicit list (not auto-discovery) so the board dirs (.ordna/, tasks/) and the
 # dep-carrying admin package are never swept into the distribution.
-packages = ["broker", "toolyard", "client", "toolstack_forwarder", "sps"]
+packages = ["broker", "toolyard", "client", "toolstack_forwarder", "sps", "sps.plugins"]
 
 
 

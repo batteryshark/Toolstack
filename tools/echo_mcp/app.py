@@ -8,11 +8,10 @@ serves the streamable-HTTP transport at ``POST /mcp`` and the broker is the MCP
 key on ``echo-mcp.<op>`` exactly like an api tool. The op names here (``say`` /
 ``whoami``) deliberately mirror the api echo so the two transports are easy to compare.
 
-Everything else is the same tool contract: it binds the port the toolyard gives it,
-reads secrets from ``$TOOLSTACK_SECRETS_DIR``, never sees a broker token, and supports
-the same optional ``broker_secret`` defense-in-depth check (the ``X-Toolstack-Secret``
-header). Broker request context (request id + caller) arrives in the MCP call's
-``params._meta`` rather than a JSON body; ``whoami`` reads it from there.
+Phase 3: secrets come from SPS via the SDK at boot (``TOOLSTACK_E_SECRET``
++ ``TOOLSTACK_SPS_URL`` env vars); the legacy ``broker_secret`` file fallback
+is gone. Defense in depth: if ``$TOOLSTACK_E_SECRET`` is set, the
+``X-Toolstack-Secret`` header must match it. Without an E_SECRET the check is off.
 
 Stdlib only (``http.server``), so it runs as a bare process or in a container unchanged.
 """
@@ -22,17 +21,14 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-SECRETS_DIR = os.environ.get("TOOLSTACK_SECRETS_DIR", "/run/secrets")
+from sps.tool_sdk import SecretClient
+
 PORT = int(os.environ.get("TOOLSTACK_PORT", "4611"))
 BIND = os.environ.get("TOOLSTACK_BIND", "127.0.0.1")
 PROTOCOL_VERSION = "2025-06-18"
-# A fixed session id is enough to exercise the round-trip: the broker reads it off the
-# initialize response and echoes it back on later requests. A real multi-client server
-# would mint one per session; this single-purpose demo tool needs only the mechanism.
 SESSION_ID = "echo-mcp-session"
 
-# The tools this server exposes. Names match the toolyard ops (the broker calls
-# tools/call with name = op). inputSchema is standard JSON Schema, surfaced by tools/list.
+# The tools this server exposes.
 TOOLS = [
     {
         "name": "say",
@@ -50,19 +46,19 @@ TOOLS = [
 ]
 
 
-def secret(name: str) -> str:
-    with open(os.path.join(SECRETS_DIR, name), encoding="utf-8") as f:
-        return f.read().strip()
+try:
+    _secrets = SecretClient.from_env("echo-mcp")
+    _secrets_active = True
+except RuntimeError:
+    _secrets = None
+    _secrets_active = False
 
 
 def verify_broker(headers) -> bool:
-    """Opt-in: if a ``broker_secret`` is provisioned, require the broker's
-    ``X-Toolstack-Secret`` header to match it (constant-time). No file (or empty) -> the
-    check is off, mirroring the broker sending no header. Same contract as the api echo."""
-    try:
-        expected = secret("broker_secret")
-    except FileNotFoundError:
-        return True
+    """Compare the request's X-Toolstack-Secret against the E_SECRET we
+    booted with (Phase 4 re-sources the header from this value). Without
+    an E_SECRET the check is off, mirroring the no-channel-secret branch."""
+    expected = os.environ.get("TOOLSTACK_E_SECRET") or ""
     if not expected:
         return True
     presented = headers.get("X-Toolstack-Secret", "")
@@ -70,8 +66,6 @@ def verify_broker(headers) -> bool:
 
 
 def call_tool(name: str, arguments: dict, meta: dict):
-    """Run one MCP tool. Returns a plain dict (the structured result) or raises
-    KeyError for an unknown tool (mapped to a JSON-RPC method error by the caller)."""
     if name == "say":
         return {"echoed": arguments}
     if name == "whoami":
@@ -81,13 +75,11 @@ def call_tool(name: str, arguments: dict, meta: dict):
 
 
 def dispatch(message: dict):
-    """Map one JSON-RPC request to a (result_or_None, error_or_None) pair. A
-    notification (no ``id``) returns (None, None), nothing to answer."""
     method = message.get("method")
     msg_id = message.get("id")
     params = message.get("params") or {}
 
-    if msg_id is None:  # a notification (e.g. notifications/initialized): no reply
+    if msg_id is None:
         return None, None
 
     if method == "initialize":
@@ -108,7 +100,6 @@ def dispatch(message: dict):
             structured = call_tool(name, arguments, meta)
         except KeyError:
             return None, {"code": -32602, "message": f"unknown tool: {name!r}"}
-        # Standard tools/call result: a text content block plus the structured form.
         return {
             "content": [{"type": "text", "text": json.dumps(structured)}],
             "structuredContent": structured,
@@ -137,7 +128,7 @@ class _Handler(BaseHTTPRequestHandler):
                                     "error": {"code": -32700, "message": "parse error"}})
 
         result, error = dispatch(message)
-        if message.get("id") is None:  # notification -> 202 Accepted, no body
+        if message.get("id") is None:
             self.send_response(202)
             self.end_headers()
             return
@@ -146,7 +137,6 @@ class _Handler(BaseHTTPRequestHandler):
             envelope["error"] = error
         else:
             envelope["result"] = result
-        # Pin the session on initialize so the broker can echo it back on later calls.
         extra = {"Mcp-Session-Id": SESSION_ID} if message.get("method") == "initialize" else {}
         self._send(200, envelope, extra)
 
