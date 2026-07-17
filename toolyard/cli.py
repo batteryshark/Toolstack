@@ -46,7 +46,6 @@ def cmd_up(args) -> None:
     defs = {d.id: d for d in discover(root)}
     targets = [args.id] if args.id else list(defs)
     runner = get_runner(args.backend)
-    backend = get_backend(args.secret_backend, secrets_file=secrets_file)
     state = _load_state()
     for tool_id in targets:
         if tool_id not in defs:
@@ -54,8 +53,17 @@ def cmd_up(args) -> None:
         if tool_id in state:
             print(f"{tool_id}: already running")
             continue
+        tool_def = defs[tool_id]
+        # Per tool, not once for the batch: each tool resolves under its own machine
+        # identity, so one tool's start can never read another's secrets. A tool with no
+        # secrets needs no backend at all (every resolve() is empty for it anyway).
+        secrets = {}
+        if tool_def.secrets:
+            backend = get_backend(args.secret_backend, secrets_file=secrets_file,
+                                  tool_def=tool_def)
+            secrets = backend.resolve(tool_def)
         running = runner.start(
-            defs[tool_id], backend.resolve(defs[tool_id]),
+            tool_def, secrets,
             secret_backend=args.secret_backend, secrets_file=secrets_file)
         state[tool_id] = asdict(running)
         print(f"{tool_id}: started ({running.backend}) on 127.0.0.1:{running.port}")

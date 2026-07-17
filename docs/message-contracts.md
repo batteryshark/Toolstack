@@ -114,8 +114,22 @@ Toolyard resolves that tool's fields and injects them into the container's
 backend is pluggable via `$TOOLSTACK_SECRET_BACKEND` (`toolyard.secrets.get_backend`):
 `file` (dev TOML), `vault` (a local **encrypted-at-rest** file: scrypt-stretched
 passphrase + Fernet AEAD, for laptop/self-contained deploys; needs the `cryptography`
-extra), or `infisical` (logs in with the Toolstack-wide machine identity). The broker holds no
-backend credential for any of them.
+extra), or `infisical`. The broker holds no backend credential for any of them.
+
+Under `infisical`, **each tool logs in as its own machine identity**, scoped in Infisical
+to that tool's own secret path: a tool can neither read nor patch another tool's secrets,
+and that containment is enforced by the backend itself rather than only by toolyard's §4
+allowlist. Identities live one file per tool in `$TOOLSTACK_INFISICAL_CREDENTIALS_DIR`
+(`<item>.env`, holding `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET`), keyed on the
+secret path (`item`) and falling back to the tool id; toolyard therefore builds one
+backend **per tool** (`get_backend(..., tool_def=...)`), never one per batch. A single
+identity exported in the process env is the dev/CI fallback and carries no such isolation.
+
+> **Deployment gaps (2026-07-17).** Two deviations remain: secrets are bind-mounted from a
+> host `/tmp` dir rather than injected into a tmpfs, so resolved values *do* briefly touch
+> host disk; and nothing re-resolves at boot -- `ExecStartPost` starts only the broker, so
+> after a reboot dockerd restores the old containers against a wiped `/tmp` and every tool
+> with secrets serves 503 while still reading `Up`.
 
 ### 4. Tool container → Toolyard (writable secrets)
 

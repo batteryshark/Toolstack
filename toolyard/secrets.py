@@ -272,7 +272,7 @@ class InfisicalCredentials:
 
 
 def _infisical_credentials_from_env() -> InfisicalCredentials:
-    """Read the Toolstack-wide Infisical machine identity from the process env."""
+    """Read a single Infisical machine identity from the process env (dev/CI fallback)."""
     client_id = (
         os.environ.get("TOOLSTACK_INFISICAL_CLIENT_ID")
         or os.environ.get("INFISICAL_CLIENT_ID")
@@ -289,13 +289,86 @@ def _infisical_credentials_from_env() -> InfisicalCredentials:
     return InfisicalCredentials(client_id, client_secret)
 
 
+def _parse_env_file(path: Path) -> dict[str, str]:
+    """Parse a `KEY=value` env file (`#` comments, optional `export `, optional quotes)."""
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.removeprefix("export ").partition("=")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        values[key.strip()] = value
+    return values
+
+
+def _credentials_dir() -> Path | None:
+    directory = os.environ.get("TOOLSTACK_INFISICAL_CREDENTIALS_DIR")
+    return Path(directory) if directory else None
+
+
+def _identity_keys(tool_def: ToolDef) -> list[str]:
+    """Credential-file basenames to try for a tool, most specific first.
+
+    Each tool authenticates as its *own* machine identity, scoped in Infisical to just
+    its own secret path -- so a compromised or buggy tool cannot read or patch another
+    tool's secrets. The identity is therefore keyed on `item` (the secret path), which
+    is what Infisical actually scopes, falling back to the tool id.
+    """
+    items = [s.item for s in tool_def.secrets if s.item]
+    keys = list(dict.fromkeys(items))  # distinct, order-preserving
+    if tool_def.id not in keys:
+        keys.append(tool_def.id)
+    return keys
+
+
+def _infisical_credentials_for(tool_def: ToolDef | None) -> InfisicalCredentials:
+    """Load the machine identity for one tool from `$TOOLSTACK_INFISICAL_CREDENTIALS_DIR`.
+
+    Falls back to the process env when the dir is unset or holds no file for this tool,
+    which keeps dev/CI (one identity exported in the env) working unchanged.
+    """
+    directory = _credentials_dir()
+    if directory is None or tool_def is None:
+        return _infisical_credentials_from_env()
+
+    found = [(key, directory / f"{key}.env") for key in _identity_keys(tool_def)]
+    found = [(key, path) for key, path in found if path.is_file()]
+    if not found:
+        return _infisical_credentials_from_env()
+    # A tool whose secrets span several paths would need one identity per path to keep the
+    # isolation intact; silently picking the first would quietly widen its access instead.
+    if len(found) > 1:
+        raise ValueError(
+            f"{tool_def.id} maps to multiple Infisical identities "
+            f"({', '.join(key for key, _ in found)}); one identity per tool is supported"
+        )
+    path = found[0][1]
+    values = _parse_env_file(path)
+    client_id = values.get("INFISICAL_CLIENT_ID") or values.get("TOOLSTACK_INFISICAL_CLIENT_ID")
+    client_secret = (
+        values.get("INFISICAL_CLIENT_SECRET") or values.get("TOOLSTACK_INFISICAL_CLIENT_SECRET")
+    )
+    if not client_id or not client_secret:
+        raise ValueError(
+            f"{path} needs INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET "
+            f"(identity for {tool_def.id})"
+        )
+    return InfisicalCredentials(client_id, client_secret)
+
+
 class InfisicalBackend:
     """Resolve secrets from Infisical via its HTTP API (stdlib `urllib` only).
 
-    Toolstack authenticates once with the deployment's Infisical machine identity.
-    The Infisical project/vault is deployment config (`$TOOLSTACK_INFISICAL_VAULT`).
-    A `[[secrets]]` entry maps to an Infisical lookup of `item` (secret path) /
-    `field` (secret key). `item` defaults to the tool id.
+    An instance authenticates as **one tool's** machine identity, scoped in Infisical to
+    that tool's own secret path, so a tool can neither read nor patch another tool's
+    secrets (see `_infisical_credentials_for`). Build one per tool via
+    `get_backend(..., tool_def=...)`; a shared instance would hand every tool the reach of
+    whichever identity built it. The Infisical project/vault is deployment config
+    (`$TOOLSTACK_INFISICAL_VAULT`). A `[[secrets]]` entry maps to an Infisical lookup of
+    `item` (secret path) / `field` (secret key). `item` defaults to the tool id.
     """
 
     def __init__(
@@ -323,15 +396,19 @@ class InfisicalBackend:
         self._project_ids: dict[str, str] = {}
 
     @classmethod
-    def from_env(cls) -> "InfisicalBackend":
-        """Build from the `TOOLSTACK_INFISICAL_*` environment variables."""
+    def from_env(cls, tool_def: ToolDef | None = None) -> "InfisicalBackend":
+        """Build from the `TOOLSTACK_INFISICAL_*` environment variables.
+
+        `tool_def` selects that tool's own machine identity (see
+        `_infisical_credentials_for`); without it, the identity comes from the env.
+        """
         def env(name: str, default: str | None = None) -> str | None:
             return os.environ.get(f"TOOLSTACK_INFISICAL_{name}") or default
 
         host = env("HOST")
         if not host:
             raise ValueError("infisical backend needs TOOLSTACK_INFISICAL_HOST")
-        creds = _infisical_credentials_from_env()
+        creds = _infisical_credentials_for(tool_def)
         return cls(
             host=host,
             client_id=creds.client_id,
@@ -488,12 +565,18 @@ class InfisicalBackend:
         raise transient  # exhausted retries on a transient error
 
 
-def get_backend(name: str | None = None, *, secrets_file: str | Path | None = None):
+def get_backend(name: str | None = None, *, secrets_file: str | Path | None = None,
+                tool_def: ToolDef | None = None):
     """Return a secret backend by name (default `$TOOLSTACK_SECRET_BACKEND` or `file`).
 
     `file` reads the dev TOML (`secrets_file` or `$TOOLSTACK_SECRETS_FILE`); `vault`
     opens the local encrypted vault (`$TOOLSTACK_VAULT_FILE` + passphrase from the env);
     `infisical` builds an `InfisicalBackend` from the environment.
+
+    Pass `tool_def` to get a backend scoped to that tool's own Infisical identity; a
+    backend built without it can reach every path its env-supplied identity allows, so
+    callers acting on behalf of one tool should always pass it. The other backends have
+    no per-tool credential and ignore it.
     """
     name = name or os.environ.get("TOOLSTACK_SECRET_BACKEND", "file")
     if name == "file":
@@ -502,5 +585,5 @@ def get_backend(name: str | None = None, *, secrets_file: str | Path | None = No
     if name == "vault":
         return VaultBackend.from_env()
     if name == "infisical":
-        return InfisicalBackend.from_env()
+        return InfisicalBackend.from_env(tool_def)
     raise ValueError(f"unknown secret backend: {name}")

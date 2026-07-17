@@ -70,7 +70,12 @@ def start(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend: 
     state = _load_state()
     if tool_id in state:
         return  # already running
-    secrets = get_backend(secrets_file=secrets_file).resolve(defs[tool_id])
+    # Scope the backend to this tool's own machine identity; a tool with no secrets
+    # needs no backend (and so no Infisical credential) at all.
+    secrets = {}
+    if defs[tool_id].secrets:
+        secrets = get_backend(secrets_file=secrets_file,
+                              tool_def=defs[tool_id]).resolve(defs[tool_id])
     # Pass the configured backend name to the runner's write proxy explicitly, rather than
     # leaving it to re-read $TOOLSTACK_SECRET_BACKEND in the child: same selector get_backend()
     # just used, but no reliance on the env being set in the spawned process.

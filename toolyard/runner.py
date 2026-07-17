@@ -152,7 +152,20 @@ def _start_write_proxy(tool_def: ToolDef, secret_backend: str | None,
     if secrets_file:
         cmd += f" --secrets-file {shlex.quote(secrets_file)}"
     script = f"cd {shlex.quote(str(_REPO_ROOT))} && {cmd}"
-    pid = os.posix_spawn("/bin/sh", ["/bin/sh", "-c", script], os.environ, setpgroup=0)
+    # Redirect the proxy's output to the tool log rather than inheriting our stdout/stderr:
+    # it outlives this call, so an inherited pipe would never see EOF and any caller that
+    # captures our output (redeploy, a boot-time re-up, `toolyard up | tee`) would hang
+    # forever on a tool with a writable secret -- long after the start itself succeeded.
+    fd = os.open(_tool_log_path(tool_def), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        pid = os.posix_spawn(
+            "/bin/sh", ["/bin/sh", "-c", script], os.environ, setpgroup=0,
+            file_actions=[(os.POSIX_SPAWN_DUP2, fd, 1),
+                          (os.POSIX_SPAWN_DUP2, fd, 2),
+                          (os.POSIX_SPAWN_CLOSE, fd)],
+        )
+    finally:
+        os.close(fd)
     return str(pid), proxy_dir
 
 

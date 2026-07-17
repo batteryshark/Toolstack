@@ -128,7 +128,11 @@ def main() -> None:
     parser.add_argument("--secrets-file")
     args = parser.parse_args()
     tool_def = load(args.toml)
-    backend = get_backend(args.secret_backend, secrets_file=args.secrets_file)
+    # The write path matters most here: scoped to this tool's own identity, Infisical
+    # itself refuses a patch outside the tool's path, so the allowlist in serve() is no
+    # longer the only thing standing between one tool and another tool's secrets.
+    backend = get_backend(args.secret_backend, secrets_file=args.secrets_file,
+                          tool_def=tool_def)
     serve(args.socket, tool_def, backend).serve_forever()
 
 
