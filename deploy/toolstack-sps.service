@@ -1,0 +1,35 @@
+[Unit]
+Description=Toolstack Secrets Procurement Service (SPS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=toolstack
+Group=toolstack
+WorkingDirectory=/opt/toolstack
+EnvironmentFile=-/etc/toolstack/sps.env
+# EDIT: replace with the python that owns the venv (or system python3).
+ExecStart=/opt/toolstack/.venv/bin/python -m sps.cli serve --config /etc/toolstack/sps.env
+Restart=on-failure
+RestartSec=3
+
+StateDirectory=toolstack
+Environment=XDG_STATE_HOME=/var/lib
+Environment=XDG_CONFIG_HOME=/var/lib
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+ReadWritePaths=/var/lib/toolstack /var/log/toolstack
+
+[Install]
+WantedBy=multi-user.target
