@@ -107,30 +107,52 @@ Failures are `{"error": "..."}` envelopes. `outbound_unreachable` maps to
 not exposed through broker-native `/mcp`; they remain HTTP action API only. See
 [rest-forwarder.md](rest-forwarder.md).
 
-### 3. Toolyard → Secret backend (at container start)
+### 3. Tool → SPS (read and update)
 
-Toolyard resolves that tool's fields and injects them into the container's
-`/run/secrets/<name>` tmpfs at boot. Resolved values never persist to host disk. The
-backend is pluggable via `$TOOLSTACK_SECRET_BACKEND` (`toolyard.secrets.get_backend`):
-`file` (dev TOML), `vault` (a local **encrypted-at-rest** file: scrypt-stretched
-passphrase + Fernet AEAD, for laptop/self-contained deploys; needs the `cryptography`
-extra), or `infisical` (logs in with the Toolstack-wide machine identity). The broker holds no
-backend credential for any of them.
+Each tool pulls its secrets directly from the Secrets Procurement Service at
+boot. The runner hands the tool four env vars: `TOOLSTACK_E_SECRET` (the
+ephemeral per-tool auth secret), `TOOLSTACK_SPS_HOST`, `TOOLSTACK_SPS_PORT`,
+`TOOLSTACK_SPS_CA` (the CA bundle used to verify the server's TLS cert). The
+wire is one JSON object per line in each direction over TLS/TCP — no HTTP,
+no ALPN, no persistent connections, no request IDs, no binary framing.
+`get_secrets` returns the full cache; `get_secret(name)` returns one; `write_secret`
+patches a writable field. Responses carry `{"status": "ok", "secrets": {...}}`
+or `{"status": "error", "message": <one of five>}` with the fixed message set
+`Bad request / Unauthorized / Not found / Not writable / Backend error`. Bodies
+are capped at 1 MiB; per-connection timeout prevents slow-loris.
 
-### 4. Tool container → Toolyard (writable secrets)
+### 4. SPS → Backend (resolve and update)
 
-Writable fields only, via `/run/toolyard/secrets.sock`. Toolyard enforces the
-descriptor allowlist and patches exactly `(item, field)` inside the configured
-deployment vault/project. No backend
-credential is ever mounted in the container.
+The SPS talks to one of three bundled provider plugins, selected at start
+(`SP_PLUGIN`): `infisical` (HTTP), `hashicorp_vault` (KV-v2 over HTTPS), or
+`localfile` (scrypt + Fernet encrypted-at-rest vault — laptop / self-contained
+deploys; needs the `cryptography` extra). The broker holds no backend
+credential for any of them; SPS is its own authority boundary.
 
-### 5. Broker ↔ nod (approval)
+### 5. Tool runner → SPS (register / unregister)
+
+The runner mints a 64-byte CSPRNG `E_SECRET` per tool start, opens a TLS
+connection to SPS (verifying the server cert against `SP_TLS_CA`), and sends
+a `register` JSON line carrying the tool's `[[secrets]]` CS_TUPLE list.
+Auth in this hop is via the static `SP_SECRET` (mode 0600-gated in
+`/etc/toolstack/sps.env`). On stop the runner sends an `unregister` JSON line.
+Wire format identical to §3 (one JSON line per direction over TLS/TCP).
+
+### 6. Broker → Tool (`X-Toolstack-Secret`)
+
+The broker reads the E_SECRET from the toolyard state file (host-local
+trust) and adds `X-Toolstack-Secret: <e_secret>` to every forwarded call.
+The tool compares this header against its own `$TOOLSTACK_E_SECRET` in
+constant time — a stray loopback caller that doesn't know the E_SECRET
+cannot bypass the broker's policy.
+
+### 7. Broker ↔ nod (approval)
 
 See [approval-surface-adapter.md](approval-surface-adapter.md). The broker owns
 approval truth; nod is the messenger (poll-only: there is no callback route; the
 broker's timeout wins).
 
-### 6. Admin → operator clients (JSON API)
+### 8. Admin → operator clients (JSON API)
 
 Distinct from the **agent-facing** broker API (§1, bearer = a caller's broker token): the
 admin also exposes an **operator** JSON API under `POST/GET /api/*` (`admin/api.py`) for native
@@ -142,10 +164,12 @@ cross-site). Every mutation goes through `broker.operations`, so the API, the HT
 
 ## Secrets access rule (collapsed)
 
-Only **toolyard** talks to the secret backend, and only for **workload** secrets,
-resolved at container start. The broker holds **no** secret-backend credential and
-is never on the secret path. Component-to-component credentials / mTLS between hosts
-are deferred (see [plan.md](../plan.md)).
+**Tools** talk to the **SPS**, and **SPS** talks to the **backend**. Both hops are
+isolated; neither the broker nor the runner ever sees a workload-secret value, and
+neither is on the secret path. SPS is its own authority boundary — it sits between the
+tool and the backend the same way the broker sits between the agent and the tool.
+Component-to-component credentials / mTLS between hosts are deferred (see
+[plan.md](../plan.md)).
 
 ## Audit event taxonomy
 
