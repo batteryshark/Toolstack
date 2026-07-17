@@ -70,20 +70,23 @@ hands the values to the tool, never to the broker.
   over its HTTP API (stdlib only, no added dependency). A `[[secrets]]` entry adds
   `item` (secret path; defaults to the tool id) next to `field` (the secret key).
   The Infisical project/vault comes only from `TOOLSTACK_INFISICAL_VAULT`.
-  Toolstack authenticates once with the deployment's machine identity
-  (`TOOLSTACK_INFISICAL_CLIENT_ID` / `_CLIENT_SECRET`, or the unprefixed Infisical
-  names). Configure with `TOOLSTACK_INFISICAL_HOST` / `_ENVIRONMENT` / `_VAULT`.
+  Each tool authenticates with its own machine identity selected from
+  `TOOLSTACK_INFISICAL_CREDENTIALS_DIR`; systemd deployments load encrypted identities
+  into `$CREDENTIALS_DIRECTORY`. Configure the server with
+  `TOOLSTACK_INFISICAL_HOST` / `_ENVIRONMENT` / `_VAULT`.
 - **Backend selection:** `get_backend(name)` picks `file` (default), `vault`, or `infisical`;
   the CLI exposes `--secret-backend` and honors `$TOOLSTACK_SECRET_BACKEND`.
 - SOPS can follow behind the same `resolve()` interface.
 
 ## Runners
 
-- **`process`** (default, zero infra): runs the tool as a local subprocess with its
-  secrets in a private `0700` dir pointed to by `$TOOLSTACK_SECRETS_DIR`. Binds
-  loopback only. No isolation.
-- **`docker`**: runs the tool in a container with its secrets mounted at
-  `/run/secrets`, publishing the port to host loopback (`-p 127.0.0.1:...`).
+- **`process`** (default, dev only): runs the tool as a local subprocess with its
+  secrets in a private RAM-backed directory pointed to by `$TOOLSTACK_SECRETS_DIR`.
+  It fails closed if no RAM-backed runtime directory is available.
+- **`docker`**: streams secrets over stdin into a private container tmpfs at
+  `/run/secrets` before starting the image command. The host port is loopback-only.
+  Tool images must provide `/bin/sh` and the standard `cat`, `chown`, `chmod`, and `mv`
+  utilities used by the injection gate.
 - **`sandbox`** (OS-native, no container/VM): resolves to **`seatbelt`** on macOS and
   **`bwrap`** on Linux. Both confine the tool's **network**: outbound is denied by default,
   and a tool with an `egress` allowlist reaches the broker's loopback egress proxy on a
@@ -161,7 +164,9 @@ stop. No backend credential is ever mounted in the container.
 
 - A tool never holds a broker token or a secret-backend credential.
 - The broker never receives a secret value (verified in the tests).
+- Docker secret values never enter a host file, bind mount, container layer,
+  environment variable, command argument, or Docker metadata.
+- Toolyard refuses to resolve secrets while swap is active and disables core dumps for
+  its own processes and Docker tools.
 - Writable secrets go host-side through the write-proxy; the container only ever sees
   the socket, never a backend credential.
-- Hardening to add: inject secrets into a container **tmpfs** at start so they never
-  touch host disk (the process/docker backends write to a `0700` dir removed on stop).

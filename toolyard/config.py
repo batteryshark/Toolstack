@@ -25,6 +25,7 @@ RULE_RESPONSE_TYPES = {"json", "xml", "form", "plaintext"}
 # dotted id like "my.tool" silently misroutes policy. Mirrors broker/registry._ID_RE and
 # admin/tool_authoring._ID_RE (independent packages, so the pattern is duplicated, not shared).
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")   # no dots (tool.op routing) or slashes
+_SECRET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,15 @@ def load(toml_path: str | Path) -> ToolDef:
         )
         for s in data.get("secrets", [])
     )
+    names = [secret.name for secret in secrets]
+    invalid_names = [name for name in names if not isinstance(name, str) or not _SECRET_NAME_RE.match(name)]
+    if invalid_names:
+        raise ValueError(
+            f"{path}: invalid secret name {invalid_names[0]!r} "
+            "(letters, digits, _, - and . only; must start with a letter or digit)"
+        )
+    if len(names) != len(set(names)):
+        raise ValueError(f"{path}: duplicate secret names are not allowed")
     # [sandbox] egress: the outbound hosts a sandboxed tool may reach (enforced by the
     # native runners via the egress proxy). Rejected at load if malformed, like port/id.
     egress = data.get("sandbox", {}).get("egress", [])

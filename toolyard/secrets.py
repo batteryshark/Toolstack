@@ -18,6 +18,7 @@ import base64
 import hashlib
 import json
 import os
+import sys
 import time
 import tomllib
 import urllib.error
@@ -27,6 +28,27 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import SecretSpec, ToolDef
+
+
+def protect_secret_memory() -> None:
+    """Fail closed if secret-bearing memory could be persisted by the OS."""
+    if sys.platform.startswith("linux"):
+        try:
+            active_swap = Path("/proc/swaps").read_text(encoding="utf-8").splitlines()[1:]
+        except OSError as exc:
+            raise RuntimeError("cannot verify that swap is disabled") from exc
+        if any(line.strip() for line in active_swap):
+            raise RuntimeError(
+                "Toolyard refuses to resolve secrets while swap is active; "
+                "tmpfs and process memory could be written to disk"
+            )
+    try:
+        import resource
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    except ImportError:
+        return
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("cannot disable core dumps before resolving secrets") from exc
 
 
 def writable_spec(tool_def: ToolDef, name: str) -> SecretSpec:
@@ -305,7 +327,10 @@ def _parse_env_file(path: Path) -> dict[str, str]:
 
 
 def _credentials_dir() -> Path | None:
-    directory = os.environ.get("TOOLSTACK_INFISICAL_CREDENTIALS_DIR")
+    directory = (
+        os.environ.get("TOOLSTACK_INFISICAL_CREDENTIALS_DIR")
+        or os.environ.get("CREDENTIALS_DIRECTORY")
+    )
     return Path(directory) if directory else None
 
 
@@ -325,16 +350,17 @@ def _identity_keys(tool_def: ToolDef) -> list[str]:
 
 
 def _infisical_credentials_for(tool_def: ToolDef | None) -> InfisicalCredentials:
-    """Load the machine identity for one tool from `$TOOLSTACK_INFISICAL_CREDENTIALS_DIR`.
+    """Load one tool's identity from Toolyard's or systemd's credentials directory.
 
-    Falls back to the process env when the dir is unset or holds no file for this tool,
-    which keeps dev/CI (one identity exported in the env) working unchanged.
+    `TOOLSTACK_INFISICAL_CREDENTIAL_PREFIX` supports systemd's directory credential
+    naming (`infisical_<item>.env`). The process environment remains a dev/CI fallback.
     """
     directory = _credentials_dir()
     if directory is None or tool_def is None:
         return _infisical_credentials_from_env()
 
-    found = [(key, directory / f"{key}.env") for key in _identity_keys(tool_def)]
+    prefix = os.environ.get("TOOLSTACK_INFISICAL_CREDENTIAL_PREFIX", "")
+    found = [(key, directory / f"{prefix}{key}.env") for key in _identity_keys(tool_def)]
     found = [(key, path) for key, path in found if path.is_file()]
     if not found:
         return _infisical_credentials_from_env()

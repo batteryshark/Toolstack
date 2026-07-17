@@ -31,7 +31,8 @@ from broker.server import build_server
 from toolyard.config import load
 from toolyard.egress_proxy import serve as _serve_egress_proxy
 from toolyard.runner import (BwrapRunner, DockerRunner, ProcessRunner, SeatbeltRunner,
-                             _SANDBOX_EXEC, _netguard_argv, _seatbelt_profile)
+                             _SANDBOX_EXEC, _mount_fstype, _netguard_argv, _seatbelt_profile,
+                             _write_secrets)
 from toolyard.sandbox import EgressPolicy, SandboxPolicy
 
 REPO = Path(__file__).resolve().parents[2]
@@ -262,6 +263,12 @@ class ProcessRunnerHardening(unittest.TestCase):
                 ProcessRunner().start(bad, {"api_key": SECRET})
         self.assertFalse(Path(captured["dir"]).exists())   # no plaintext secrets left on disk
 
+    def test_process_secrets_use_ram_backed_storage(self):
+        secrets_dir = Path(_write_secrets("ram-test", {"api_key": SECRET}))
+        self.addCleanup(shutil.rmtree, secrets_dir, ignore_errors=True)
+        self.assertIn(_mount_fstype(secrets_dir), {"tmpfs", "ramfs"})
+        self.assertNotEqual(secrets_dir.parent, Path(tempfile.gettempdir()))
+
 
 class ProcessRunnerLogging(unittest.TestCase):
     """The process runner captures a tool's stdout/stderr onto a per-tool logfile under the
@@ -330,15 +337,22 @@ class RestRunnerConfig(unittest.TestCase):
             calls.append(args)
             return subprocess.CompletedProcess(["docker", *args], 0, stdout="true\n", stderr="")
 
-        with mock.patch("toolyard.runner._write_secrets", return_value=str(self.secrets_dir)), \
-             mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+        with mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
              mock.patch("toolyard.runner._start_docker_log_follower", return_value=None), \
+             mock.patch.object(DockerRunner, "_image_runtime",
+                               return_value=(["python3", "-m", "toolstack_forwarder"], "10000")), \
+             mock.patch.object(DockerRunner, "_inject_secrets") as inject, \
              mock.patch.object(DockerRunner, "_docker", side_effect=fake_docker), \
              mock.patch.object(DockerRunner, "is_alive", return_value=True):
-            DockerRunner().start(dataclasses.replace(self.tool, image="toolstack-forwarder"), {})
+            running = DockerRunner().start(
+                dataclasses.replace(self.tool, image="toolstack-forwarder"), {})
         run = next(args for args in calls if args[:2] == ["run", "-d"])
         self.assertIn(f"{self.tool_dir / 'toolyard.toml'}:/run/toolstack/toolyard.toml:ro", run)
         self.assertIn("TOOLSTACK_TOOL_CONFIG=/run/toolstack/toolyard.toml", run)
+        self.assertIn("/run/secrets:rw,noexec,nosuid,nodev,mode=0711", run)
+        self.assertFalse(any("/run/secrets:ro" in arg for arg in run))
+        self.assertEqual(running.workdir, "")
+        inject.assert_called_once_with("toolyard-rest_demo", "10000", {})
 
     def test_docker_runner_uses_generic_forwarder_for_rest_without_image(self):
         calls = []
@@ -347,9 +361,11 @@ class RestRunnerConfig(unittest.TestCase):
             calls.append(args)
             return subprocess.CompletedProcess(["docker", *args], 0, stdout="true\n", stderr="")
 
-        with mock.patch("toolyard.runner._write_secrets", return_value=str(self.secrets_dir)), \
-             mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
+        with mock.patch("toolyard.runner._start_write_proxy", return_value=(None, None)), \
              mock.patch("toolyard.runner._start_docker_log_follower", return_value=None), \
+             mock.patch.object(DockerRunner, "_image_runtime",
+                               return_value=(["python3"], "10000")), \
+             mock.patch.object(DockerRunner, "_inject_secrets"), \
              mock.patch.object(DockerRunner, "_docker", side_effect=fake_docker), \
              mock.patch.object(DockerRunner, "is_alive", return_value=True):
             DockerRunner().start(self.tool, {})
@@ -663,6 +679,17 @@ class DockerRunnerE2E(unittest.TestCase):
         status = _call(tool.port, "secret_status", {})
         self.assertTrue(status["has_api_key"])
         self.assertEqual(status["api_key_len"], len(SECRET))
+        inspected = subprocess.run(
+            ["docker", "inspect", running.handle], check=True, capture_output=True, text=True,
+        ).stdout
+        self.assertNotIn(SECRET, inspected)
+        metadata = json.loads(inspected)[0]
+        self.assertIn("/run/secrets", metadata["HostConfig"]["Tmpfs"])
+        self.assertFalse(any(
+            mount.get("Destination") == "/run/secrets" and mount.get("Type") == "bind"
+            for mount in metadata["Mounts"]
+        ))
+        self.assertTrue(runner.secrets_ready(running))
 
     def test_stop_removes_the_container(self):
         tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
@@ -674,7 +701,7 @@ class DockerRunnerE2E(unittest.TestCase):
         gone = subprocess.run(["docker", "ps", "-aq", "-f", f"name=^{running.handle}$"],
                               capture_output=True, text=True).stdout.strip()
         self.assertEqual(gone, "", "stop did not remove the container")
-        self.assertFalse(Path(running.workdir).exists())  # secrets dir cleaned up
+        self.assertEqual(running.workdir, "")  # Docker never created a host secrets directory
 
     def test_writable_tool_mounts_proxy_socket_and_patches_backend(self):
         # A tool with a writable secret: the docker runner starts the host-side write proxy

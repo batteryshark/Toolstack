@@ -2,7 +2,7 @@
 
     python3 -m admin set-password         # set/replace the admin login password
     python3 -m admin serve [--port 8780]  # serve on 127.0.0.1 (loopback only)
-    python3 -m admin reconcile-tools      # re-resolve secrets for tools the host broke (boot)
+    python3 -m admin reconcile-tools      # restore recorded tools after boot
 
 The server refuses to start until a password has been set (fail closed: there
 are no default credentials). ``serve`` imports FastAPI/uvicorn lazily, so
@@ -46,7 +46,7 @@ def _serve(args) -> None:
 
 
 def _reconcile_tools(args) -> None:
-    """Repair tools the host left running-but-broken; the boot half of message-contracts §3.
+    """Restore recorded tools whose process or ephemeral runtime state is missing.
 
     Runs as its own unit rather than the admin's ``ExecStartPost`` (which starts the broker):
     a repair may pull or build an image, and blocking the panel's startup on that -- against
@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
     p.set_defaults(func=_serve)
 
     p = sub.add_parser("reconcile-tools",
-                       help="restart tools whose injected secrets the host wiped (e.g. at boot)")
+                       help="restore recorded tools after boot or a runtime restart")
     p.set_defaults(func=_reconcile_tools)
 
     args = parser.parse_args(argv)

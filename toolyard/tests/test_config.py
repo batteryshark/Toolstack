@@ -64,6 +64,17 @@ class Secrets(unittest.TestCase):
         # The echo tool declares no top-level description.
         self.assertEqual(load(TOOL_TOML).description, "")
 
+    def test_rejects_secret_name_that_can_escape_injection_directory(self):
+        with self.assertRaisesRegex(ValueError, "invalid secret name"):
+            self._load('[[secrets]]\nname = "../token"\nfield = "TOKEN"\n')
+
+    def test_rejects_duplicate_secret_names(self):
+        with self.assertRaisesRegex(ValueError, "duplicate secret names"):
+            self._load(
+                '[[secrets]]\nname = "token"\nfield = "ONE"\n'
+                '[[secrets]]\nname = "token"\nfield = "TWO"\n'
+            )
+
 
 class Description(unittest.TestCase):
     def setUp(self):

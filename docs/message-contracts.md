@@ -125,12 +125,6 @@ secret path (`item`) and falling back to the tool id; toolyard therefore builds 
 backend **per tool** (`get_backend(..., tool_def=...)`), never one per batch. A single
 identity exported in the process env is the dev/CI fallback and carries no such isolation.
 
-> **Deployment gaps (2026-07-17).** Two deviations remain: secrets are bind-mounted from a
-> host `/tmp` dir rather than injected into a tmpfs, so resolved values *do* briefly touch
-> host disk; and nothing re-resolves at boot -- `ExecStartPost` starts only the broker, so
-> after a reboot dockerd restores the old containers against a wiped `/tmp` and every tool
-> with secrets serves 503 while still reading `Up`.
-
 ### 4. Tool container → Toolyard (writable secrets)
 
 Writable fields only, via `/run/toolyard/secrets.sock`. Toolyard enforces the

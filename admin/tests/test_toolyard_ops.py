@@ -6,9 +6,13 @@ import os
 import shutil
 import tempfile
 import unittest
+from dataclasses import asdict
 from pathlib import Path
+from unittest import mock
 
 from admin import toolyard_ops
+from toolyard.cli import _save_state
+from toolyard.runner import RunningTool
 
 
 class ToolyardOps(unittest.TestCase):
@@ -83,6 +87,49 @@ class ToolyardOps(unittest.TestCase):
         with self.assertRaises(ValueError):
             toolyard_ops.remove("weather", str(self.tools_root), [str(other)])
         self.assertTrue(other.exists())   # left on disk
+
+    def test_reconcile_restarts_docker_container_missing_tmpfs_injection(self):
+        _save_state({"echo": asdict(RunningTool(
+            "echo", 4601, "docker", "toolyard-echo", ""))})
+        runner = mock.Mock()
+        runner.is_alive.return_value = True
+        runner.secrets_ready.return_value = False
+        with mock.patch.object(toolyard_ops, "get_runner", return_value=runner), \
+             mock.patch.object(toolyard_ops, "restart") as restart:
+            result = toolyard_ops.reconcile(str(self.tools_root), [], "secrets.toml", "docker")
+        restart.assert_called_once_with(
+            "echo", str(self.tools_root), [], "secrets.toml", "docker")
+        self.assertEqual(result, {"repaired": ["echo"], "failed": []})
+
+    def test_reconcile_leaves_ready_docker_container_alone(self):
+        _save_state({"echo": asdict(RunningTool(
+            "echo", 4601, "docker", "toolyard-echo", ""))})
+        runner = mock.Mock()
+        runner.is_alive.return_value = True
+        runner.secrets_ready.return_value = True
+        with mock.patch.object(toolyard_ops, "get_runner", return_value=runner), \
+             mock.patch.object(toolyard_ops, "restart") as restart:
+            result = toolyard_ops.reconcile(str(self.tools_root), [], "secrets.toml", "docker")
+        restart.assert_not_called()
+        self.assertEqual(result, {"repaired": [], "failed": []})
+
+    def test_reconcile_preserves_running_intent_when_restart_fails(self):
+        record = asdict(RunningTool("echo", 4601, "docker", "toolyard-echo", ""))
+        _save_state({"echo": record})
+        runner = mock.Mock()
+        runner.is_alive.return_value = True
+        runner.secrets_ready.return_value = False
+
+        def failed_restart(*args):
+            _save_state({})
+            raise RuntimeError("start failed")
+
+        with mock.patch.object(toolyard_ops, "get_runner", return_value=runner), \
+             mock.patch.object(toolyard_ops, "restart", side_effect=failed_restart):
+            result = toolyard_ops.reconcile(str(self.tools_root), [], "secrets.toml", "docker")
+        self.assertEqual(toolyard_ops._load_state()["echo"], record)
+        self.assertEqual(result["repaired"], [])
+        self.assertEqual(result["failed"], ["echo: start failed"])
 
 
 if __name__ == "__main__":

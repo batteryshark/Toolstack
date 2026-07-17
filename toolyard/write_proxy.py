@@ -29,7 +29,7 @@ import socketserver
 from pathlib import Path
 
 from .config import ToolDef, load
-from .secrets import get_backend, writable_spec
+from .secrets import get_backend, protect_secret_memory, writable_spec
 
 _PREFIX = "/v1/secrets/"
 
@@ -127,6 +127,7 @@ def main() -> None:
     parser.add_argument("--secret-backend", default=os.environ.get("TOOLSTACK_SECRET_BACKEND", "file"))
     parser.add_argument("--secrets-file")
     args = parser.parse_args()
+    protect_secret_memory()
     tool_def = load(args.toml)
     # The write path matters most here: scoped to this tool's own identity, Infisical
     # itself refuses a patch outside the tool's path, so the allowlist in serve() is no

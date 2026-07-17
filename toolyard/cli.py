@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .config import discover
 from .runner import RunningTool, get_runner
-from .secrets import get_backend
+from .secrets import get_backend, protect_secret_memory
 
 
 def _state_path() -> Path:
@@ -59,6 +59,7 @@ def cmd_up(args) -> None:
         # secrets needs no backend at all (every resolve() is empty for it anyway).
         secrets = {}
         if tool_def.secrets:
+            protect_secret_memory()
             backend = get_backend(args.secret_backend, secrets_file=secrets_file,
                                   tool_def=tool_def)
             secrets = backend.resolve(tool_def)

@@ -68,11 +68,9 @@ talk to a broker you run via one of the paths above. Only the admin app carries 
 ## Maturity
 
 The full path runs end to end (agent → broker → human approval → tool execution, with the
-broker never holding a secret) and it's hardened for a single-host deployment: a systemd
-state directory and sandbox, login throttling, bind and SSRF guards, runtime timeouts with
-partial-failure cleanup, pinned dependencies, and database backups. It binds loopback by
-default; reach it over a tunnel that terminates TLS. A few things are deliberately deferred:
-tmpfs secret injection, just-in-time grants, and a background approval-expiry sweeper.
+broker never holding a secret). Production Docker tools receive secrets through a private
+container tmpfs, and each tool uses its own Infisical identity. The stack binds loopback by
+default; reach it through a tunnel that terminates TLS.
 
 ## Docs
 

@@ -1,21 +1,18 @@
 """Tool runners.
 
-`ProcessRunner` (dev/CI, zero infra) starts the tool as a local subprocess with
-its secrets written to a private 0700 dir, pointed at by `$TOOLSTACK_SECRETS_DIR`.
-`DockerRunner` (production) runs the tool in a container with its secrets mounted
-at `/run/secrets`. Both keep secret values entirely off the broker.
+`ProcessRunner` (dev/CI) exposes secrets from a RAM-backed runtime directory.
+`DockerRunner` (production) streams them into a container-only tmpfs at
+`/run/secrets` before releasing the image's real command. Secret values never enter a
+host file, container layer, environment variable, command argument, or Docker metadata.
 
-On stop, the secrets dir is removed; if `start` fails partway it cleans up the
-(world-readable) secrets dir and any write-proxy it spawned, so a failed start never
-leaks secret material on disk or orphans the proxy. Docker subprocess calls carry
-timeouts so a wedged daemon can't hang the caller (start/stop runs inside an admin
-request). (Hardening note: production should inject secrets into a container tmpfs at
-start so they never touch host disk; the bind mount here is the simpler form.)
+Writable secrets travel back through a per-tool Unix socket. Docker subprocess calls
+carry timeouts so a wedged daemon cannot hang the admin request that started them.
 """
 
 from __future__ import annotations
 
 import functools
+import json
 import logging
 import os
 import re
@@ -38,6 +35,9 @@ from .sandbox import EgressPolicy, ResourceCaps, SandboxPolicy
 # §4); matches the tool's default TOOLYARD_SECRETS_SOCKET.
 _CONTAINER_SOCKET = "/run/toolyard/secrets.sock"
 _CONTAINER_TOOL_CONFIG = "/run/toolstack/toolyard.toml"
+_CONTAINER_SECRETS = "/run/secrets"
+_INJECTED_MARKER = f"{_CONTAINER_SECRETS}/.toolyard-injected"
+_READY_MARKER = f"{_CONTAINER_SECRETS}/.toolyard-ready"
 _REPO_ROOT = Path(__file__).resolve().parents[1]  # so `-m toolyard.write_proxy` imports
 
 # Docker subprocess timeouts (seconds): a slow pull or a wedged daemon must fail with a
@@ -48,6 +48,37 @@ _DOCKER_RM_TIMEOUT = 30
 _DOCKER_INSPECT_TIMEOUT = 10
 # How long start() waits before confirming a process tool didn't immediately exit.
 _READINESS_WAIT = 0.3
+
+_BOOTSTRAP_SCRIPT = f"""\
+set -eu
+while [ ! -e {_READY_MARKER} ]; do sleep 0.05; done
+rm -f {_READY_MARKER}
+exec \"$@\"
+"""
+
+_INJECT_SECRET_SCRIPT = f"""\
+set -eu
+path={_CONTAINER_SECRETS}/$1
+umask 077
+cat > \"$path\"
+chown \"$2\" \"$path\"
+chmod 0400 \"$path\"
+"""
+
+_FINALIZE_INJECTION_SCRIPT = f"""\
+set -eu
+owner=$1
+chown \"$owner\" {_CONTAINER_SECRETS}
+chmod 0700 {_CONTAINER_SECRETS}
+: > {_INJECTED_MARKER}.tmp
+chown \"$owner\" {_INJECTED_MARKER}.tmp
+chmod 0400 {_INJECTED_MARKER}.tmp
+mv {_INJECTED_MARKER}.tmp {_INJECTED_MARKER}
+: > {_READY_MARKER}.tmp
+chown \"$owner\" {_READY_MARKER}.tmp
+chmod 0400 {_READY_MARKER}.tmp
+mv {_READY_MARKER}.tmp {_READY_MARKER}
+"""
 
 log = logging.getLogger(__name__)
 
@@ -126,15 +157,16 @@ def _terminate(pid: str | int | None) -> None:
 def _cleanup_partial_start(secrets_dir: str, proxy_pid: str | None, proxy_dir: str | None,
                            child_pid: int | None = None, log_pid: str | None = None,
                            egress_pid: str | None = None) -> None:
-    """Best-effort cleanup when start() fails partway: never leave the (world-readable) secrets
-    dir on disk, an orphaned write/egress proxy, or an unreaped child zombie behind. start() runs
+    """Best-effort cleanup when start() fails partway: never leave a runtime secrets
+    dir, an orphaned write/egress proxy, or an unreaped child zombie behind. start() runs
     inside the long-lived admin handler, so a leaked zombie per failed start would accrue there;
     kill AND reap the tool child and both proxies (a readiness-failed child is already a zombie)."""
     for pid in (child_pid, proxy_pid, log_pid, egress_pid):
         _terminate(pid)
     if proxy_dir:
         shutil.rmtree(proxy_dir, ignore_errors=True)
-    shutil.rmtree(secrets_dir, ignore_errors=True)
+    if secrets_dir:
+        shutil.rmtree(secrets_dir, ignore_errors=True)
 
 
 @dataclass(frozen=True)
@@ -143,7 +175,7 @@ class RunningTool:
     port: int
     backend: str
     handle: str  # pid (process) or container name (docker)
-    workdir: str  # secrets dir to clean up on stop
+    workdir: str  # process runtime dir; empty for Docker (secrets live in container tmpfs)
     proxy_pid: str | None = None  # writable-secret proxy pid (when the tool has one)
     proxy_dir: str | None = None  # proxy socket dir to clean up on stop
     log_pid: str | None = None  # docker log follower pid (process runner logs directly)
@@ -155,14 +187,73 @@ class RunningTool:
     boot_id: str | None = None
 
 
+def _mount_fstype(path: Path) -> str | None:
+    """Return the Linux filesystem type containing path, using the kernel mount table."""
+    try:
+        resolved = path.resolve()
+        best: tuple[int, str] | None = None
+        for line in Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines():
+            left, sep, right = line.partition(" - ")
+            if not sep:
+                continue
+            fields = left.split()
+            mountpoint = Path(fields[4].replace(r"\040", " "))
+            if resolved == mountpoint or mountpoint in resolved.parents:
+                candidate = (len(str(mountpoint)), right.split()[0])
+                if best is None or candidate[0] > best[0]:
+                    best = candidate
+        return best[1] if best else None
+    except OSError:
+        return None
+
+
+def _runtime_root() -> Path:
+    """Return a private RAM-backed directory for Toolyard runtime material.
+
+    The systemd unit supplies `/run/toolyard`. Direct CLI/test use falls back to
+    `/dev/shm/toolyard`. Fail closed rather than silently writing plaintext to disk.
+    """
+    configured = os.environ.get("TOOLYARD_RUNTIME_DIR")
+    candidates = [Path(configured)] if configured else []
+    xdg_runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg_runtime:
+        candidates.append(Path(xdg_runtime) / "toolyard")
+    candidates.extend((Path("/run/toolyard"), Path("/dev/shm/toolyard")))
+    errors: list[str] = []
+    for root in dict.fromkeys(candidates):
+        existing = root
+        while not existing.exists() and existing != existing.parent:
+            existing = existing.parent
+        if _mount_fstype(existing) not in {"tmpfs", "ramfs"}:
+            errors.append(f"{root}: not RAM-backed")
+            continue
+        try:
+            root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            root.chmod(0o700)
+            return root
+        except OSError as exc:
+            errors.append(f"{root}: {exc}")
+    raise RuntimeError(
+        "no writable RAM-backed Toolyard runtime directory; configure "
+        "TOOLYARD_RUNTIME_DIR under tmpfs (" + "; ".join(errors) + ")"
+    )
+
+
+def _runtime_mkdtemp(prefix: str) -> str:
+    return tempfile.mkdtemp(prefix=prefix, dir=_runtime_root())
+
+
 def _write_secrets(tool_id: str, secrets: dict[str, str]) -> str:
-    secrets_dir = tempfile.mkdtemp(prefix=f"toolyard-{tool_id}-")
+    """Materialize process-runner secrets on RAM-backed storage only."""
+    from .secrets import protect_secret_memory
+    protect_secret_memory()
+    secrets_dir = _runtime_mkdtemp(f"toolyard-{tool_id}-")
     try:
         for name, value in secrets.items():
             path = Path(secrets_dir) / name
             path.write_text(value, encoding="utf-8")
             path.chmod(0o600)
-    except BaseException:  # a mid-loop failure must not leave a half-written secrets dir on disk
+    except BaseException:
         shutil.rmtree(secrets_dir, ignore_errors=True)
         raise
     return secrets_dir
@@ -178,7 +269,7 @@ def _start_write_proxy(tool_def: ToolDef, secret_backend: str | None,
     """
     if not any(s.writable for s in tool_def.secrets):
         return None, None
-    proxy_dir = tempfile.mkdtemp(prefix=f"toolyard-sock-{tool_def.id}-")
+    proxy_dir = _runtime_mkdtemp(f"toolyard-sock-{tool_def.id}-")
     os.chmod(proxy_dir, 0o711)  # let the (non-root) container user traverse to the socket
     socket_path = str(Path(proxy_dir) / "secrets.sock")
     backend = secret_backend or os.environ.get("TOOLSTACK_SECRET_BACKEND", "file")
@@ -507,6 +598,25 @@ def _netguard_argv(*args: str) -> list[str]:
     return [_SUDO, "-n", sys.executable, "-m", "toolyard.netguard", *args]
 
 
+def _bwrap_runtime_mount(path: str) -> list[str]:
+    """Expose one private runtime directory after bwrap replaces `/dev`.
+
+    Direct CLI runs use `/dev/shm/toolyard`; bwrap's fresh `/dev` hides that path.
+    Recreate only the target's parents and bind the per-tool directory read-only.
+    """
+    target = Path(path)
+    args: list[str] = []
+    if target == Path("/dev") or Path("/dev") in target.parents:
+        parents: list[Path] = []
+        parent = target.parent
+        while parent != Path("/dev") and parent != parent.parent:
+            parents.append(parent)
+            parent = parent.parent
+        for directory in reversed(parents):
+            args += ["--dir", str(directory)]
+    return [*args, "--ro-bind", str(target), str(target)]
+
+
 @functools.lru_cache(maxsize=1)
 def _bwrap_usable() -> bool:
     """Whether bwrap can create its (unprivileged) user namespace in the real launch context.
@@ -589,7 +699,11 @@ class BwrapRunner:
             launch = ["/bin/sh", "-c", inner]
             if _bwrap_usable():
                 # Share the host net ns (the cgroup+nft rule enforces egress); isolate fs/pid/ipc.
+                runtime_mounts = _bwrap_runtime_mount(secrets_dir)
+                if proxy_dir:
+                    runtime_mounts += _bwrap_runtime_mount(proxy_dir)
                 launch = ["bwrap", "--dev-bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
+                          *runtime_mounts,
                           "--unshare-pid", "--unshare-ipc", "--die-with-parent", *launch]
             ng = _netguard_argv("run", "--tool", tool_def.id)
             if egress_port:
@@ -647,6 +761,11 @@ class BwrapRunner:
 class DockerRunner:
     backend = "docker"
 
+    _IMAGE_CONFIG_FORMAT = (
+        '{"entrypoint":{{json .Config.Entrypoint}},'
+        '"cmd":{{json .Config.Cmd}},"user":{{json .Config.User}}}'
+    )
+
     @staticmethod
     def _docker(args: list[str], timeout: float, *, check: bool = False) -> subprocess.CompletedProcess:
         """Run `docker <args>` with a timeout; map a hang or a non-zero exit to a clear
@@ -659,28 +778,65 @@ class DockerRunner:
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(f"docker {args[0]} failed: {(exc.stderr or '').strip() or exc}") from exc
 
+    @staticmethod
+    def _docker_input(args: list[str], payload: bytes, timeout: float) -> None:
+        """Send secret bytes to Docker over stdin without putting them in argv or env."""
+        try:
+            subprocess.run(
+                ["docker", *args], input=payload, capture_output=True,
+                check=True, timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"docker {args[0]} timed out after {timeout:.0f}s") from exc
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or b"").decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"docker {args[0]} failed: {detail or exc}") from exc
+
+    def _image_runtime(self, image: str) -> tuple[list[str], str]:
+        result = self._docker(
+            ["image", "inspect", "--format", self._IMAGE_CONFIG_FORMAT, image],
+            _DOCKER_INSPECT_TIMEOUT, check=True,
+        )
+        try:
+            config = json.loads(result.stdout)
+            command = [*(config.get("entrypoint") or []), *(config.get("cmd") or [])]
+            owner = config.get("user") or "0:0"
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise RuntimeError(f"could not read runtime command for image {image}") from exc
+        if not command:
+            raise RuntimeError(f"image {image} has no ENTRYPOINT or CMD")
+        return [str(arg) for arg in command], str(owner)
+
+    def _inject_secrets(self, container: str, owner: str, secrets: dict[str, str]) -> None:
+        for name, value in secrets.items():
+            self._docker_input(
+                ["exec", "-i", "--user", "0", container, "/bin/sh", "-c",
+                 _INJECT_SECRET_SCRIPT, "toolyard-inject", name, owner],
+                value.encode("utf-8"), _DOCKER_RUN_TIMEOUT,
+            )
+        self._docker(
+            ["exec", "--user", "0", container, "/bin/sh", "-c",
+             _FINALIZE_INJECTION_SCRIPT, "toolyard-finalize", owner],
+            _DOCKER_RUN_TIMEOUT, check=True,
+        )
+
     def start(self, tool_def: ToolDef, secrets: dict[str, str], *,
               secret_backend: str | None = None, secrets_file: str | None = None) -> RunningTool:
-        secrets_dir = _write_secrets(tool_def.id, secrets)
+        from .secrets import protect_secret_memory
+        protect_secret_memory()
         proxy_pid = proxy_dir = None
         name = None
         log_pid = None
         log_path = _tool_log_path(tool_def)
         try:
-            # The bind mount exposes host files by uid; a tool image that drops to a
-            # non-root user (the recommended posture) cannot read files owned by the
-            # runner's uid under a 0700 dir. Relax to "traverse + read by name" so the
-            # container user can read its secrets, while the parent /tmp dir keeps the
-            # values off shared paths. (Hardening note: a tmpfs injection at container
-            # start removes the host-disk hop entirely.)
-            os.chmod(secrets_dir, 0o711)
-            for path in Path(secrets_dir).iterdir():
-                path.chmod(0o644)
             proxy_pid, proxy_dir = _start_write_proxy(tool_def, secret_backend, secrets_file)
             rest_generic = tool_def.type == "rest" and tool_def.image is None
             image = tool_def.image or ("python:3.13-slim" if rest_generic else f"toolstack-{tool_def.id}")
             if tool_def.image is None and not rest_generic:
                 self._docker(["build", "-t", image, str(tool_def.path)], _DOCKER_BUILD_TIMEOUT, check=True)
+            image_command, image_user = self._image_runtime(image)
+            if rest_generic:
+                image_command = ["python3", "-m", "toolstack_forwarder"]
             name = f"toolyard-{tool_def.id}"
             self._docker(["rm", "-f", name], _DOCKER_RM_TIMEOUT)  # clear a same-named leftover
             run_args = [
@@ -688,7 +844,10 @@ class DockerRunner:
                 "-p", f"127.0.0.1:{tool_def.port}:{tool_def.port}",
                 "-e", f"TOOLSTACK_PORT={tool_def.port}",
                 "-e", "TOOLSTACK_BIND=0.0.0.0",  # container-internal; host side stays loopback via -p
-                "-v", f"{secrets_dir}:/run/secrets:ro",
+                "-e", f"TOOLSTACK_SECRETS_DIR={_CONTAINER_SECRETS}",
+                "--tmpfs", f"{_CONTAINER_SECRETS}:rw,noexec,nosuid,nodev,mode=0711",
+                "--ulimit", "core=0:0",
+                "--entrypoint", "/bin/sh",
             ]
             if tool_def.type == "rest":
                 run_args += [
@@ -704,12 +863,11 @@ class DockerRunner:
                 # Mount the proxy's socket dir so the tool reaches it at the contract path.
                 run_args += ["-v", f"{proxy_dir}:/run/toolyard",
                              "-e", f"TOOLYARD_SECRETS_SOCKET={_CONTAINER_SOCKET}"]
-            run_args.append(image)
-            if rest_generic:
-                run_args += ["python3", "-m", "toolstack_forwarder"]
+            run_args += [image, "-c", _BOOTSTRAP_SCRIPT, "toolyard-init", *image_command]
             self._docker(run_args, _DOCKER_RUN_TIMEOUT, check=True)
+            self._inject_secrets(name, image_user, secrets)
             log_pid = _start_docker_log_follower(name, log_path)
-            running = RunningTool(tool_def.id, tool_def.port, self.backend, name, secrets_dir,
+            running = RunningTool(tool_def.id, tool_def.port, self.backend, name, "",
                                   proxy_pid, proxy_dir, log_pid=log_pid, log_path=str(log_path),
                                   boot_id=_boot_id())
             # Readiness: a container that exits at once (bad image / port clash) must not record
@@ -728,7 +886,7 @@ class DockerRunner:
                                    timeout=_DOCKER_RM_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     pass
-            _cleanup_partial_start(secrets_dir, proxy_pid, proxy_dir, log_pid=log_pid)
+            _cleanup_partial_start("", proxy_pid, proxy_dir, log_pid=log_pid)
             raise
 
     def stop(self, running: RunningTool) -> None:
@@ -744,7 +902,8 @@ class DockerRunner:
         except subprocess.TimeoutExpired:
             log.warning("docker rm %s timed out on stop; container may still exist", running.handle)
         _stop_proxy(running)
-        shutil.rmtree(running.workdir, ignore_errors=True)
+        if running.workdir:  # clean records created by the retired host-file implementation
+            shutil.rmtree(running.workdir, ignore_errors=True)
         log.info("stopped tool %s (container %s)", running.tool_id, running.handle)
 
     def is_alive(self, running: RunningTool) -> bool:
@@ -757,6 +916,17 @@ class DockerRunner:
             log.warning("docker inspect %s timed out", running.handle)
             return False
         return result.stdout.strip() == "true"
+
+    def secrets_ready(self, running: RunningTool) -> bool:
+        """Whether this live container still has Toolyard's tmpfs injection marker."""
+        try:
+            result = subprocess.run(
+                ["docker", "exec", running.handle, "test", "-e", _INJECTED_MARKER],
+                capture_output=True, timeout=_DOCKER_INSPECT_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            return False
+        return result.returncode == 0
 
 
 def native_backend(platform: str | None = None) -> str:

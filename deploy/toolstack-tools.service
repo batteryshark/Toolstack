@@ -1,15 +1,8 @@
 # Toolstack tool reconcile: systemd unit TEMPLATE.
 #
-# Why this exists
-#   Toolyard resolves each tool's secrets at start and injects them into the tool's
-#   container; the values deliberately live nowhere else on disk (message-contracts §3).
-#   They are written to a temp dir the host clears at boot (systemd-tmpfiles: `D /tmp`),
-#   while the container runtime restores the containers that mount that dir. So after a
-#   reboot every tool with secrets comes back reading `Up` -- and serves 503 from an empty
-#   /run/secrets. Nothing else re-resolves them: toolstack-admin's ExecStartPost starts the
-#   broker, not the tools. This unit re-resolves and restarts exactly the broken tools, once
-#   the container runtime is up. It is idempotent: healthy tools are left alone, and a tool
-#   you deliberately stopped stays stopped.
+# Tool secrets are injected into a container-only tmpfs and intentionally disappear with
+# the container or host. This unit restores recorded tools after boot without starting any
+# tool the operator deliberately stopped. It is safe and idempotent at any time.
 #
 # To deploy (mirrors toolstack-admin.service):
 #   1. cp deploy/toolstack-tools.service /etc/systemd/system/toolstack-tools.service
@@ -22,7 +15,7 @@
 #   and confirm each tool answers 200:  curl -s localhost:<tool port>/health
 
 [Unit]
-Description=Toolstack tool reconcile (re-resolve secrets the host wiped at boot)
+Description=Toolstack tool reconcile
 # docker.service: a repair recreates containers, so the daemon must be up first.
 # toolstack-admin.service: the broker should be serving before its tools return.
 After=network-online.target docker.service toolstack-admin.service
@@ -44,11 +37,17 @@ WorkingDirectory=/opt/toolstack
 # credentials dir, and the toolyard runner. Reconcile MUST see identical values, or it
 # would repair tools onto a different runner or backend than the panel started them with.
 EnvironmentFile=-/etc/toolstack/admin.env
+# Must match the admin unit so boot reconciliation authenticates with the same
+# per-tool identities from systemd's non-swappable credential store.
+#LoadCredentialEncrypted=infisical:/etc/credstore.encrypted/toolstack-infisical
+#Environment=TOOLSTACK_INFISICAL_CREDENTIALS_DIR=%d
+#Environment=TOOLSTACK_INFISICAL_CREDENTIAL_PREFIX=infisical_
 # EDIT: absolute path to the admin venv's python.
 ExecStart=/opt/toolstack/admin/.venv/bin/python -m admin reconcile-tools
 # A repair may pull or build a tool image. Don't let systemd kill it mid-build; the
 # default start timeout (90s) is far too short for a cold image build.
 TimeoutStartSec=900
+LimitCORE=0
 
 # --- State location -----------------------------------------------------------
 # MUST match toolstack-admin.service line for line. These route the app to the state
@@ -58,6 +57,9 @@ TimeoutStartSec=900
 StateDirectory=toolstack
 Environment=XDG_STATE_HOME=/var/lib
 Environment=XDG_CONFIG_HOME=/var/lib
+RuntimeDirectory=toolyard
+RuntimeDirectoryMode=0700
+Environment=TOOLYARD_RUNTIME_DIR=/run/toolyard
 
 # --- Docker tool runner (only when TOOLSTACK_RUNNER=docker) --------------------
 # Same two requirements as toolstack-admin.service: the docker socket (via the docker
@@ -72,14 +74,9 @@ ProtectKernelModules=true
 RestrictSUIDSGID=true
 RestrictRealtime=true
 LockPersonality=true
+PrivateTmp=true
 # EDIT: point this at your install root (the same root as WorkingDirectory).
 ReadWritePaths=/opt/toolstack
-#
-# PrivateTmp: LEAVE OFF under the docker runner. Toolyard writes each tool's secrets to a
-# temp dir and bind-mounts it into the container, but dockerd resolves that path in the
-# HOST mount namespace -- so with a private /tmp the container mounts an empty dir and every
-# tool with secrets 503s: precisely the failure this unit exists to repair. The same applies
-# to toolstack-admin.service, whose template enables it.
 
 [Install]
 WantedBy=multi-user.target

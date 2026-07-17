@@ -42,12 +42,19 @@ WorkingDirectory=/opt/toolstack
 # admin knobs. Optional (the leading '-'): without it the panel uses its built-in
 # defaults (process runner, file secret backend). See toolstack-admin.env.example.
 EnvironmentFile=-/etc/toolstack/admin.env
+# Production Infisical identities should be encrypted with systemd-creds and loaded
+# into systemd's non-swappable credential store. A source directory loads one file per
+# tool as infisical_<filename>; see deploy/README.md.
+#LoadCredentialEncrypted=infisical:/etc/credstore.encrypted/toolstack-infisical
+#Environment=TOOLSTACK_INFISICAL_CREDENTIALS_DIR=%d
+#Environment=TOOLSTACK_INFISICAL_CREDENTIAL_PREFIX=infisical_
 # EDIT: absolute path to the admin venv's python, repeated in all three lines.
 ExecStart=/opt/toolstack/admin/.venv/bin/python -m admin serve --port 8780
 ExecStartPost=/opt/toolstack/admin/.venv/bin/python -c "from admin import broker_config, supervisor; supervisor.start(broker_config.load())"
 ExecStopPost=/opt/toolstack/admin/.venv/bin/python -c "from admin import supervisor; supervisor.stop()"
 Restart=on-failure
 RestartSec=3
+LimitCORE=0
 
 # --- State location -----------------------------------------------------------
 # Pin every file the service writes (broker SQLite, the admin password + session
@@ -61,6 +68,12 @@ RestartSec=3
 StateDirectory=toolstack
 Environment=XDG_STATE_HOME=/var/lib
 Environment=XDG_CONFIG_HOME=/var/lib
+# Runtime-only material (writeback sockets and process-runner secret files) lives on
+# /run's tmpfs. Docker secret values bypass this directory and stream directly into
+# each container's private tmpfs.
+RuntimeDirectory=toolyard
+RuntimeDirectoryMode=0700
+Environment=TOOLYARD_RUNTIME_DIR=/run/toolyard
 
 # --- Sandboxing (systemd hardening) -------------------------------------------
 # A baseline that's safe for a Python web service (no syscall filter: it would trip
@@ -91,13 +104,7 @@ ReadWritePaths=/opt/toolstack
 #   2. A writable docker config. ProtectHome=true hides ~/.docker, so point DOCKER_CONFIG
 #      at the state dir (set unconditionally below; harmless for the process runner, it
 #      just stops the "Error loading config file: ~/.docker/config.json" warning).
-#   3. PrivateTmp=false. Turn OFF the PrivateTmp=true set above: the runner writes each
-#      tool's secrets to a temp dir and bind-mounts it into the container, but dockerd
-#      resolves that path in the HOST mount namespace. With a private /tmp the container
-#      mounts an empty dir instead, and every tool with secrets serves 503 (its /health
-#      reports "missing injected secret") while the container still reads Up.
 #SupplementaryGroups=docker
-#PrivateTmp=false
 Environment=DOCKER_CONFIG=/var/lib/toolstack/.docker
 
 [Install]

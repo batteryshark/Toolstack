@@ -326,9 +326,8 @@ These are judgment calls made along the way, worth a deliberate yes/no:
 Honest list of what is **not** done; none block the slice working, but they matter
 before a real deployment:
 
-- **Secrets touch host disk transiently.** The process runner writes secrets to a
-  `0700` temp dir; the docker runner bind-mounts a host dir, both removed on stop.
-  Production hardening: inject into a container **tmpfs** at start (no host disk).
+- **Process runners require RAM-backed runtime storage.** Production uses Docker, which
+  streams secrets into a private container tmpfs before the application starts.
 - **Approval `deliver` callback** deliberately not built and not planned: a design
   decision, not a gap. `poll` is the sole source of approval truth; a receiver of
   nod's unauthenticated callback would be forgeable (anyone reaching it could forge

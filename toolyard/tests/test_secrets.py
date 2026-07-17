@@ -13,7 +13,8 @@ from unittest import mock
 
 import toolyard.secrets as secrets_mod
 from toolyard.config import SecretSpec, ToolDef
-from toolyard.secrets import FileBackend, InfisicalBackend, VaultBackend, get_backend
+from toolyard.secrets import (FileBackend, InfisicalBackend, VaultBackend, get_backend,
+                              protect_secret_memory)
 
 # A self-contained fixture tool that declares a secret (the shipped echo demo no longer does).
 _FIXTURE = ToolDef(id="echo", type="api", port=4601, command="python3 app.py", image=None,
@@ -182,6 +183,32 @@ class Infisical(unittest.TestCase):
         with mock.patch.dict(os.environ, env, clear=True):
             b = InfisicalBackend.from_env()
         self.assertEqual(b.credentials.client_id, "cid")
+
+    def test_systemd_credential_directory_selects_per_tool_identity(self):
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        (directory / "infisical_demo-item.env").write_text(
+            "INFISICAL_CLIENT_ID=tool-cid\nINFISICAL_CLIENT_SECRET=tool-secret\n",
+            encoding="utf-8",
+        )
+        env = {
+            "TOOLSTACK_INFISICAL_HOST": "https://infisical.test",
+            "CREDENTIALS_DIRECTORY": str(directory),
+            "TOOLSTACK_INFISICAL_CREDENTIAL_PREFIX": "infisical_",
+        }
+        tool = _tool(SecretSpec("tok", "TOKEN", item="demo-item"))
+        with mock.patch.dict(os.environ, env, clear=True):
+            backend = InfisicalBackend.from_env(tool)
+        self.assertEqual(backend.credentials.client_id, "tool-cid")
+        self.assertEqual(backend.credentials.client_secret, "tool-secret")
+
+
+class SecretMemory(unittest.TestCase):
+    def test_active_swap_fails_closed(self):
+        swaps = "Filename Type Size Used Priority\n/swapfile file 1 0 -2\n"
+        with mock.patch("toolyard.secrets.Path.read_text", return_value=swaps):
+            with self.assertRaisesRegex(RuntimeError, "swap is active"):
+                protect_secret_memory()
 
 
 class _FakeInfisical(BaseHTTPRequestHandler):

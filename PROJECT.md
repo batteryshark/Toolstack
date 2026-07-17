@@ -34,10 +34,10 @@ one process, one SQLite file, internal seams rather than a service mesh.
 
 ## Deferred
 
-Deliberately not built yet: tmpfs secret injection (so secrets never touch host disk),
-just-in-time / temporary grants, and a background approval-expiry sweeper; expiry is lazy
-today (on the next poll, the next submit, or `brokerctl sweep`). Component credentials / mTLS
-matter only if the modules ever split across hosts.
+Deliberately not built yet: just-in-time / temporary grants and a background
+approval-expiry sweeper; expiry is lazy today (on the next poll, the next submit, or
+`brokerctl sweep`). Component credentials / mTLS matter only if the modules ever split
+across hosts.
 
 ## Documentation
 

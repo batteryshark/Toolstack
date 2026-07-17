@@ -5,8 +5,7 @@ This reuses toolyard's own modules (``discover`` / ``load`` / ``get_runner`` /
 ``python -m toolyard.cli`` stay in agreement about what is running. Tools come from
 two places: the tools root (``<root>/*/toolyard.toml``) and an explicit list of tool
 directories (``tool_dirs``) that the panel's tool editor can add anywhere on the
-server. Secret *values* come from the on-disk secrets file; the panel never handles
-them, keeping secrets off the control plane.
+server. The panel never handles secret values, keeping them off the control plane.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from toolyard.cli import _load_state, _save_state
 from toolyard.config import discover
 from toolyard.config import load as load_tool
 from toolyard.runner import RunningTool, get_runner
-from toolyard.secrets import get_backend
+from toolyard.secrets import get_backend, protect_secret_memory
 
 from . import settings
 
@@ -74,6 +73,7 @@ def start(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend: 
     # needs no backend (and so no Infisical credential) at all.
     secrets = {}
     if defs[tool_id].secrets:
+        protect_secret_memory()
         secrets = get_backend(secrets_file=secrets_file,
                               tool_def=defs[tool_id]).resolve(defs[tool_id])
     # Pass the configured backend name to the runner's write proxy explicitly, rather than
@@ -104,17 +104,12 @@ def restart(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend
 
 def reconcile(tools_root: str, tool_dirs, secrets_file: str,
               backend: str = "process") -> dict[str, list[str]]:
-    """Restart tools recorded as running whose injected secrets did not survive the host.
+    """Restore recorded tools whose process or ephemeral secret injection is gone.
 
-    Secrets are resolved at start into a temp dir the host wipes on boot, while the
-    container runtime restores the containers that mount it -- so after a reboot a tool
-    reads ``Up`` while serving 503 from an empty ``/run/secrets``, which is exactly the
-    failure this repairs (message-contracts §3: resolve and inject at boot). Re-resolving
-    is the only fix: the values are deliberately nowhere else on disk.
-
-    Restarts a tool when its injected secret *files* are gone or it isn't alive; a healthy
-    tool is left running, so this is safe to run at any time, not just at boot. Tools absent
-    from the state file are *not* started: not-running is an operator decision, not damage.
+    Docker secrets live only in the container's tmpfs. A daemon or host restart can
+    recreate a recorded container without that tmpfs content, so DockerRunner exposes a
+    marker check that does not read any secret. Process runners use the equivalent
+    RAM-backed files check. Tools absent from state remain stopped by operator choice.
 
     Returns ``{"repaired": [...], "failed": ["id: why", ...]}``. One tool's failure never
     aborts the rest -- a boot repair should fix what it can and report the remainder, so
@@ -128,19 +123,24 @@ def reconcile(tools_root: str, tool_dirs, secrets_file: str,
         if tool_def is None:
             continue  # unregistered since it was started; leave the record for the operator
         running = RunningTool(**record)
-        # Test for the secret *files*, not the dir: the container runtime recreates a missing
-        # bind-mount source as an empty dir at container start, so the dir is always there and
-        # its existence proves nothing. The tool then reads an empty /run/secrets and 503s
-        # while its container still reports Up. Empty `secrets` -> any() is False -> a tool
-        # with no secrets is never "lost" (nothing to re-resolve).
-        workdir = Path(running.workdir)
-        secrets_lost = any(not (workdir / spec.name).is_file() for spec in tool_def.secrets)
-        if not secrets_lost and get_runner(running.backend).is_alive(running):
+        runner = get_runner(running.backend)
+        if running.backend == "docker":
+            injection_ready = runner.secrets_ready(running)
+        else:
+            workdir = Path(running.workdir)
+            injection_ready = all((workdir / spec.name).is_file() for spec in tool_def.secrets)
+        if injection_ready and runner.is_alive(running):
             continue
         try:
             restart(tool_id, tools_root, tool_dirs, secrets_file, backend)
             repaired.append(tool_id)
         except Exception as exc:  # noqa: BLE001 - report every failure, repair the rest
+            # restart() removes the old record before starting. Preserve the operator's
+            # running intent when start fails so a later reconcile can retry it.
+            state = _load_state()
+            if tool_id not in state:
+                state[tool_id] = record
+                _save_state(state)
             failed.append(f"{tool_id}: {exc}")
     return {"repaired": repaired, "failed": failed}
 
