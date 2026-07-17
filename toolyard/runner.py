@@ -19,6 +19,7 @@ import functools
 import logging
 import os
 import re
+import secrets as _secrets
 import shlex
 import shutil
 import signal
@@ -33,6 +34,14 @@ from typing import Protocol
 
 from .config import ToolDef
 from .sandbox import EgressPolicy, ResourceCaps, SandboxPolicy
+
+# SPS integration (Phase 2): the runner mints an ephemeral E_SECRET per
+# tool start, registers the tool with SPS over TLS/TCP, and injects the
+# E_SECRET + SPS connection params into the child env. The tool itself
+# then talks to SPS to retrieve its secrets (see Phase 3 tool migration).
+_DEFAULT_SPS_ENV = "/etc/toolstack/sps.env"
+_DEFAULT_SPS_HOST = "127.0.0.1"
+_DEFAULT_SPS_PORT = 8743
 
 # Container-internal mount point for the writable-secret socket (message-contracts
 # §4); matches the tool's default TOOLYARD_SECRETS_SOCKET.
@@ -72,18 +81,98 @@ def _check_port_free(port: int) -> None:
         s.close()
 
 
+# ---- SPS integration (Phase 2) --------------------------------------------
+
+def _mint_e_secret() -> str:
+    """64 random bytes -> 128 hex chars. Per tool start."""
+    return _secrets.token_hex(64)
+
+
+def _check_sps_env(path: str) -> str:
+    """Fail closed: sps.env must be present and mode 0600 (the SPS config
+    module raises ConfigModeError if not). Called by `runner.start()` BEFORE
+    `_sps_register` so a misconfigured SPS is caught at the gate rather than
+    at the wire."""
+    from sps.config import ConfigModeError, load_config
+    try:
+        load_config(path)
+    except ConfigModeError as exc:
+        raise SystemExit(f"sps.env: {exc}") from exc
+    except FileNotFoundError as exc:
+        raise SystemExit(f"sps.env not found at {path}: {exc}") from exc
+    except ValueError as exc:
+        raise SystemExit(f"sps.env: {exc}") from exc
+    return path
+
+
+def _sps_register(tool_def: ToolDef, e_secret: str, sps_env_path: str) -> None:
+    """Open a TLS connection to SPS, verify the cert against `sp_tls_ca`,
+    send a `register` JSON line carrying the tool's CS_TUPLE list."""
+    from sps.client import SPSClient
+    from sps.config import load_config
+    cfg = load_config(sps_env_path)
+    verify = os.environ.get("TOOLSTACK_SPS_VERIFY", "1") == "1"
+    client = SPSClient(
+        host=os.environ.get("TOOLSTACK_SPS_HOST", cfg.sp_host),
+        port=int(os.environ.get("TOOLSTACK_SPS_PORT", str(cfg.sp_port))),
+        sp_secret=cfg.sp_secret,
+        ca_file=cfg.sp_tls_ca,
+        verify=verify,
+    )
+    cs_tuples = [
+        {"name": s.name, "field": s.field, "item": s.item, "writable": bool(s.writable)}
+        for s in tool_def.secrets
+    ]
+    client.register(tool_def.id, e_secret, cs_tuples)
+
+
+def _sps_unregister(tool_id: str, sps_env_path: str) -> None:
+    """Best-effort: a failed unregister should not turn a clean stop into a
+    failure. Logged as a warning, never raised to the caller."""
+    from sps.client import SPSClient
+    from sps.config import load_config
+    try:
+        cfg = load_config(sps_env_path)
+    except Exception as exc:
+        log.warning("SPS unregister %s: cannot load config %s: %s", tool_id, sps_env_path, exc)
+        return
+    try:
+        verify = os.environ.get("TOOLSTACK_SPS_VERIFY", "1") == "1"
+        client = SPSClient(
+            host=os.environ.get("TOOLSTACK_SPS_HOST", cfg.sp_host),
+            port=int(os.environ.get("TOOLSTACK_SPS_PORT", str(cfg.sp_port))),
+            sp_secret=cfg.sp_secret,
+            ca_file=cfg.sp_tls_ca,
+            verify=verify,
+        )
+        client.unregister(tool_id)
+    except Exception as exc:
+        log.warning("SPS unregister %s failed: %s", tool_id, exc)
+
+
 def _terminate(pid: str | int | None) -> None:
     """SIGTERM a detached process group (a setpgroup=0 leader) and reap it; best-effort.
     Shared by the write proxy, the egress proxy, the log follower, and start()'s cleanup."""
     if pid is None:
         return
     try:
-        os.killpg(int(pid), signal.SIGTERM)
-    except (ProcessLookupError, PermissionError, ValueError):
+        pid_int = int(pid)
+    except (TypeError, ValueError):
+        return  # docker container names and other non-numeric handles are not killpg targets
+    # Safety: never signal pid ≤ 1. POSIX interprets -1 as "every process we own" and 1 as
+    # init; the runner only ever calls this with its own posix_spawn children's pids (always
+    # ≥ 2 in practice), so a value ≤ 1 means a sentinel leaked through. Refuse rather than
+    # signal wrongly. (Matches the repo-wide "kill pid 1 is a footgun" invariant.)
+    if pid_int <= 1:
+        log.warning("_terminate: refusing unsafe pid %r (≤1 would signal init or every process)", pid)
+        return
+    try:
+        os.killpg(pid_int, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
         pass
     try:
-        os.waitpid(int(pid), 0)
-    except (ChildProcessError, ProcessLookupError, ValueError):
+        os.waitpid(pid_int, 0)
+    except (ChildProcessError, ProcessLookupError):
         pass
 
 
@@ -114,6 +203,12 @@ class RunningTool:
     log_path: str | None = None
     egress_pid: str | None = None  # per-tool egress proxy pid (tools with an egress allowlist)
     launcher_pid: str | None = None  # sudo/netguard launcher pid to reap (bwrap backend)
+    # SPS integration (Phase 2): the E_SECRET the runner minted for this start,
+    # plus the SPS connection params the tool needs to retrieve its secrets.
+    e_secret: str | None = None
+    sps_host: str = "127.0.0.1"
+    sps_port: int = 8743
+    sps_ca: str | None = None
 
 
 def _write_secrets(tool_id: str, secrets: dict[str, str]) -> str:
@@ -274,24 +369,64 @@ class ProcessRunner:
         if not tool_def.command:
             raise ValueError(f"tool {tool_def.id} has no entrypoint.command")
         _check_port_free(tool_def.port)
-        secrets_dir = _write_secrets(tool_def.id, secrets)
+
+        # Phase 2: SPS integration. When SPS is configured (env file present
+        # at TOOLSTACK_SPS_ENV), mint an ephemeral E_SECRET and register the
+        # tool with SPS so the tool can retrieve its secrets over TLS/TCP.
+        # When SPS is unconfigured (typical in-test scenarios), skip cleanly
+        # so existing host-disk-injection flows keep working; Phase 5 closes
+        # the dual-path gap.
+        sps_env_path = os.environ.get("TOOLSTACK_SPS_ENV", _DEFAULT_SPS_ENV)
+        sps_active = (
+            os.environ.get("TOOLSTACK_SPS_SKIP") != "1"
+            and os.path.exists(sps_env_path)
+        )
+        e_secret = _mint_e_secret() if sps_active else None
+        sps_registered = False
+        if sps_active:
+            try:
+                _check_sps_env(sps_env_path)
+                _sps_register(tool_def, e_secret, sps_env_path)  # type: ignore[arg-type]
+                sps_registered = True
+            except SystemExit:
+                # Mode-0600 failure already logged by _check_sps_env; do not
+                # silently keep going -- refuse to launch.
+                raise
+            except Exception as exc:
+                log.warning("SPS register %s failed: %s (skipping SPS path)", tool_def.id, exc)
+                e_secret = None
+                sps_registered = False
+
+        secrets_dir = _write_secrets(tool_def.id, secrets) if secrets else None
         proxy_pid = proxy_dir = None
         egress_pid = egress_port = None
         child_pid = None
         log_path = _tool_log_path(tool_def)
         try:
-            proxy_pid, proxy_dir = _start_write_proxy(tool_def, secret_backend, secrets_file)
+            if secrets_dir:
+                proxy_pid, proxy_dir = _start_write_proxy(tool_def, secret_backend, secrets_file)
             policy = self._policy(tool_def)
             if policy.egress.allow:
                 egress_pid, egress_port = _start_egress_proxy(policy.egress.allow)
             env = {
                 **os.environ,
-                "TOOLSTACK_SECRETS_DIR": secrets_dir,
                 "TOOLSTACK_PORT": str(tool_def.port),
                 "TOOLSTACK_TOOL_CONFIG": str(tool_def.path / "toolyard.toml"),
             }
+            if secrets_dir:
+                env["TOOLSTACK_SECRETS_DIR"] = secrets_dir
+            else:
+                env["TOOLSTACK_SECRETS_DIR"] = ""  # tools that fall back to FS read will get ENOENT cleanly
             if proxy_dir:
                 env["TOOLYARD_SECRETS_SOCKET"] = str(Path(proxy_dir) / "secrets.sock")
+            if e_secret is not None:
+                env["TOOLSTACK_E_SECRET"] = e_secret
+                env["TOOLSTACK_SPS_HOST"] = os.environ.get(
+                    "TOOLSTACK_SPS_HOST", _DEFAULT_SPS_HOST)
+                env["TOOLSTACK_SPS_PORT"] = os.environ.get(
+                    "TOOLSTACK_SPS_PORT", str(_DEFAULT_SPS_PORT))
+                env["TOOLSTACK_SPS_CA"] = os.environ.get(
+                    "TOOLSTACK_SPS_CA", _DEFAULT_SPS_ENV)
             if egress_port:
                 # Route the tool's outbound HTTP(S) through its egress proxy; the sandbox
                 # allows outbound only to this port, so the proxy is the sole exit.
@@ -315,19 +450,33 @@ class ProcessRunner:
             finally:
                 os.close(log_fd)
             child_pid = pid  # track so a readiness failure (below) reaps it, not just kills it
-            running = RunningTool(tool_def.id, tool_def.port, self.backend, str(pid), secrets_dir,
-                                  proxy_pid, proxy_dir, log_path=str(log_path), egress_pid=egress_pid)
+            running = RunningTool(
+                tool_def.id, tool_def.port, self.backend, str(pid),
+                workdir=secrets_dir or "",
+                proxy_pid=proxy_pid, proxy_dir=proxy_dir,
+                log_path=str(log_path), egress_pid=egress_pid,
+                e_secret=e_secret,
+                sps_host=env.get("TOOLSTACK_SPS_HOST", _DEFAULT_SPS_HOST),
+                sps_port=int(env.get("TOOLSTACK_SPS_PORT", str(_DEFAULT_SPS_PORT))),
+                sps_ca=env.get("TOOLSTACK_SPS_CA") if e_secret else None,
+            )
             # Readiness: a bad command (missing file, import error) execs and exits at once.
             # Catch it now (with the logfile to diagnose) instead of recording a phantom
             # "running" tool that 502s every call.
             time.sleep(_READINESS_WAIT)
             if not self.is_alive(running):
                 raise RuntimeError(f"tool {tool_def.id} exited immediately on start: see {log_path}")
-            log.info("started tool %s on 127.0.0.1:%s (pid %s, log %s)",
-                     tool_def.id, tool_def.port, pid, log_path)
+            log.info("started tool %s on 127.0.0.1:%s (pid %s, log %s, sps=%s)",
+                     tool_def.id, tool_def.port, pid, log_path, sps_registered)
             return running
         except BaseException:
-            _cleanup_partial_start(secrets_dir, proxy_pid, proxy_dir, child_pid, egress_pid=egress_pid)
+            _cleanup_partial_start(secrets_dir or "", proxy_pid, proxy_dir, child_pid, egress_pid=egress_pid)
+            # If we successfully registered with SPS, undo that before propagating.
+            if sps_registered:
+                try:
+                    _sps_unregister(tool_def.id, sps_env_path)
+                except Exception:
+                    pass
             raise
 
     def stop(self, running: RunningTool) -> None:
@@ -343,7 +492,18 @@ class ProcessRunner:
         _stop_proxy(running)
         _stop_log_follower(running)
         _stop_egress_proxy(running)
-        shutil.rmtree(running.workdir, ignore_errors=True)
+        if running.workdir:
+            shutil.rmtree(running.workdir, ignore_errors=True)
+        # Phase 2: best-effort SPS unregister so the in-memory registration
+        # pool doesn't accumulate dead entries across restarts.
+        if running.e_secret:
+            try:
+                _sps_unregister(
+                    running.tool_id,
+                    os.environ.get("TOOLSTACK_SPS_ENV", _DEFAULT_SPS_ENV),
+                )
+            except Exception as exc:
+                log.warning("SPS unregister %s on stop: %s", running.tool_id, exc)
         log.info("stopped tool %s (pid %s)", running.tool_id, running.handle)
 
     def is_alive(self, running: RunningTool) -> bool:
