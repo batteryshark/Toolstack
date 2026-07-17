@@ -42,3 +42,7 @@ client/skills/
 # Per-tool runtime logs written by the toolyard process runner (<tool>/logs/tool.log).
 tools/*/logs/
 /.work
+
+# Don't commit plans or worktrees. That would make things messy too :).
+docs/plans/
+.worktrees/
