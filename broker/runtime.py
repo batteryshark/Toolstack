@@ -74,24 +74,31 @@ _OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 def _env_tool_secret(tool_id: str) -> str | None:
-    """The shared secret the broker presents to ``tool_id``, read from the env var
-    ``TOOLSTACK_TOOL_SECRET_<TOOL>`` (id upper-cased, runs of non-alphanumerics collapsed
-    to a single ``_`` so e.g. ``apple-calendar`` -> ``TOOLSTACK_TOOL_SECRET_APPLE_CALENDAR``).
+    """The shared secret the broker presents to ``tool_id``.
 
-    Returns None when unset or empty (after stripping); the feature is opt-in, so an
-    unconfigured tool gets no header. The value is **stripped of surrounding whitespace**
-    so it matches the tool side, which reads its copy through the same strip (a stray
-    trailing newline in the env must not silently 401 every call).
+    Phase 4 re-sources this from the toolyard state file (each running tool
+    has the E_SECRET the runner minted for it). Falls back to the
+    ``TOOLSTACK_TOOL_SECRET_<TOOL>`` env var for legacy operator-provisioned
+    channel secrets -- which the design doc says we are removing, but which
+    still drives the existing tests until Phase 5 closes that gap. The
+    legacy branch is opt-in (the env var is unset by default).
 
-    The operator provisions the SAME value in two places: this env var (so the broker
-    sends it) and the tool's secret backend (so the toolyard injects it for the tool to
-    verify against). Note the id->env mapping is not injective: ids that differ only in
-    case or in non-alphanumeric runs (``apple-calendar`` vs ``apple.calendar``) collapse to
-    the same env var; keep tool ids distinct under this normalization. A collision only
-    means the two tools share one channel secret, never that calls cross-wire (each tool
-    still listens on its own loopback port)."""
+    Returns None when both lookups come up empty; the feature is opt-in
+    and an unconfigured tool gets no header. The value is stripped of
+    surrounding whitespace so it matches the tool side, which reads its copy
+    through the same strip (a stray trailing newline in the env must not
+    silently 401 every call)."""
     key = "TOOLSTACK_TOOL_SECRET_" + re.sub(r"[^A-Z0-9]+", "_", tool_id.upper())
-    return (os.environ.get(key) or "").strip() or None
+    legacy = (os.environ.get(key) or "").strip() or None
+    if legacy is not None:
+        return legacy
+    # Phase 4: toolyard state file is the source of truth for the
+    # SPS-minted E_SECRET. The runtime constructor accepts a `e_secret_lookup`
+    # callable; production wires it to ToolState.e_secret_for. This fallback
+    # here is the legacy-callable path for callers that didn't inject one.
+    from .tool_state import ToolState
+    val = ToolState().e_secret_for(tool_id)
+    return val.strip() if val else None
 
 
 class HttpRuntime:
