@@ -417,9 +417,9 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             raise HTTPException(status_code=404, detail=f"no such tool: {tool_id}")
         try:
             provisioned = secret_values.provisioned_fields(tool_id, declared)
-        except Exception as exc:  # vault locked/misconfigured: report it without leaking specifics
-            raise HTTPException(status_code=400, detail=f"could not read the vault: {exc}")
-        return {"backend": settings.secret_backend(),
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"could not read from SPS: {exc}")
+        return {"backend": settings.sps_info()["plugin"],
                 "settable": secret_values.is_settable(),
                 "fields": declared,
                 "provisioned": provisioned}
@@ -477,7 +477,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             else:
                 getattr(toolyard_ops, action)(
                     tool_id, config.tools_root, config.tool_dirs,
-                    settings.tool_secrets_file(), settings.tool_runner_backend())
+                    settings.tool_runner_backend())
         except Exception as exc:  # a failed spawn/build is a 502, not a 500
             raise HTTPException(status_code=502, detail=f"tool {action} failed: {exc}")
         with open_store(config) as store:
@@ -534,7 +534,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
 
     @app.get("/api/secret-backend")
     async def api_secret_backend(user: str = Depends(require_user)):
-        return settings.secret_backend_info()
+        return settings.sps_info()
 
 
 def _parse_openapi_value(value) -> dict:

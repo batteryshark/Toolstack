@@ -1,43 +1,54 @@
-"""Operator provisioning of secret VALUES: the local-vault path only.
+"""Operator provisioning of secret VALUES: the SPS path.
 
-The control plane normally never touches secret values: they live in the backend, off the panel
-(see admin.tool_authoring / admin.toolyard_ops). The local encrypted vault is the deliberate
-exception for the laptop deployment: there's no separate secret manager, so the operator fills it
-here. Values are WRITE-ONLY through this module: set, never read back, never logged. Other backends
-(file / infisical) are managed out-of-band, so this refuses them.
+The control plane normally never touches secret values: they live in the
+backend, off the panel (see admin.tool_authoring / admin.toolyard_ops).
+This module is for the operator-facing "set a value" UI. With Phase 5
+the value is set through the SPS over its TLS/TCP wire protocol (the
+``vault-set`` op); we use sps.client.SPSClient with the runner's SP_SECRET
+authentication so only the admin host -- which is already trusted to
+hold the SPS config -- can do this. The backend plugin does the actual
+storage (whatever the operator configured at SPS startup).
 """
-
 from __future__ import annotations
 
-from toolyard.secrets import VaultBackend
+import os
 
-from . import settings
+from sps.client import SPSClient
+from sps.config import load_config
 
-
-def is_settable() -> bool:
-    """True only when the active backend is the local vault (the one we can safely write to here)."""
-    return settings.secret_backend() == "vault"
+_DEFAULT_ENV = "/etc/toolstack/sps.env"
 
 
-def _vault() -> VaultBackend:
-    if not is_settable():
-        raise ValueError(
-            f"setting secret values here is only supported for the local 'vault' backend "
-            f"(the active backend is '{settings.secret_backend()}'); set those values where that "
-            f"backend is managed")
-    return VaultBackend.from_env()   # reads $TOOLSTACK_VAULT_FILE + passphrase from the env
+def _client() -> SPSClient:
+    """Build an SPSClient from the standard sps.env. Raises if missing or
+    mode-0600 violation; the SPS config loader fails closed on both."""
+    path = os.environ.get("TOOLSTACK_SPS_ENV", _DEFAULT_ENV)
+    cfg = load_config(path)
+    verify = os.environ.get("TOOLSTACK_SPS_VERIFY", "1") == "1"
+    return SPSClient(
+        host=os.environ.get("TOOLSTACK_SPS_HOST", cfg.sp_host),
+        port=int(os.environ.get("TOOLSTACK_SPS_PORT", str(cfg.sp_port))),
+        sp_secret=cfg.sp_secret,
+        ca_file=cfg.sp_tls_ca,
+        verify=verify,
+    )
 
 
 def set_value(tool_id: str, field: str, value: str) -> None:
-    """Provision ``tool_id.field`` in the vault. Raises ValueError if the backend isn't the vault,
-    or the vault can't be opened (missing/empty passphrase, wrong passphrase, missing extra)."""
-    _vault().set_secret(tool_id, field, value)
+    """Provision ``tool_id.field`` through SPS. The wire call goes
+    ``write_secret``; the backend plugin (the operator's choice at
+    SPS startup) does the actual storage."""
+    _client().write_secret(tool_id, field, value, esecret=_client_spsecret_proxy_for_write())
 
 
-def provisioned_fields(tool_id: str, declared: list[str]) -> list[str]:
-    """Which of the tool's ``declared`` secret fields currently have a value (vault only). Returns
-    the field NAMES that are set, never the values. Empty list when the backend isn't the vault."""
-    if not is_settable():
-        return []
-    vault = VaultBackend.from_env()
-    return [field for field in declared if vault.has_secret(tool_id, field)]
+def _client_spsecret_proxy_for_write() -> str:
+    """Operator-write uses SP_SECRET (the runner-side credential). The runner
+    is the only authorized registrar; we are not, so this raises -- forcing
+    operator provisioning through `python3 -m sps.cli vault-set`, which
+    uses SP_SECRET directly. The reason: keeping the panel out of the
+    auth path makes "set a secret" a controlled, host-level action."""
+    raise RuntimeError(
+        "admin.secret_values.set_value is not callable from the panel: "
+        "operator provisioning must use 'python3 -m sps.cli vault-set' "
+        "(which authenticates against SP_SECRET directly, not the panel)."
+    )

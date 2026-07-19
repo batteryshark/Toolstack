@@ -11,7 +11,7 @@ supervises the **broker**; the toolyard and tools run as the admin app starts th
 | File | What it is |
 |---|---|
 | [`toolstack-admin.service`](toolstack-admin.service) | systemd unit **template** for the admin panel (+ the broker it supervises). Ships with placeholders; copy and edit, don't symlink. |
-| [`toolstack-admin.env.example`](toolstack-admin.env.example) | example `EnvironmentFile`: the site config (secret backend, Infisical host/vault, toolyard runner). Copy, fill in, `chmod 600`. |
+| [`toolstack-admin.env.example`](toolstack-admin.env.example) | example `EnvironmentFile`: the site config (admin / toolyard runner). Copy, fill in, `chmod 600`. |
 | [`redeploy-toolstack`](redeploy-toolstack) | one command to pull + refresh the venv + restart the service + restart registered tools. |
 
 The broker, toolyard, and client are stdlib-only Python (3.11+). The **admin app is the
@@ -23,7 +23,10 @@ virtualenv. See [admin/README.md](../admin/README.md) for what the panel does.
 - **Python 3.11+** (the broker/toolyard use `tomllib`).
 - A **service account**: a dedicated `toolstack` user + group (`sudo useradd --system --user-group --shell /usr/sbin/nologin toolstack`), or point the unit's `User=` / `Group=` at an account you already have.
 - An **admin virtualenv** with the package + panel deps: `python3 -m venv admin/.venv && admin/.venv/bin/pip install -e '.[vault]' -r admin/requirements.txt` (run from the checkout root). Installing the package puts `brokerctl` / `toolstack` / `toolyard` in `admin/.venv/bin` alongside the admin. (`deploy/install.sh` and `redeploy-toolstack` do this for you.)
-- A **secret backend**: the dev `file` backend (a local `secrets.toml`) or **Infisical** (set the `TOOLSTACK_INFISICAL_*` vars, see the env example).
+- A **secret backend** (SPS) — phase 5: a separate SPS service holds tool
+  secrets; tools pull them at boot over TLS/TCP. Configure via
+  [`sps.env.example`](sps.env.example) (Infisical / Hashicorp Vault /
+  local encrypted file). The runner + tooltalk path is one line each.
 - For production tool isolation: **Docker** (`TOOLSTACK_RUNNER=docker`); the `process` runner is dev-only. The docker runner needs a little extra setup, see "Docker tool runner" below.
 - For human approvals: a reachable **[nod](https://github.com/batteryshark/nod)** instance and an issuer token, configured from the dashboard, not this env file (see "Broker config" below).
 

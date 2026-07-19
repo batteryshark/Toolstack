@@ -1,9 +1,17 @@
-"""Entrypoint for ``python3 -m toolstack_forwarder``."""
+"""Entrypoint for ``python3 -m toolstack_forwarder``.
+
+Reads secrets from SPS (via sps.tool_sdk.SecretClient) instead of the
+historical host-disk ``$TOOLSTACK_SECRETS_DIR``. The runner passes
+``TOOLSTACK_TOOL_ID`` (the tool id from toolyard.toml) plus the SPS
+connection params the SDK needs.
+"""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+
+from sps.tool_sdk import SecretClient
 
 from .config import ConfigError, load_config
 from .server import serve
@@ -14,19 +22,26 @@ DEFAULT_MAX_BODY = 20 * 1024 * 1024
 
 def main() -> None:
     config_path = Path(os.environ.get("TOOLSTACK_TOOL_CONFIG", "toolyard.toml"))
+    tool_id = os.environ.get("TOOLSTACK_TOOL_ID")
+    if not tool_id:
+        raise SystemExit(
+            "toolstack-forwarder: TOOLSTACK_TOOL_ID is not set; cannot reach SPS"
+        )
     try:
         config = load_config(config_path)
         port = _int_env("TOOLSTACK_PORT", config.port)
         if port is None:
-            raise ConfigError(f"{config_path}: entrypoint.port: missing and TOOLSTACK_PORT is unset")
+            raise ConfigError(
+                f"{config_path}: entrypoint.port: missing and TOOLSTACK_PORT is unset"
+            )
         bind = os.environ.get("TOOLSTACK_BIND", "127.0.0.1")
-        secrets_dir = os.environ.get("TOOLSTACK_SECRETS_DIR", "/run/secrets")
         timeout = _float_env("TOOLSTACK_FORWARDER_TIMEOUT", 28.0)
         max_body = _int_env("TOOLSTACK_REST_BODY_MAX", DEFAULT_MAX_BODY) or DEFAULT_MAX_BODY
     except ConfigError as exc:
         raise SystemExit(f"toolstack-forwarder: {exc}")
 
-    serve(bind, port, config, secrets_dir, timeout=timeout, max_body=max_body).serve_forever()
+    secrets = SecretClient.from_env(tool_id)
+    serve(bind, port, config, secrets, timeout=timeout, max_body=max_body).serve_forever()
 
 
 def _int_env(name: str, default: int | None) -> int | None:

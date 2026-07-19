@@ -8,10 +8,9 @@ serves the streamable-HTTP transport at ``POST /mcp`` and the broker is the MCP
 key on ``echo-mcp.<op>`` exactly like an api tool. The op names here (``say`` /
 ``whoami``) deliberately mirror the api echo so the two transports are easy to compare.
 
-Phase 3: secrets come from SPS via the SDK at boot (``TOOLSTACK_E_SECRET``
-+ ``TOOLSTACK_SPS_URL`` env vars); the legacy ``broker_secret`` file fallback
-is gone. Defense in depth: if ``$TOOLSTACK_E_SECRET`` is set, the
-``X-Toolstack-Secret`` header must match it. Without an E_SECRET the check is off.
+Phase 3+: secrets come from SPS via the SDK at boot (``TOOLSTACK_E_SECRET``
++ ``TOOLSTACK_SPS_*`` env vars). The ``X-Toolstack-Secret`` channel auth uses
+the same E_SECRET.
 
 Stdlib only (``http.server``), so it runs as a bare process or in a container unchanged.
 """
@@ -28,7 +27,6 @@ BIND = os.environ.get("TOOLSTACK_BIND", "127.0.0.1")
 PROTOCOL_VERSION = "2025-06-18"
 SESSION_ID = "echo-mcp-session"
 
-# The tools this server exposes.
 TOOLS = [
     {
         "name": "say",
@@ -45,19 +43,12 @@ TOOLS = [
     },
 ]
 
-
-try:
-    _secrets = SecretClient.from_env("echo-mcp")
-    _secrets_active = True
-except RuntimeError:
-    _secrets = None
-    _secrets_active = False
+# Phase 5: SPS path only; no /run/secrets fallback. The credentials cache lives
+# in memory; the broker_secret dev shim lives only in the api echo test now.
+_secrets = SecretClient.from_env("echo-mcp")
 
 
 def verify_broker(headers) -> bool:
-    """Compare the request's X-Toolstack-Secret against the E_SECRET we
-    booted with (Phase 4 re-sources the header from this value). Without
-    an E_SECRET the check is off, mirroring the no-channel-secret branch."""
     expected = os.environ.get("TOOLSTACK_E_SECRET") or ""
     if not expected:
         return True

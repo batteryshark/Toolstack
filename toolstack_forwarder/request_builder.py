@@ -9,6 +9,7 @@ import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
+from sps.tool_sdk import SecretClient
 from .config import Operation, RestConfig
 
 
@@ -43,8 +44,8 @@ _HEADER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 _FORBIDDEN_PATH_VARIABLE_CHARS = set("/\\")
 
 
-def build_request(config: RestConfig, op_name: str, arguments: dict, secrets_dir: str | Path,
-                  max_body: int) -> OutboundRequest:
+def build_request(config: RestConfig, op_name: str, arguments: dict,
+                  secrets: SecretClient, max_body: int) -> OutboundRequest:
     if not isinstance(arguments, dict):
         raise RequestBuildError("invalid_arguments", "arguments must be an object")
     op = config.operations.get(op_name)
@@ -52,18 +53,20 @@ def build_request(config: RestConfig, op_name: str, arguments: dict, secrets_dir
         raise RequestBuildError("unknown_op", "unknown rest operation", op=op_name)
     path = _hydrate_path(op, arguments)
     url = _join_url(config.base_url, path)
-    headers = _build_headers(op, arguments, secrets_dir)
-    body = _build_body(op, arguments, secrets_dir, max_body)
+    headers = _build_headers(op, arguments, secrets)
+    body = _build_body(op, arguments, secrets, max_body)
     if body is not None and op.body_content_type:
         headers["Content-Type"] = op.body_content_type
     return OutboundRequest(method=op.verb, url=url, headers=headers, body=body)
 
 
-def read_secret(secrets_dir: str | Path, name: str) -> str:
+def read_secret(secrets: SecretClient, name: str) -> str:
     try:
-        return Path(secrets_dir, name).read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        raise RequestBuildError("missing_secret", "configured secret is unavailable", secret=name)
+        return secrets.get(name)
+    except KeyError:
+        raise RequestBuildError(
+            "missing_secret", "configured secret is unavailable", secret=name
+        )
 
 
 def _hydrate_path(op: Operation, arguments: dict) -> str:
@@ -128,7 +131,7 @@ def _join_url(base_url: str, path: str) -> str:
     return urllib.parse.urlunsplit((base.scheme, base.netloc, full_path, rel.query, ""))
 
 
-def _build_headers(op: Operation, arguments: dict, secrets_dir: str | Path) -> dict[str, str]:
+def _build_headers(op: Operation, arguments: dict, secrets: SecretClient) -> dict[str, str]:
     raw = arguments.get("headers", {})
     if raw is None:
         raw = {}
@@ -142,14 +145,14 @@ def _build_headers(op: Operation, arguments: dict, secrets_dir: str | Path) -> d
             raise RequestBuildError("header_not_allowed", "header is not allowed for this operation", name=name)
         if not isinstance(value, str):
             raise RequestBuildError("invalid_header", "header value must be a string", name=name)
-        substituted = _substitute_secrets(value, secrets_dir)
+        substituted = _substitute_secrets(value, secrets)
         if any(ord(c) < 0x20 or ord(c) == 0x7f for c in substituted):
             raise RequestBuildError("invalid_header", "header value contains a control character", name=name)
         headers[name] = substituted
     return headers
 
 
-def _build_body(op: Operation, arguments: dict, secrets_dir: str | Path, max_body: int) -> bytes | None:
+def _build_body(op: Operation, arguments: dict, secrets: SecretClient, max_body: int) -> bytes | None:
     present = "body" in arguments
     body = arguments.get("body")
     if op.body_kind == "none":
@@ -160,7 +163,7 @@ def _build_body(op: Operation, arguments: dict, secrets_dir: str | Path, max_bod
         raise RequestBuildError("missing_body", "this operation requires body as a string")
     if op.body_kind == "text":
         if op.body_substitution:
-            body = _substitute_secrets(body, secrets_dir)
+            body = _substitute_secrets(body, secrets)
         data = body.encode("utf-8")
     else:
         try:
@@ -172,9 +175,9 @@ def _build_body(op: Operation, arguments: dict, secrets_dir: str | Path, max_bod
     return data
 
 
-def _substitute_secrets(text: str, secrets_dir: str | Path) -> str:
+def _substitute_secrets(text: str, secrets: SecretClient) -> str:
     def fill(match: re.Match[str]) -> str:
-        return read_secret(secrets_dir, match.group(1))
+        return read_secret(secrets, match.group(1))
 
     out = _SECRET_REF.sub(fill, text)
     if "{{secret:" in out:

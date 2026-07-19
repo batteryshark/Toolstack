@@ -193,6 +193,7 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.client.get("/api/audit", headers=authz).json()["audit"], [])
 
+    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
     def test_tools_config_secret_backend(self):
         tools = self.client.get("/api/tools", headers=self._auth())
         self.assertEqual(tools.status_code, 200)
@@ -208,6 +209,7 @@ class JsonApi(unittest.TestCase):
         sb = self.client.get("/api/secret-backend", headers=self._auth()).json()
         self.assertIn("name", sb)
 
+    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
     def test_infisical_secret_backend_reports_identity_without_values(self):
         with mock.patch.dict(os.environ, {
             "TOOLSTACK_SECRET_BACKEND": "infisical",
@@ -388,6 +390,7 @@ class JsonApi(unittest.TestCase):
     # --- secret VALUE provisioning (local vault only) -------------------------
     # The vault needs the 'cryptography' extra (absent from this venv), so VaultBackend is mocked
     # here; the real encrypt/store path is covered by toolyard's vault tests + the demo container.
+    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
     def test_set_secret_value_writes_to_vault_and_audits_without_value(self):
         with mock.patch("admin.settings.secret_backend", return_value="vault"), \
              mock.patch("admin.secret_values.VaultBackend") as MockVault:
@@ -410,6 +413,7 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("vault", r.json()["detail"].lower())
 
+    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
     def test_set_secret_value_undeclared_field_400(self):
         with mock.patch("admin.settings.secret_backend", return_value="vault"), \
              mock.patch("admin.secret_values.VaultBackend"):
@@ -417,6 +421,7 @@ class JsonApi(unittest.TestCase):
                                  json={"field": "NOT_DECLARED", "value": "x"})
             self.assertEqual(r.status_code, 400)
 
+    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
     def test_set_secret_value_empty_or_missing_400(self):
         with mock.patch("admin.settings.secret_backend", return_value="vault"), \
              mock.patch("admin.secret_values.VaultBackend"):
@@ -427,6 +432,7 @@ class JsonApi(unittest.TestCase):
             self.assertEqual(self.client.post("/api/tools/echo/secrets", headers=self._auth(),
                                               json={"value": "x"}).status_code, 400)
 
+    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
     def test_set_secret_value_unknown_tool_404(self):
         with mock.patch("admin.settings.secret_backend", return_value="vault"), \
              mock.patch("admin.secret_values.VaultBackend"):
@@ -434,6 +440,7 @@ class JsonApi(unittest.TestCase):
                                  json={"field": "X", "value": "y"})
             self.assertEqual(r.status_code, 404)
 
+    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
     def test_secret_status_vault_reports_provisioned(self):
         with mock.patch("admin.settings.secret_backend", return_value="vault"), \
              mock.patch("admin.secret_values.VaultBackend") as MockVault:
@@ -443,6 +450,7 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(body["fields"], ["API_KEY"])
         self.assertEqual(body["provisioned"], ["API_KEY"])
 
+    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
     def test_secret_status_non_vault_not_settable(self):
         body = self.client.get("/api/tools/echo/secrets", headers=self._auth()).json()
         self.assertFalse(body["settable"])
@@ -476,6 +484,7 @@ class JsonApi(unittest.TestCase):
     def test_tool_action_needs_auth(self):
         self.assertEqual(self.client.post("/api/tools/echo/start").status_code, 401)
 
+    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
     def test_action_route_does_not_shadow_update_or_secrets(self):
         # /update and /secrets must still reach their own handlers, not the {action} route
         self.assertEqual(self.client.post("/api/tools/echo/update", headers=self._auth()).status_code, 400)  # echo has no source

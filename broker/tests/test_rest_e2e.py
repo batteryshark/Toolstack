@@ -174,6 +174,7 @@ writable = true
             )
         self.assertIn("header_not_allowed", str(cm.exception))
 
+    @unittest.skip("Phase 5: writeback path is the SPS SDK now, not a host UNIX socket")
     def test_login_writeback_uses_write_proxy(self):
         _WriteProxy.writes = []
         proxy_sock = str(self.root / "secrets.sock")
