@@ -26,7 +26,6 @@ import signal
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,11 +42,9 @@ _DEFAULT_SPS_ENV = "/etc/toolstack/sps.env"
 _DEFAULT_SPS_HOST = "127.0.0.1"
 _DEFAULT_SPS_PORT = 8743
 
-# Container-internal mount point for the writable-secret socket (message-contracts
-# §4); matches the tool's default TOOLYARD_SECRETS_SOCKET.
-_CONTAINER_SOCKET = "/run/toolyard/secrets.sock"
+# Container-internal mount point for the toml (the forwarder reads it).
 _CONTAINER_TOOL_CONFIG = "/run/toolstack/toolyard.toml"
-_REPO_ROOT = Path(__file__).resolve().parents[1]  # so `-m toolyard.write_proxy` imports
+_REPO_ROOT = Path(__file__).resolve().parents[1]  # so the runner can posix_spawn a sub-shell
 
 # Docker subprocess timeouts (seconds): a slow pull or a wedged daemon must fail with a
 # clear error, not hang the calling thread (toolyard start/stop runs in an admin request).
@@ -176,18 +173,16 @@ def _terminate(pid: str | int | None) -> None:
         pass
 
 
-def _cleanup_partial_start(secrets_dir: str, proxy_pid: str | None, proxy_dir: str | None,
-                           child_pid: int | None = None, log_pid: str | None = None,
+def _cleanup_partial_start(child_pid: int | None = None,
+                           log_pid: str | None = None,
                            egress_pid: str | None = None) -> None:
-    """Best-effort cleanup when start() fails partway: never leave the (world-readable) secrets
-    dir on disk, an orphaned write/egress proxy, or an unreaped child zombie behind. start() runs
-    inside the long-lived admin handler, so a leaked zombie per failed start would accrue there;
-    kill AND reap the tool child and both proxies (a readiness-failed child is already a zombie)."""
-    for pid in (child_pid, proxy_pid, log_pid, egress_pid):
+    """Best-effort cleanup when start() fails partway. Phase 5: no secrets
+    dir mount, no write-proxy socket dir -- just reap any zombie children
+    the tool wouldn't have inherited (e.g. bwrap sudo launcher, the
+    docker log follower). start() runs inside the long-lived admin handler;
+    a leaked zombie per failed start would accrue there."""
+    for pid in (child_pid, log_pid, egress_pid):
         _terminate(pid)
-    if proxy_dir:
-        shutil.rmtree(proxy_dir, ignore_errors=True)
-    shutil.rmtree(secrets_dir, ignore_errors=True)
 
 
 @dataclass(frozen=True)
@@ -196,9 +191,6 @@ class RunningTool:
     port: int
     backend: str
     handle: str  # pid (process) or container name (docker)
-    workdir: str  # secrets dir to clean up on stop
-    proxy_pid: str | None = None  # writable-secret proxy pid (when the tool has one)
-    proxy_dir: str | None = None  # proxy socket dir to clean up on stop
     log_pid: str | None = None  # docker log follower pid (process runner logs directly)
     log_path: str | None = None
     egress_pid: str | None = None  # per-tool egress proxy pid (tools with an egress allowlist)
@@ -209,46 +201,6 @@ class RunningTool:
     sps_host: str = "127.0.0.1"
     sps_port: int = 8743
     sps_ca: str | None = None
-
-
-def _write_secrets(tool_id: str, secrets: dict[str, str]) -> str:
-    secrets_dir = tempfile.mkdtemp(prefix=f"toolyard-{tool_id}-")
-    try:
-        for name, value in secrets.items():
-            path = Path(secrets_dir) / name
-            path.write_text(value, encoding="utf-8")
-            path.chmod(0o600)
-    except BaseException:  # a mid-loop failure must not leave a half-written secrets dir on disk
-        shutil.rmtree(secrets_dir, ignore_errors=True)
-        raise
-    return secrets_dir
-
-
-def _start_write_proxy(tool_def: ToolDef, secret_backend: str | None,
-                       secrets_file: str | None) -> tuple[str | None, str | None]:
-    """Start the writable-secret proxy for tools that declare a writable field.
-
-    Returns (proxy_pid, proxy_dir), or (None, None) when there is nothing to write.
-    The proxy runs on the host (holding the backend); only its socket is exposed to
-    the tool. It is spawned detached in its own process group so stop() can kill it.
-    """
-    if not any(s.writable for s in tool_def.secrets):
-        return None, None
-    proxy_dir = tempfile.mkdtemp(prefix=f"toolyard-sock-{tool_def.id}-")
-    os.chmod(proxy_dir, 0o711)  # let the (non-root) container user traverse to the socket
-    socket_path = str(Path(proxy_dir) / "secrets.sock")
-    backend = secret_backend or os.environ.get("TOOLSTACK_SECRET_BACKEND", "file")
-    cmd = (
-        f"exec {shlex.quote(sys.executable)} -m toolyard.write_proxy "
-        f"--socket {shlex.quote(socket_path)} "
-        f"--toml {shlex.quote(str(tool_def.path / 'toolyard.toml'))} "
-        f"--secret-backend {shlex.quote(backend)}"
-    )
-    if secrets_file:
-        cmd += f" --secrets-file {shlex.quote(secrets_file)}"
-    script = f"cd {shlex.quote(str(_REPO_ROOT))} && {cmd}"
-    pid = os.posix_spawn("/bin/sh", ["/bin/sh", "-c", script], os.environ, setpgroup=0)
-    return str(pid), proxy_dir
 
 
 def _pick_free_port() -> int:
@@ -274,12 +226,6 @@ def _start_egress_proxy(allow: tuple[str, ...]) -> tuple[str, int]:
     script = f"cd {shlex.quote(str(_REPO_ROOT))} && {cmd}"
     pid = os.posix_spawn("/bin/sh", ["/bin/sh", "-c", script], os.environ, setpgroup=0)
     return str(pid), port
-
-
-def _stop_proxy(running: RunningTool) -> None:
-    _terminate(running.proxy_pid)
-    if running.proxy_dir:
-        shutil.rmtree(running.proxy_dir, ignore_errors=True)
 
 
 def _stop_log_follower(running: RunningTool) -> None:
@@ -339,8 +285,7 @@ class Runner(Protocol):
 
     backend: str
 
-    def start(self, tool_def: ToolDef, secrets: dict[str, str], *,
-              secret_backend: str | None = ..., secrets_file: str | None = ...) -> RunningTool: ...
+    def start(self, tool_def: ToolDef) -> RunningTool: ...
 
     def stop(self, running: RunningTool) -> None: ...
 
@@ -364,18 +309,21 @@ class ProcessRunner:
         This is the single point of variation between the two process-based backends."""
         return "/bin/sh", ["/bin/sh", "-c", inner_script]
 
-    def start(self, tool_def: ToolDef, secrets: dict[str, str], *,
-              secret_backend: str | None = None, secrets_file: str | None = None) -> RunningTool:
+    def start(self, tool_def: ToolDef) -> RunningTool:
+        """Spawn the tool as a subprocess. Phase 5: the runner no longer
+        resolves secrets from a backend -- the tool pulls them from SPS at
+        boot, using the E_SECRET we mint here and a CA bundle the runner
+        sets in the env."""
         if not tool_def.command:
             raise ValueError(f"tool {tool_def.id} has no entrypoint.command")
         _check_port_free(tool_def.port)
 
-        # Phase 2: SPS integration. When SPS is configured (env file present
-        # at TOOLSTACK_SPS_ENV), mint an ephemeral E_SECRET and register the
-        # tool with SPS so the tool can retrieve its secrets over TLS/TCP.
-        # When SPS is unconfigured (typical in-test scenarios), skip cleanly
-        # so existing host-disk-injection flows keep working; Phase 5 closes
-        # the dual-path gap.
+        # SPS integration: when configured (env file present, mode 0600),
+        # mint an ephemeral E_SECRET and register the tool with SPS so the
+        # tool can retrieve its secrets over TLS/TCP. When unconfigured (dev
+        # path), run the tool in "no-secrets" mode and let the tool report
+        # has_api_key: False. Tests can disable the SPS path entirely via
+        # TOOLSTACK_SPS_SKIP=1.
         sps_env_path = os.environ.get("TOOLSTACK_SPS_ENV", _DEFAULT_SPS_ENV)
         sps_active = (
             os.environ.get("TOOLSTACK_SPS_SKIP") != "1"
@@ -397,14 +345,10 @@ class ProcessRunner:
                 e_secret = None
                 sps_registered = False
 
-        secrets_dir = _write_secrets(tool_def.id, secrets) if secrets else None
-        proxy_pid = proxy_dir = None
         egress_pid = egress_port = None
         child_pid = None
         log_path = _tool_log_path(tool_def)
         try:
-            if secrets_dir:
-                proxy_pid, proxy_dir = _start_write_proxy(tool_def, secret_backend, secrets_file)
             policy = self._policy(tool_def)
             if policy.egress.allow:
                 egress_pid, egress_port = _start_egress_proxy(policy.egress.allow)
@@ -413,12 +357,6 @@ class ProcessRunner:
                 "TOOLSTACK_PORT": str(tool_def.port),
                 "TOOLSTACK_TOOL_CONFIG": str(tool_def.path / "toolyard.toml"),
             }
-            if secrets_dir:
-                env["TOOLSTACK_SECRETS_DIR"] = secrets_dir
-            else:
-                env["TOOLSTACK_SECRETS_DIR"] = ""  # tools that fall back to FS read will get ENOENT cleanly
-            if proxy_dir:
-                env["TOOLYARD_SECRETS_SOCKET"] = str(Path(proxy_dir) / "secrets.sock")
             if e_secret is not None:
                 env["TOOLSTACK_E_SECRET"] = e_secret
                 env["TOOLSTACK_SPS_HOST"] = os.environ.get(
@@ -436,9 +374,7 @@ class ProcessRunner:
             # posix_spawn (not Popen) so the detached child has no lifecycle object to
             # warn about; setpgroup=0 gives it its own group so stop() can killpg it.
             inner_script = f"cd {shlex.quote(str(tool_def.path))} && exec {_bind_interpreter(tool_def.command)}"
-            executable, argv = self._spawn_argv(tool_def, inner_script, proxy_dir, egress_port)
-            # Capture the tool's stdout/stderr onto a per-tool logfile (the child's fd 1/2) so a
-            # crash or a noisy start is diagnosable, not lost into the toolyard's own stream.
+            executable, argv = self._spawn_argv(tool_def, inner_script, None, egress_port)
             log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
             try:
                 pid = os.posix_spawn(
@@ -449,20 +385,15 @@ class ProcessRunner:
                 )
             finally:
                 os.close(log_fd)
-            child_pid = pid  # track so a readiness failure (below) reaps it, not just kills it
+            child_pid = pid
             running = RunningTool(
                 tool_def.id, tool_def.port, self.backend, str(pid),
-                workdir=secrets_dir or "",
-                proxy_pid=proxy_pid, proxy_dir=proxy_dir,
                 log_path=str(log_path), egress_pid=egress_pid,
                 e_secret=e_secret,
                 sps_host=env.get("TOOLSTACK_SPS_HOST", _DEFAULT_SPS_HOST),
                 sps_port=int(env.get("TOOLSTACK_SPS_PORT", str(_DEFAULT_SPS_PORT))),
                 sps_ca=env.get("TOOLSTACK_SPS_CA") if e_secret else None,
             )
-            # Readiness: a bad command (missing file, import error) execs and exits at once.
-            # Catch it now (with the logfile to diagnose) instead of recording a phantom
-            # "running" tool that 502s every call.
             time.sleep(_READINESS_WAIT)
             if not self.is_alive(running):
                 raise RuntimeError(f"tool {tool_def.id} exited immediately on start: see {log_path}")
@@ -470,8 +401,7 @@ class ProcessRunner:
                      tool_def.id, tool_def.port, pid, log_path, sps_registered)
             return running
         except BaseException:
-            _cleanup_partial_start(secrets_dir or "", proxy_pid, proxy_dir, child_pid, egress_pid=egress_pid)
-            # If we successfully registered with SPS, undo that before propagating.
+            _cleanup_partial_start(child_pid, egress_pid=egress_pid)
             if sps_registered:
                 try:
                     _sps_unregister(tool_def.id, sps_env_path)
@@ -482,20 +412,15 @@ class ProcessRunner:
     def stop(self, running: RunningTool) -> None:
         pid = int(running.handle)
         try:
-            os.killpg(pid, signal.SIGTERM)  # pgid == pid (setpgroup=0)
+            os.killpg(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             pass
         try:
-            os.waitpid(pid, 0)  # reap if it is our child (no-op across processes)
+            os.waitpid(pid, 0)
         except (ChildProcessError, ProcessLookupError):
             pass
-        _stop_proxy(running)
         _stop_log_follower(running)
         _stop_egress_proxy(running)
-        if running.workdir:
-            shutil.rmtree(running.workdir, ignore_errors=True)
-        # Phase 2: best-effort SPS unregister so the in-memory registration
-        # pool doesn't accumulate dead entries across restarts.
         if running.e_secret:
             try:
                 _sps_unregister(
@@ -655,18 +580,14 @@ class BwrapRunner:
     def _cgroup_procs(self, tool_id: str) -> str:
         return f"{_CGROUP_ROOT}/{_NETGUARD_PARENT}/{tool_id}/cgroup.procs"
 
-    def start(self, tool_def: ToolDef, secrets: dict[str, str], *,
-              secret_backend: str | None = None, secrets_file: str | None = None) -> RunningTool:
+    def start(self, tool_def: ToolDef) -> RunningTool:
         if not tool_def.command:
             raise ValueError(f"tool {tool_def.id} has no entrypoint.command")
         _check_port_free(tool_def.port)
-        secrets_dir = _write_secrets(tool_def.id, secrets)
-        proxy_pid = proxy_dir = None
         egress_pid = egress_port = None
         launcher_pid = None
         log_path = _tool_log_path(tool_def)
         try:
-            proxy_pid, proxy_dir = _start_write_proxy(tool_def, secret_backend, secrets_file)
             policy = self._policy(tool_def)
             if policy.egress.allow:
                 egress_pid, egress_port = _start_egress_proxy(policy.egress.allow)
@@ -674,12 +595,9 @@ class BwrapRunner:
             # instead of inherited -- the values (paths/port/proxy URL, never secret values)
             # reach the tool regardless of sudo, and the sudoers rule needs no SETENV.
             env_assign = {
-                "TOOLSTACK_SECRETS_DIR": secrets_dir,
                 "TOOLSTACK_PORT": str(tool_def.port),
                 "TOOLSTACK_TOOL_CONFIG": str(tool_def.path / "toolyard.toml"),
             }
-            if proxy_dir:
-                env_assign["TOOLYARD_SECRETS_SOCKET"] = str(Path(proxy_dir) / "secrets.sock")
             if egress_port:
                 proxy_url = f"http://127.0.0.1:{egress_port}"
                 for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
@@ -707,10 +625,8 @@ class BwrapRunner:
             finally:
                 os.close(log_fd)
             running = RunningTool(tool_def.id, tool_def.port, self.backend, tool_def.id,
-                                  secrets_dir, proxy_pid, proxy_dir, log_path=str(log_path),
+                                  log_path=str(log_path),
                                   egress_pid=egress_pid, launcher_pid=str(launcher_pid))
-            # Readiness: netguard joins the cgroup before exec, so after a short settle a live
-            # tool leaves the cgroup non-empty while one that exited at once leaves it empty.
             time.sleep(_SANDBOX_READINESS_WAIT)
             if not self.is_alive(running):
                 raise RuntimeError(f"tool {tool_def.id} did not start under the sandbox: see {log_path}")
@@ -720,19 +636,16 @@ class BwrapRunner:
         except BaseException:
             subprocess.run(_netguard_argv("teardown", "--tool", tool_def.id),
                            capture_output=True, timeout=15)  # remove the cgroup + nft rule
-            _cleanup_partial_start(secrets_dir, proxy_pid, proxy_dir,
-                                   child_pid=launcher_pid, egress_pid=egress_pid)
+            _cleanup_partial_start(child_pid=launcher_pid, egress_pid=egress_pid)
             raise
 
     def stop(self, running: RunningTool) -> None:
         # cgroup.kill (via teardown) SIGKILLs the tool even though the broker can't signal it
-        # directly; then reap the sudo launcher and clean up the proxies + secrets dir.
+        # directly; then reap the sudo launcher.
         subprocess.run(_netguard_argv("teardown", "--tool", running.handle),
                        capture_output=True, timeout=15)
         _terminate(running.launcher_pid)
-        _stop_proxy(running)
         _stop_egress_proxy(running)
-        shutil.rmtree(running.workdir, ignore_errors=True)
         log.info("stopped tool %s (cgroup %s)", running.tool_id, running.handle)
 
     def is_alive(self, running: RunningTool) -> bool:
@@ -758,24 +671,15 @@ class DockerRunner:
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(f"docker {args[0]} failed: {(exc.stderr or '').strip() or exc}") from exc
 
-    def start(self, tool_def: ToolDef, secrets: dict[str, str], *,
-              secret_backend: str | None = None, secrets_file: str | None = None) -> RunningTool:
-        secrets_dir = _write_secrets(tool_def.id, secrets)
-        proxy_pid = proxy_dir = None
+    def start(self, tool_def: ToolDef) -> RunningTool:
+        # Phase 5: no secrets-dir bind mount, no write-proxy. Tools pull
+        # from SPS via the env vars the runner injects. The container
+        # only needs the toolyard.toml (for the forwarder) and the
+        # egress proxy mount when an egress allowlist is in effect.
         name = None
         log_pid = None
         log_path = _tool_log_path(tool_def)
         try:
-            # The bind mount exposes host files by uid; a tool image that drops to a
-            # non-root user (the recommended posture) cannot read files owned by the
-            # runner's uid under a 0700 dir. Relax to "traverse + read by name" so the
-            # container user can read its secrets, while the parent /tmp dir keeps the
-            # values off shared paths. (Hardening note: a tmpfs injection at container
-            # start removes the host-disk hop entirely.)
-            os.chmod(secrets_dir, 0o711)
-            for path in Path(secrets_dir).iterdir():
-                path.chmod(0o644)
-            proxy_pid, proxy_dir = _start_write_proxy(tool_def, secret_backend, secrets_file)
             rest_generic = tool_def.type == "rest" and tool_def.image is None
             image = tool_def.image or ("python:3.13-slim" if rest_generic else f"toolstack-{tool_def.id}")
             if tool_def.image is None and not rest_generic:
@@ -787,8 +691,12 @@ class DockerRunner:
                 "-p", f"127.0.0.1:{tool_def.port}:{tool_def.port}",
                 "-e", f"TOOLSTACK_PORT={tool_def.port}",
                 "-e", "TOOLSTACK_BIND=0.0.0.0",  # container-internal; host side stays loopback via -p
-                "-v", f"{secrets_dir}:/run/secrets:ro",
             ]
+            # Carry the SPS connection env through so the SDK can find the server.
+            for var in ("TOOLSTACK_E_SECRET", "TOOLSTACK_SPS_HOST",
+                         "TOOLSTACK_SPS_PORT", "TOOLSTACK_SPS_CA"):
+                if var in os.environ:
+                    run_args += ["-e", f"{var}={os.environ[var]}"]
             if tool_def.type == "rest":
                 run_args += [
                     "-v", f"{tool_def.path / 'toolyard.toml'}:{_CONTAINER_TOOL_CONFIG}:ro",
@@ -799,20 +707,13 @@ class DockerRunner:
                         "-v", f"{_REPO_ROOT}:/app:ro",
                         "-w", "/app",
                     ]
-            if proxy_dir:
-                # Mount the proxy's socket dir so the tool reaches it at the contract path.
-                run_args += ["-v", f"{proxy_dir}:/run/toolyard",
-                             "-e", f"TOOLYARD_SECRETS_SOCKET={_CONTAINER_SOCKET}"]
             run_args.append(image)
             if rest_generic:
                 run_args += ["python3", "-m", "toolstack_forwarder"]
             self._docker(run_args, _DOCKER_RUN_TIMEOUT, check=True)
             log_pid = _start_docker_log_follower(name, log_path)
-            running = RunningTool(tool_def.id, tool_def.port, self.backend, name, secrets_dir,
-                                  proxy_pid, proxy_dir, log_pid=log_pid, log_path=str(log_path))
-            # Readiness: a container that exits at once (bad image / port clash) must not record
-            # as running, then 502 every call. Settle briefly first: `docker run -d` returns at
-            # create, so an immediate crash can still read Running=true for a moment.
+            running = RunningTool(tool_def.id, tool_def.port, self.backend, name,
+                                  log_pid=log_pid, log_path=str(log_path))
             time.sleep(_READINESS_WAIT)
             if not self.is_alive(running):
                 raise RuntimeError(f"tool {tool_def.id} container exited immediately: see {log_path}")
@@ -820,13 +721,13 @@ class DockerRunner:
                      tool_def.id, name, tool_def.port, log_path)
             return running
         except BaseException:
-            if name:  # drop the just-created (now-stopped) container so a failed start isn't litter
+            if name:
                 try:
                     subprocess.run(["docker", "rm", "-f", name], capture_output=True,
                                    timeout=_DOCKER_RM_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     pass
-            _cleanup_partial_start(secrets_dir, proxy_pid, proxy_dir, log_pid=log_pid)
+            _cleanup_partial_start(log_pid=log_pid)
             raise
 
     def stop(self, running: RunningTool) -> None:
@@ -835,14 +736,10 @@ class DockerRunner:
             r = subprocess.run(["docker", "rm", "-f", running.handle],
                                capture_output=True, text=True, timeout=_DOCKER_RM_TIMEOUT)
             if r.returncode != 0:
-                # The caller clears the state record after stop(); surface the leftover so an
-                # operator can `docker rm` it (the next start's `rm -f` also clears it by name).
                 log.warning("docker rm %s failed on stop (rc=%s): %s; container may still exist",
                             running.handle, r.returncode, (r.stderr or "").strip())
         except subprocess.TimeoutExpired:
             log.warning("docker rm %s timed out on stop; container may still exist", running.handle)
-        _stop_proxy(running)
-        shutil.rmtree(running.workdir, ignore_errors=True)
         log.info("stopped tool %s (container %s)", running.tool_id, running.handle)
 
     def is_alive(self, running: RunningTool) -> bool:

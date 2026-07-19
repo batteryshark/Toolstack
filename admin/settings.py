@@ -82,45 +82,29 @@ def session_ttl_seconds() -> int:
     return int(os.environ.get("TOOLSTACK_ADMIN_SESSION_TTL", str(12 * 60 * 60)))
 
 
-def tool_secrets_file() -> str:
-    """The dev secrets file the toolyard resolves tool secrets from: the same
-    ``TOOLSTACK_SECRETS_FILE`` default the ``toolyard`` CLI uses."""
-    return os.environ.get("TOOLSTACK_SECRETS_FILE", "secrets.toml")
-
-
 def tool_runner_backend() -> str:
     """The toolyard runner backend (process/docker), matching the CLI's default."""
     return os.environ.get("TOOLSTACK_RUNNER", "process")
 
 
-def secret_backend() -> str:
-    """The active secret backend the toolyard resolves tool secrets from
-    (file/vault/infisical). A deployment-wide setting, not per-tool."""
-    return os.environ.get("TOOLSTACK_SECRET_BACKEND", "file")
+def sps_env_path() -> str:
+    """The runner's sps.env path (mode 0600-gated)."""
+    return os.environ.get("TOOLSTACK_SPS_ENV", "/etc/toolstack/sps.env")
 
 
-def secret_backend_info() -> dict:
-    """A display-only summary of how tool secrets resolve, for the tool editor. Lets the
-    operator see whether secrets come from Infisical (and which project/host/env) without
-    exposing any secret value."""
-    name = secret_backend()
-    if name == "infisical":
-        has_client_id = bool(os.environ.get("TOOLSTACK_INFISICAL_CLIENT_ID")
-                             or os.environ.get("INFISICAL_CLIENT_ID"))
-        has_client_secret = bool(os.environ.get("TOOLSTACK_INFISICAL_CLIENT_SECRET")
-                                 or os.environ.get("INFISICAL_CLIENT_SECRET"))
-        return {
-            "name": "infisical",
-            "host": os.environ.get("TOOLSTACK_INFISICAL_HOST", ""),
-            "environment": os.environ.get("TOOLSTACK_INFISICAL_ENVIRONMENT", "prod"),
-            "default_vault": os.environ.get("TOOLSTACK_INFISICAL_VAULT", ""),
-            "organization_slug": os.environ.get("TOOLSTACK_INFISICAL_ORGANIZATION_SLUG", ""),
-            "identity_configured": has_client_id and has_client_secret,
-        }
-    if name == "vault":
-        return {"name": "vault",
-                "path": os.environ.get("TOOLSTACK_VAULT_FILE", "") or "~/.config/toolstack/vault.json"}
-    return {"name": "file", "path": tool_secrets_file()}
+def sps_backend_name() -> str:
+    """The active SPS plugin (infisical / hashicorp_vault / localfile)."""
+    return os.environ.get("TOOLSTACK_SPS_PLUGIN") or os.environ.get("SP_PLUGIN", "localfile")
+
+
+def sps_info() -> dict:
+    """Display-only summary of the SPS backend wiring for the tool editor."""
+    return {
+        "env_path": sps_env_path(),
+        "plugin": sps_backend_name(),
+        "host": os.environ.get("TOOLSTACK_SPS_HOST", "127.0.0.1"),
+        "port": int(os.environ.get("TOOLSTACK_SPS_PORT", "8743")),
+    }
 
 
 def _write_private(path: Path, data: str) -> None:

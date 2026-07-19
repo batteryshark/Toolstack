@@ -1,12 +1,17 @@
 """Drive the toolyard from the admin panel: list tools and start/stop/restart them.
 
-This reuses toolyard's own modules (``discover`` / ``load`` / ``get_runner`` /
-``get_backend``) and, crucially, its **state file**, so the panel and
-``python -m toolyard.cli`` stay in agreement about what is running. Tools come from
-two places: the tools root (``<root>/*/toolyard.toml``) and an explicit list of tool
-directories (``tool_dirs``) that the panel's tool editor can add anywhere on the
-server. Secret *values* come from the on-disk secrets file; the panel never handles
-them, keeping secrets off the control plane.
+This reuses toolyard's own modules (``discover`` / ``load`` / ``get_runner``)
+and, crucially, its **state file**, so the panel and ``python -m toolyard.cli``
+stay in agreement about what is running. Tools come from two places: the
+tools root (``<root>/*/toolyard.toml``) and an explicit list of tool
+directories (``tool_dirs``) that the panel's tool editor can add anywhere on
+the server.
+
+Phase 5: the runner mints an E_SECRET and registers the tool with SPS at
+boot, so secret VALUES no longer flow through the panel. The panel still
+shows "is this secret provisioned?" (via the SPS ``provisioned_fields``
+call) and supports operator provisioning via the SPS ``write_secret``
+op; never sees plaintext on the way.
 """
 
 from __future__ import annotations
@@ -21,7 +26,6 @@ from toolyard.cli import _load_state, _save_state
 from toolyard.config import discover
 from toolyard.config import load as load_tool
 from toolyard.runner import RunningTool, get_runner
-from toolyard.secrets import get_backend
 
 from . import settings
 
@@ -63,20 +67,17 @@ def list_tools(tools_root: str, tool_dirs=()) -> list[dict]:
     return tools
 
 
-def start(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend: str = "process") -> None:
+def start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") -> None:
+    """Start the tool via the runner. Secrets are resolved by the tool at
+    boot (Phase 5: SPS pull), so the panel hands the runner nothing but
+    the tool definition."""
     defs = _all_defs(tools_root, tool_dirs)
     if tool_id not in defs:
         raise LookupError(f"unknown tool: {tool_id}")
     state = _load_state()
     if tool_id in state:
         return  # already running
-    secrets = get_backend(secrets_file=secrets_file).resolve(defs[tool_id])
-    # Pass the configured backend name to the runner's write proxy explicitly, rather than
-    # leaving it to re-read $TOOLSTACK_SECRET_BACKEND in the child: same selector get_backend()
-    # just used, but no reliance on the env being set in the spawned process.
-    running = get_runner(backend).start(
-        defs[tool_id], secrets,
-        secret_backend=settings.secret_backend(), secrets_file=secrets_file)
+    running = get_runner(backend).start(defs[tool_id])
     state[tool_id] = asdict(running)
     _save_state(state)
 
@@ -92,9 +93,9 @@ def stop(tool_id: str) -> None:
     _save_state(state)
 
 
-def restart(tool_id: str, tools_root: str, tool_dirs, secrets_file: str, backend: str = "process") -> None:
+def restart(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") -> None:
     stop(tool_id)
-    start(tool_id, tools_root, tool_dirs, secrets_file, backend)
+    start(tool_id, tools_root, tool_dirs, backend)
 
 
 def remove(tool_id: str, tools_root: str, tool_dirs=()) -> None:

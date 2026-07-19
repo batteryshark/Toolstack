@@ -126,8 +126,8 @@ def _cmd_vault_set(args) -> None:
     passphrase = os.environ.get("SP_VAULT_PASSPHRASE")
     if not passphrase:
         raise SystemExit("SP_VAULT_PASSPHRASE not set in env")
-    from toolyard.secrets import VaultBackend
-    VaultBackend(cfg.localfile.vault_file, passphrase).set_secret(args.tool, args.field, value)
+    from .plugins.localfile import _Vault
+    _Vault(cfg.localfile.vault_file, passphrase).set(args.tool, args.field, value)
     print(f"set {args.tool}.{args.field}")
 
 
@@ -139,9 +139,9 @@ def _cmd_vault_get(args) -> None:
     passphrase = os.environ.get("SP_VAULT_PASSPHRASE")
     if not passphrase:
         raise SystemExit("SP_VAULT_PASSPHRASE not set in env")
-    from toolyard.secrets import VaultBackend
-    backend = VaultBackend(cfg.localfile.vault_file, passphrase)
-    print("set" if backend.has_secret(args.tool, args.field) else "unset")
+    from .plugins.localfile import _Vault
+    backend = _Vault(cfg.localfile.vault_file, passphrase)
+    print("set" if backend.has(args.tool, args.field) else "unset")
 
 
 def main() -> None:

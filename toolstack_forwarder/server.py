@@ -5,11 +5,12 @@ from __future__ import annotations
 import hmac
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
+
+from sps.tool_sdk import SecretClient
 
 from . import outbound
 from .config import Operation, RestConfig
-from .request_builder import RequestBuildError, build_request, read_secret
+from .request_builder import RequestBuildError, build_request
 from .rules import RuleError, apply_secret_update_rules
 
 _REDACTED_BODY_JSON = '{"message":"response redacted for this operation due to config in toolserver"}'
@@ -17,9 +18,9 @@ _REDACTED_BODY_TEXT = "response redacted for this operation due to config in too
 _REDACTED_HEADERS = {"X-ToolStack-Security": "headers redacted for this operation due to config in toolserver"}
 
 
-def serve(bind: str, port: int, config: RestConfig, secrets_dir: str | Path,
+def serve(bind: str, port: int, config: RestConfig, secrets: SecretClient,
           timeout: float, max_body: int) -> HTTPServer:
-    return HTTPServer((bind, port), _handler(config, Path(secrets_dir), timeout, max_body))
+    return HTTPServer((bind, port), _handler(config, secrets, timeout, max_body))
 
 
 def redact_response(op: Operation, result: dict) -> None:
@@ -36,7 +37,7 @@ def redact_response(op: Operation, result: dict) -> None:
         result["headers"] = dict(_REDACTED_HEADERS)
 
 
-def _handler(config: RestConfig, secrets_dir: Path, timeout: float, max_body: int):
+def _handler(config: RestConfig, secrets: SecretClient, timeout: float, max_body: int):
     envelope_max = max(max_body * 2 + 65536, 1024 * 1024)
     handler_timeout = timeout
 
@@ -70,14 +71,14 @@ def _handler(config: RestConfig, secrets_dir: Path, timeout: float, max_body: in
                 return self._reply(400, {"error": "invalid_envelope", "detail": "op must be a string"})
             arguments = envelope.get("arguments", {})
             try:
-                req = build_request(config, op, arguments, secrets_dir, max_body)
+                req = build_request(config, op, arguments, secrets, max_body)
             except RequestBuildError as exc:
                 status = 400 if exc.code != "unknown_op" else 404
                 return self._reply(status, exc.envelope())
             result = outbound.send(req, timeout=timeout, max_body=max_body)
             if "status" in result:
                 try:
-                    apply_secret_update_rules(config.operations[op], result)
+                    apply_secret_update_rules(config.operations[op], result, secrets)
                 except RuleError as exc:
                     return self._reply(502, exc.envelope())
                 redact_response(config.operations[op], result)
@@ -90,10 +91,14 @@ def _handler(config: RestConfig, secrets_dir: Path, timeout: float, max_body: in
         do_PUT = do_PATCH = do_DELETE = do_GET
 
         def _verify_channel_secret(self) -> tuple[bool, str]:
-            try:
-                expected = read_secret(secrets_dir, "broker_secret")
-            except RequestBuildError:
-                return True, ""
+            # The channel credential is the E_SECRET the runner minted for
+            # this tool. It arrives as `X-Toolstack-Secret` from the broker,
+            # sourced from the toolyard state file (Phase 4). The tool
+            # compares the header against $TOOLSTACK_E_SECRET (set by the
+            # runner at start); absent -> feature off (Phase 5: no more
+            # FS-fallback `broker_secret` file).
+            import os as _os
+            expected = _os.environ.get("TOOLSTACK_E_SECRET") or ""
             if not expected:
                 return True, ""
             presented = (self.headers.get("X-Toolstack-Secret") or "").strip()

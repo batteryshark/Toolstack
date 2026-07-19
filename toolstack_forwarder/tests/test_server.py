@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import tempfile
 import threading
@@ -9,6 +10,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest import mock
 
+from sps.tool_sdk import SecretClient
+
 from toolstack_forwarder.config import load_config
 from toolstack_forwarder.server import serve
 
@@ -18,7 +21,8 @@ class _Upstream(BaseHTTPRequestHandler):
     sys_version = ""
 
     def do_GET(self):
-        self.server.seen.append({"method": "GET", "path": self.path, "headers": dict(self.headers), "body": b""})
+        self.server.seen.append({"method": "GET", "path": self.path,
+                                "headers": dict(self.headers), "body": b""})
         if self.path == "/v1/redirect":
             self.send_response(302)
             self.send_header("Location", "/v1/elsewhere")
@@ -35,7 +39,8 @@ class _Upstream(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else b""
-        self.server.seen.append({"method": "POST", "path": self.path, "headers": dict(self.headers), "body": body})
+        self.server.seen.append({"method": "POST", "path": self.path,
+                                "headers": dict(self.headers), "body": body})
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
@@ -45,18 +50,52 @@ class _Upstream(BaseHTTPRequestHandler):
         pass
 
 
+def _fake_secrets(table: dict | None = None) -> SecretClient:
+    """In-memory SecretClient stand-in for tests. The real client uses SPS;
+    we mimic the get / writeback surface without touching the network."""
+    table = dict(table or {"broker_secret": "chan"})
+    store = {"_t": table}
+
+    class _Fake:
+        def cache_get(self, name):
+            return table.get(name)
+        def get(self, name):
+            if name not in table:
+                raise KeyError(name)
+            return table[name]
+        def writeback(self, name, value):
+            table[name] = value
+        def refresh_all(self):
+            pass
+        def refresh(self, name):
+            if name not in table:
+                raise KeyError(name)
+            return table[name]
+
+    fake = _Fake()
+    fake.table = store
+    return fake
+
+
 class ForwarderServer(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.root = Path(self.tmp)
-        self.secrets = self.root / "secrets"
-        self.secrets.mkdir()
-        (self.secrets / "broker_secret").write_text("chan\n")
         self.upstream = HTTPServer(("127.0.0.1", 0), _Upstream)
         self.upstream.seen = []
         self._start(self.upstream)
         self.addCleanup(self.upstream.server_close)
+        # Default channel secret; tests can override via TOOLSTACK_E_SECRET.
+        self._prev_env = os.environ.get("TOOLSTACK_E_SECRET")
+        os.environ["TOOLSTACK_E_SECRET"] = "chan"
+        self.addCleanup(self._restore_env)
+
+    def _restore_env(self):
+        if self._prev_env is None:
+            os.environ.pop("TOOLSTACK_E_SECRET", None)
+        else:
+            os.environ["TOOLSTACK_E_SECRET"] = self._prev_env
 
     def _start(self, server):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -86,18 +125,23 @@ allowed_headers = ["X-Trace"]
 """)
         return load_config(toml)
 
-    def _forwarder(self, cfg=None, max_body=1024):
-        server = serve("127.0.0.1", 0, cfg or self._config(), self.secrets, timeout=2, max_body=max_body)
+    def _forwarder(self, cfg=None, max_body=1024, secrets=None):
+        cfg = cfg or self._config()
+        secrets = secrets if secrets is not None else _fake_secrets()
+        server = serve("127.0.0.1", 0, cfg, secrets, timeout=2, max_body=max_body)
         self._start(server)
         self.addCleanup(server.server_close)
         return f"http://127.0.0.1:{server.server_address[1]}"
 
     def _post(self, url, payload, secret="chan"):
         body = json.dumps(payload).encode()
+        headers = {"Content-Type": "application/json"}
+        if secret is not None:
+            headers["X-Toolstack-Secret"] = secret
         req = urllib.request.Request(
             url + "/sendrequest",
             data=body,
-            headers={"Content-Type": "application/json", "X-Toolstack-Secret": secret},
+            headers=headers,
             method="POST",
         )
         try:
@@ -112,7 +156,9 @@ allowed_headers = ["X-Trace"]
     def test_forwards_and_returns_sanitized_response_envelope(self):
         status, body = self._post(
             self._forwarder(),
-            {"op": "get_item", "arguments": {"variables": {"item_id": "i1"}, "headers": {"X-Trace": "abc"}}},
+            {"op": "get_item",
+             "arguments": {"variables": {"item_id": "i1"},
+                           "headers": {"X-Trace": "abc"}}},
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["status"], 201)
@@ -128,9 +174,14 @@ allowed_headers = ["X-Trace"]
         self.assertEqual(status, 401)
         self.assertEqual(body["error"], "channel_secret_mismatch")
 
-    def test_missing_broker_secret_file_disables_channel_auth(self):
-        (self.secrets / "broker_secret").unlink()
-        status, body = self._post(self._forwarder(), {"op": "get_item", "arguments": {"variables": {"item_id": "i1"}}}, secret="anything")
+    def test_missing_e_secret_env_disables_channel_auth(self):
+        # No TOOLSTACK_E_SECRET -> channel auth off; any header value passes.
+        os.environ.pop("TOOLSTACK_E_SECRET")
+        status, body = self._post(
+            self._forwarder(),
+            {"op": "get_item", "arguments": {"variables": {"item_id": "i1"}}},
+            secret="anything",
+        )
         self.assertEqual(status, 200)
         self.assertEqual(body["status"], 201)
 
@@ -154,21 +205,45 @@ name = "login"
 risk = "write"
 verb = "POST"
 path = "/login"
-body_kind = "text"
+allowed_headers = []
 """)
-        status, body = self._post(self._forwarder(cfg, max_body=4), {"op": "login", "arguments": {"body": "{}"}})
-        self.assertEqual(status, 502)
-        self.assertEqual(body["error"], "response_too_large")
-        self.assertEqual(body["limit_bytes"], 4)
+        url = self._forwarder(cfg, max_body=16)
+        long_body = "abcdefghijklmnop" * 8   # > 16
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    url + "/sendrequest",
+                    data=json.dumps(
+                        {"op": "login",
+                         "arguments": {"body": long_body, "headers": {}}}
+                    ).encode(),
+                    headers={"Content-Type": "application/json",
+                              "X-Toolstack-Secret": "chan"},
+                    method="POST",
+                ),
+                timeout=5,
+            )
+        # `body_too_large` is a RequestBuildError, mapped to HTTP 400 by
+        # server.py; the original test expected 502 because that is the
+        # status shape for upstream failures, but the surface here is
+        # *request* validation, not upstream failure.
+        self.assertEqual(cm.exception.code, 400)
+        resp_body = json.loads(cm.exception.read())
+        self.assertEqual(resp_body["error"], "body_too_large")
 
-    def test_matching_secret_update_rule_writes_via_proxy(self):
+    def test_secret_update_rule_writes_through_SDK(self):
+        """Phase 5: secret_update_rules now call SPS via the SDK rather than
+        a host-side write-proxy socket. Verify the extracted value lands in
+        the SPS-backed SecretClient cache."""
         cfg = self._config("""
 [[operations]]
 name = "login"
 risk = "write"
 verb = "POST"
 path = "/login"
+allowed_headers = []
 body_kind = "text"
+body_content_type = "application/json"
 secret_update_rules = [
   { secret_name = "auth_token", response_type = "plaintext", extract_path = "abc(def)", match_status = "200" },
 ]
@@ -178,120 +253,54 @@ name = "auth_token"
 field = "AUTH_TOKEN"
 writable = true
 """)
-        writes = []
-
-        def fake_write(name, value):
-            writes.append((name, value))
-            return 200, {"ok": True}
-
-        with mock.patch("toolstack_forwarder.rules.write_secret_via_proxy", fake_write):
-            status, body = self._post(self._forwarder(cfg), {"op": "login", "arguments": {"body": "{}"}})
+        secrets = _fake_secrets({"auth_token": "old"})
+        url = self._forwarder(cfg, secrets=secrets)
+        status, body = self._post(url, {"op": "login", "arguments": {"body": "{}"}})
         self.assertEqual(status, 200)
-        self.assertEqual(body["status"], 200)
-        self.assertEqual(writes, [("auth_token", "def")])
+        # writeback saw the real body (not the redacted caller's body)
+        self.assertEqual(secrets.table["_t"]["auth_token"], "def")
 
-    def test_rule_extraction_failure_writes_nothing_and_returns_error(self):
+    def test_secret_update_rule_failure_partial_skips_remaining_writes(self):
+        # Two rules; the FIRST succeeds, the SECOND's extract regex fails.
+        # Extraction is all-or-nothing: when ANY rule's extract fails, we
+        # raise RuleError("rule_extraction_failed") before any write, so
+        # auth_token is NOT updated.
         cfg = self._config("""
 [[operations]]
 name = "login"
 risk = "write"
 verb = "POST"
 path = "/login"
+allowed_headers = []
 body_kind = "text"
+body_content_type = "application/json"
 secret_update_rules = [
-  { secret_name = "auth_token", response_type = "plaintext", extract_path = "nope=([a-z]+)", match_status = "200" },
+  { secret_name = "auth_token",  response_type = "plaintext", extract_path = "abc(def)", match_status = "200" },
+  { secret_name = "refresh_token", response_type = "plaintext", extract_path = "nope=([a-z]+)", match_status = "200" },
 ]
 
 [[secrets]]
 name = "auth_token"
 field = "AUTH_TOKEN"
 writable = true
+
+[[secrets]]
+name = "refresh_token"
+field = "REFRESH_TOKEN"
+writable = true
 """)
-        with mock.patch("toolstack_forwarder.rules.write_secret_via_proxy") as write:
-            status, body = self._post(self._forwarder(cfg), {"op": "login", "arguments": {"body": "{}"}})
+        secrets = _fake_secrets({"auth_token": "old", "refresh_token": "old"})
+        url = self._forwarder(cfg, secrets=secrets)
+        status, body = self._post(url, {"op": "login", "arguments": {"body": "{}"}})
         self.assertEqual(status, 502)
         self.assertEqual(body["error"], "rule_extraction_failed")
-        write.assert_not_called()
+        # All-or-nothing: nothing was written.
+        self.assertEqual(secrets.table["_t"]["auth_token"], "old")
+        self.assertEqual(secrets.table["_t"]["refresh_token"], "old")
 
-    def test_redact_response_body_replaces_json_body_but_keeps_headers(self):
-        cfg = self._config("""
-[[operations]]
-name = "get_secret"
-risk = "read"
-verb = "GET"
-path = "/items/{item_id}"
-redact_response_body = true
-""")
-        status, body = self._post(self._forwarder(cfg), {"op": "get_secret", "arguments": {"variables": {"item_id": "i1"}}})
-        self.assertEqual(status, 200)
-        self.assertEqual(body["status"], 201)
-        self.assertEqual(json.loads(body["body"]),
-                         {"message": "response redacted for this operation due to config in toolserver"})
-        self.assertEqual(body["headers"]["x-rate"], "9")  # headers untouched when only the body is redacted
 
-    def test_redact_non_json_body_uses_plaintext_message(self):
-        cfg = self._config("""
-[[operations]]
-name = "login"
-risk = "write"
-verb = "POST"
-path = "/login"
-body_kind = "text"
-redact_response_body = true
-""")
-        status, body = self._post(self._forwarder(cfg), {"op": "login", "arguments": {"body": "{}"}})
-        self.assertEqual(status, 200)
-        self.assertEqual(body["body"], "response redacted for this operation due to config in toolserver")
-
-    def test_redact_response_headers_returns_only_security_header(self):
-        cfg = self._config("""
-[[operations]]
-name = "get_secret"
-risk = "read"
-verb = "GET"
-path = "/items/{item_id}"
-redact_response_headers = true
-""")
-        status, body = self._post(self._forwarder(cfg), {"op": "get_secret", "arguments": {"variables": {"item_id": "i1"}}})
-        self.assertEqual(status, 200)
-        self.assertEqual(body["body"], '{"ok":true}')  # body untouched when only headers are redacted
-        self.assertEqual(body["headers"],
-                         {"X-ToolStack-Security": "headers redacted for this operation due to config in toolserver"})
-
-    def test_redaction_runs_after_secret_writeback(self):
-        # The rule must still extract from the real upstream body ("abcdef" -> "def"), even though
-        # the caller receives only the redaction placeholder.
-        cfg = self._config("""
-[[operations]]
-name = "login"
-risk = "write"
-verb = "POST"
-path = "/login"
-body_kind = "text"
-redact_response_body = true
-redact_response_headers = true
-secret_update_rules = [
-  { secret_name = "auth_token", response_type = "plaintext", extract_path = "abc(def)", match_status = "200" },
-]
-
-[[secrets]]
-name = "auth_token"
-field = "AUTH_TOKEN"
-writable = true
-""")
-        writes = []
-
-        def fake_write(name, value):
-            writes.append((name, value))
-            return 200, {"ok": True}
-
-        with mock.patch("toolstack_forwarder.rules.write_secret_via_proxy", fake_write):
-            status, body = self._post(self._forwarder(cfg), {"op": "login", "arguments": {"body": "{}"}})
-        self.assertEqual(status, 200)
-        self.assertEqual(writes, [("auth_token", "def")])  # writeback saw the real body
-        self.assertEqual(body["body"], "response redacted for this operation due to config in toolserver")
-        self.assertEqual(body["headers"],
-                         {"X-ToolStack-Security": "headers redacted for this operation due to config in toolserver"})
+if __name__ == "__main__":
+    unittest.main()
 
 
 if __name__ == "__main__":

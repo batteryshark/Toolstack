@@ -9,32 +9,19 @@ from .components import _alerts
 from .layout import _csrf_field, esc, page
 
 
-def _secret_backend_note(backend: dict | None) -> str:
+def _secret_backend_note(sps: dict | None) -> str:
     """A muted line telling the operator where secrets resolve from, so they can see at a
-    glance whether a tool's secrets live in Infisical and what the path field means for
-    the active backend."""
-    if not backend:
+    glance which SPS plugin the tool's secrets live in."""
+    if not sps:
         return ""
-    if backend["name"] == "infisical":
-        dv = esc(backend.get("default_vault") or "(unset)")
-        identity = "configured" if backend.get("identity_configured") else "missing"
-        return ("<p class='muted'>Secret backend: <strong>Infisical</strong> "
-                f"(host <code>{esc(backend.get('host', ''))}</code>, "
-                f"env <code>{esc(backend.get('environment', ''))}</code>, "
-                f"identity <code>{identity}</code>). Each secret resolves "
-                f"inside project <code>{dv}</code> from <em>path</em> / <em>field</em>. Leave "
-                "<em>path</em> blank to use the tool id. Toolstack logs in once with the "
-                "deployment's Infisical machine identity; tools and callers never receive "
-                "that credential.</p>")
-    if backend["name"] == "vault":
-        return ("<p class='muted'>Secret backend: <strong>local vault</strong> (encrypted, "
-                f"<code>{esc(backend.get('path', ''))}</code>). The <em>path</em> "
-                "field is ignored; only <em>field</em> (the key under <code>[tool_id]</code>) is "
-                "used. Provision values with <code>toolyard vault-set</code>.</p>")
-    return ("<p class='muted'>Secret backend: <strong>file</strong> "
-            f"(<code>{esc(backend.get('path', ''))}</code>). The <em>path</em> field is "
-            "ignored by this backend; only <em>field</em> (the key under "
-            "<code>[tool_id]</code>) is used.</p>")
+    plugin = sps.get("plugin", "")
+    if plugin in ("infisical", "hashicorp_vault", "localfile"):
+        host = esc(sps.get("host", ""))
+        port = sps.get("port", "")
+        return (f"<p class='muted'>SPS plugin: <strong>{esc(plugin)}</strong> "
+                f"(<code>{host}:{port}</code>). Each tool pulls its secrets from SPS at boot via "
+                "the per-tool E_SECRET the runner mints at start.</p>")
+    return ""
 
 
 def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str:

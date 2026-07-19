@@ -437,7 +437,7 @@ def create_app() -> FastAPI:
             else:
                 getattr(toolyard_ops, action)(
                     tool_id, config.tools_root, config.tool_dirs,
-                    settings.tool_secrets_file(), settings.tool_runner_backend())
+                    settings.sps_env_path(), settings.tool_runner_backend())
             with open_store(config) as store:
                 operations.record_admin_event(store, user, events[action], {"tool": tool_id})
         except Exception as exc:
@@ -451,7 +451,7 @@ def create_app() -> FastAPI:
         if not user:
             return redirect("/login")
         return HTMLResponse(views.tool_editor_view(
-            user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool={}, dir_value=""))
+            user=user, csrf=csrf_for(request), backend=settings.sps_info(), mode="new", tool={}, dir_value=""))
 
     @app.post("/tools/parse-openapi")
     async def parse_openapi(request: Request):
@@ -481,7 +481,7 @@ def create_app() -> FastAPI:
         tool = _tool_from_form(data)
         if not csrf_ok(request, data):
             return HTMLResponse(views.tool_editor_view(
-                user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool=tool,
+                user=user, csrf=csrf_for(request), backend=settings.sps_info(), mode="new", tool=tool,
                 dir_value=dir_path, error="Invalid CSRF token."))
         errors = list(tool_authoring.validate(tool))
         if not os.path.isabs(dir_path):
@@ -495,7 +495,7 @@ def create_app() -> FastAPI:
             errors.append(f"a tool named '{tool['id']}' already exists")
         if errors:
             return HTMLResponse(views.tool_editor_view(
-                user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="new", tool=tool,
+                user=user, csrf=csrf_for(request), backend=settings.sps_info(), mode="new", tool=tool,
                 dir_value=dir_path, error="; ".join(errors)))
         tool_authoring.write(dir_path, tool)
         norm_dir = str(Path(dir_path))  # normalize so the later removable check matches
@@ -526,7 +526,7 @@ def create_app() -> FastAPI:
         except Exception as exc:
             return render_dashboard(request, user, error=f"could not read tool: {exc}")
         return HTMLResponse(views.tool_editor_view(
-            user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="edit", tool=tool, dir_value=dir_path))
+            user=user, csrf=csrf_for(request), backend=settings.sps_info(), mode="edit", tool=tool, dir_value=dir_path))
 
     @app.post("/tools/{tool_id}/edit")
     async def save_tool(request: Request, tool_id: str):
@@ -547,12 +547,12 @@ def create_app() -> FastAPI:
         tool = _tool_from_form(data)
         if not csrf_ok(request, data):
             return HTMLResponse(views.tool_editor_view(
-                user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="edit", tool=tool,
+                user=user, csrf=csrf_for(request), backend=settings.sps_info(), mode="edit", tool=tool,
                 dir_value=dir_path, error="Invalid CSRF token."))
         errors = tool_authoring.validate(tool)
         if errors:
             return HTMLResponse(views.tool_editor_view(
-                user=user, csrf=csrf_for(request), backend=settings.secret_backend_info(), mode="edit", tool=tool,
+                user=user, csrf=csrf_for(request), backend=settings.sps_info(), mode="edit", tool=tool,
                 dir_value=dir_path, error="; ".join(errors)))
         tool_authoring.write(dir_path, tool)
         with open_store(config) as store:

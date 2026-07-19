@@ -43,12 +43,12 @@ ENV XDG_CONFIG_HOME=/data/config \
     TOOLSTACK_BROKER_HOST=0.0.0.0 \
     TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK=1 \
     TOOLSTACK_BROKER_ALLOW_NONLOOPBACK=1
-# The secret backend (file/vault) is deployment config, set in .env / compose; not baked
-# into the image. Code defaults to 'file'; the compose .env sets 'vault'.
+# Phase 5: secrets are resolved through SPS (Infisical / Hashicorp Vault / localfile);
+# the operator configures sps.env at deploy time, the tool pulls at boot.
 
 # 8780 = admin UI; 8765 = broker (point your agent here). Published to host loopback only.
 EXPOSE 8765 8780
 
-COPY deploy/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# The admin process is the only foreground process; it supervises the broker + tools
+# as subprocesses (mirroring the toolyard's ProcessRunner).
+CMD ["/usr/local/bin/admin", "serve", "--host", "0.0.0.0", "--port", "8780"]

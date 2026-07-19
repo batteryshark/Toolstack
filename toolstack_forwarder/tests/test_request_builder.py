@@ -8,6 +8,22 @@ from toolstack_forwarder.config import load_config
 from toolstack_forwarder.request_builder import RequestBuildError, build_request
 
 
+class _FakeSecrets:
+    """In-memory stand-in for sps.tool_sdk.SecretClient. Tests construct this
+    with the subset of secrets the operation expects; missing keys raise
+    KeyError (mirroring SecretClient.get)."""
+
+    def __init__(self, table):
+        self._t = dict(table)
+    def get(self, name):
+        if name not in self._t:
+            raise KeyError(name)
+        return self._t[name]
+
+
+
+
+
 TOML = """\
 id = "jira"
 type = "rest"
@@ -59,9 +75,7 @@ class RequestBuilder(unittest.TestCase):
         self.root = Path(self.tmp)
         self.toml = self.root / "toolyard.toml"
         self.toml.write_text(TOML)
-        self.secrets = self.root / "secrets"
-        self.secrets.mkdir()
-        (self.secrets / "auth_token").write_text("sekret\n")
+        self.secrets = _FakeSecrets({"auth_token": "sekret"})
         self.cfg = load_config(self.toml)
 
     def build(self, op, args, max_body=1024):
@@ -115,7 +129,8 @@ class RequestBuilder(unittest.TestCase):
         self.assertEqual(req.body, b'{"token":"sekret"}')
 
     def test_rejects_header_control_character_after_substitution(self):
-        (self.secrets / "auth_token").write_text("bad\r\nHeader: injected")
+        # Inject a control character via the in-memory fake.
+        self.secrets._t["auth_token"] = "bad\r\nHeader: injected"
         with self.assertRaises(RequestBuildError) as cm:
             self.build(
                 "login",
