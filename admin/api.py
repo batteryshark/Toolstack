@@ -424,38 +424,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
                 "fields": declared,
                 "provisioned": provisioned}
 
-    @app.post("/api/tools/{tool_id}/secrets")
-    async def api_set_tool_secret(tool_id: str, request: Request, user: str = Depends(require_user)):
-        """Provision a secret VALUE for a tool (local vault only). The value is write-only: it's
-        stored in the vault, never returned, and the audit event records only tool+field. Restricted
-        to fields the tool actually declares."""
-        data = await _json_object(request)
-        field = (data.get("field") or "").strip()
-        value = data.get("value")
-        if not field:
-            raise HTTPException(status_code=400, detail="field is required")
-        # reject an all-whitespace value (a likely paste/typo) but store whatever's given VERBATIM;
-        # stripping could corrupt a secret that legitimately has surrounding whitespace.
-        if not isinstance(value, str) or value.strip() == "":
-            raise HTTPException(status_code=400, detail="value must be a non-empty string")
-        config = broker_config.load()
-        declared = _declared_fields(config, tool_id)
-        if declared is None:
-            raise HTTPException(status_code=404, detail=f"no such tool: {tool_id}")
-        if field not in declared:
-            raise HTTPException(status_code=400,
-                                detail=f"tool '{tool_id}' declares no secret with field '{field}'")
-        try:
-            secret_values.set_value(tool_id, field, value)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"could not write to the vault: {exc}")
-        with open_store(config) as store:  # NB: never log the value, only tool + field
-            operations.record_admin_event(store, user, "secret_set", {"tool": tool_id, "field": field})
-        return {"field": field, "set": True}
-
-    # Per-tool lifecycle. Declared AFTER the literal /update and /secrets routes so those match
+    # Per-tool lifecycle. Declared AFTER the literal /update route so that matches
     # first; this catches start | stop | restart. Mirrors the HTML panel's /toolyard/tools/{id}/{action}.
     _TOOL_EVENTS = {"start": "tool_started", "stop": "tool_stopped", "restart": "tool_restarted"}
 
