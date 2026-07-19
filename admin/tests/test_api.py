@@ -193,39 +193,6 @@ class JsonApi(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.client.get("/api/audit", headers=authz).json()["audit"], [])
 
-    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
-    def test_tools_config_secret_backend(self):
-        tools = self.client.get("/api/tools", headers=self._auth())
-        self.assertEqual(tools.status_code, 200)
-        echo = next(t for t in tools.json()["tools"] if t["id"] == "echo")
-        self.assertEqual([op["op"] for op in echo["ops"]], ["say"])  # ops attached for the policy editor
-        self.assertEqual(echo["description"], "echo tool")
-        self.assertIsNone(echo["source"])   # hand-authored tool: no .tsr-source.json
-        self.assertEqual(echo["secrets"], [{"name": "api_key", "field": "API_KEY",
-                                            "writable": True, "item": None}])
-        cfg = self.client.get("/api/config", headers=self._auth())
-        self.assertEqual(cfg.status_code, 200)
-        self.assertIn("port", cfg.json())
-        sb = self.client.get("/api/secret-backend", headers=self._auth()).json()
-        self.assertIn("name", sb)
-
-    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
-    def test_infisical_secret_backend_reports_identity_without_values(self):
-        with mock.patch.dict(os.environ, {
-            "TOOLSTACK_SECRET_BACKEND": "infisical",
-            "TOOLSTACK_INFISICAL_HOST": "https://infisical.example.test",
-            "TOOLSTACK_INFISICAL_ENVIRONMENT": "dev",
-            "TOOLSTACK_INFISICAL_VAULT": "ToolServer",
-            "TOOLSTACK_INFISICAL_CLIENT_ID": "cid-secret",
-            "TOOLSTACK_INFISICAL_CLIENT_SECRET": "csecret-secret",
-        }):
-            body = self.client.get("/api/secret-backend", headers=self._auth()).json()
-        self.assertEqual(body["name"], "infisical")
-        self.assertTrue(body["identity_configured"])
-        dumped = json.dumps(body)
-        self.assertNotIn("cid-secret", dumped)
-        self.assertNotIn("csecret-secret", dumped)
-
     def test_edit_tool_updates_description_and_secrets(self):
         r = self.client.post("/api/tools/echo", headers=self._auth(), json={
             "description": "now with feeling",
@@ -390,72 +357,6 @@ class JsonApi(unittest.TestCase):
     # --- secret VALUE provisioning (local vault only) -------------------------
     # The vault needs the 'cryptography' extra (absent from this venv), so VaultBackend is mocked
     # here; the real encrypt/store path is covered by toolyard's vault tests + the demo container.
-    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
-    def test_set_secret_value_writes_to_vault_and_audits_without_value(self):
-        with mock.patch("admin.settings.secret_backend", return_value="vault"), \
-             mock.patch("admin.secret_values.VaultBackend") as MockVault:
-            r = self.client.post("/api/tools/echo/secrets", headers=self._auth(),
-                                 json={"field": "API_KEY", "value": "s3cr3t-value"})
-            self.assertEqual(r.status_code, 200, r.text)
-            self.assertNotIn("s3cr3t-value", r.text)   # the value is not echoed in the response
-            MockVault.from_env.return_value.set_secret.assert_called_once_with("echo", "API_KEY", "s3cr3t-value")
-        audit = self.client.get("/api/audit", headers=self._auth()).json()["audit"]
-        ev = [e for e in audit if e["event_type"] == "secret_set"][-1]
-        self.assertEqual(ev["details"]["tool"], "echo")
-        self.assertEqual(ev["details"]["field"], "API_KEY")
-        self.assertNotIn("value", ev["details"])             # the value itself is not in the event
-        self.assertNotIn("s3cr3t-value", json.dumps(audit))  # value never logged anywhere
-
-    def test_set_secret_value_rejected_for_non_vault_backend(self):
-        # default backend is 'file' -> provisioning here is refused
-        r = self.client.post("/api/tools/echo/secrets", headers=self._auth(),
-                             json={"field": "API_KEY", "value": "x"})
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("vault", r.json()["detail"].lower())
-
-    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
-    def test_set_secret_value_undeclared_field_400(self):
-        with mock.patch("admin.settings.secret_backend", return_value="vault"), \
-             mock.patch("admin.secret_values.VaultBackend"):
-            r = self.client.post("/api/tools/echo/secrets", headers=self._auth(),
-                                 json={"field": "NOT_DECLARED", "value": "x"})
-            self.assertEqual(r.status_code, 400)
-
-    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
-    def test_set_secret_value_empty_or_missing_400(self):
-        with mock.patch("admin.settings.secret_backend", return_value="vault"), \
-             mock.patch("admin.secret_values.VaultBackend"):
-            self.assertEqual(self.client.post("/api/tools/echo/secrets", headers=self._auth(),
-                                              json={"field": "API_KEY", "value": ""}).status_code, 400)
-            self.assertEqual(self.client.post("/api/tools/echo/secrets", headers=self._auth(),
-                                              json={"field": "API_KEY", "value": "   "}).status_code, 400)  # whitespace-only
-            self.assertEqual(self.client.post("/api/tools/echo/secrets", headers=self._auth(),
-                                              json={"value": "x"}).status_code, 400)
-
-    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
-    def test_set_secret_value_unknown_tool_404(self):
-        with mock.patch("admin.settings.secret_backend", return_value="vault"), \
-             mock.patch("admin.secret_values.VaultBackend"):
-            r = self.client.post("/api/tools/ghost/secrets", headers=self._auth(),
-                                 json={"field": "X", "value": "y"})
-            self.assertEqual(r.status_code, 404)
-
-    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
-    def test_secret_status_vault_reports_provisioned(self):
-        with mock.patch("admin.settings.secret_backend", return_value="vault"), \
-             mock.patch("admin.secret_values.VaultBackend") as MockVault:
-            MockVault.from_env.return_value.has_secret.side_effect = lambda t, f: f == "API_KEY"
-            body = self.client.get("/api/tools/echo/secrets", headers=self._auth()).json()
-        self.assertTrue(body["settable"])
-        self.assertEqual(body["fields"], ["API_KEY"])
-        self.assertEqual(body["provisioned"], ["API_KEY"])
-
-    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
-    def test_secret_status_non_vault_not_settable(self):
-        body = self.client.get("/api/tools/echo/secrets", headers=self._auth()).json()
-        self.assertFalse(body["settable"])
-        self.assertEqual(body["provisioned"], [])
-
     def test_secret_endpoints_need_auth(self):
         self.assertEqual(self.client.get("/api/tools/echo/secrets").status_code, 401)
         self.assertEqual(self.client.post("/api/tools/echo/secrets", json={"field": "X", "value": "y"}).status_code, 401)
@@ -483,12 +384,6 @@ class JsonApi(unittest.TestCase):
 
     def test_tool_action_needs_auth(self):
         self.assertEqual(self.client.post("/api/tools/echo/start").status_code, 401)
-
-    @unittest.skip("Phase 5: secret provisioning is now via SPS; admin secret-value UI is gone")
-    def test_action_route_does_not_shadow_update_or_secrets(self):
-        # /update and /secrets must still reach their own handlers, not the {action} route
-        self.assertEqual(self.client.post("/api/tools/echo/update", headers=self._auth()).status_code, 400)  # echo has no source
-        self.assertIn("settable", self.client.get("/api/tools/echo/secrets", headers=self._auth()).json())
 
     def test_config_round_trip_write_only_token_and_validation(self):
         # save settings, partial-merge style
