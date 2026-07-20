@@ -1,21 +1,18 @@
 """REST end-to-end: broker runtime -> real forwarder -> real upstream.
 
 This stays process-local and stdlib-only: a fake upstream http.server, the real
-toolstack_forwarder server, broker HttpRuntime, and a fake Unix write-proxy for
-secret update rules.
+toolstack_forwarder server, broker HttpRuntime, and a fake SecretClient for
+secret-update-rule writeback.
 """
 
 import json
-import os
 import shutil
 import socket
-import socketserver
 import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from unittest import mock
 
 from broker.registry import ToolOp
 from broker.runtime import HttpRuntime, ToolUnreachable
@@ -53,27 +50,36 @@ class _Upstream(BaseHTTPRequestHandler):
         pass
 
 
-class _WriteProxy(socketserver.StreamRequestHandler):
-    writes = []
-    status = 200
+class _FakeSecrets:
+    """In-memory stand-in for sps.tool_sdk.SecretClient. Records each
+    `writeback` so the test can assert the writeback actually happened
+    end-to-end (without dialing real SPS)."""
 
-    def handle(self):
-        line = self.rfile.readline().decode("latin-1").strip()
-        headers = {}
-        while True:
-            h = self.rfile.readline().decode("latin-1")
-            if h in ("\r\n", "\n", ""):
-                break
-            k, _, v = h.partition(":")
-            headers[k.lower()] = v.strip()
-        body = self.rfile.read(int(headers.get("content-length", "0") or 0))
-        type(self).writes.append((line, json.loads(body)))
-        payload = json.dumps({"ok": type(self).status == 200}).encode()
-        self.wfile.write(
-            f"HTTP/1.1 {type(self).status} OK\r\nContent-Length: {len(payload)}\r\n"
-            "Content-Type: application/json\r\nConnection: close\r\n\r\n".encode()
-            + payload
-        )
+    def __init__(self, table: dict[str, str] | None = None) -> None:
+        self.table: dict[str, str] = dict(table or {})
+        self.writes: list[tuple[str, str]] = []
+
+    def cache_get(self, name: str) -> str | None:
+        return self.table.get(name)
+
+    def get(self, name: str) -> str:
+        try:
+            return self.table[name]
+        except KeyError as exc:
+            raise KeyError(name) from exc
+
+    def writeback(self, name: str, value: str) -> None:
+        self.writes.append((name, value))
+        self.table[name] = value
+
+    def refresh_all(self) -> None:
+        pass
+
+    def refresh(self, name: str) -> str:
+        try:
+            return self.table[name]
+        except KeyError as exc:
+            raise KeyError(name) from exc
 
 
 def _free_port() -> int:
@@ -89,9 +95,9 @@ class RestE2E(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.root = Path(self.tmp)
-        self.secrets = self.root / "secrets"
-        self.secrets.mkdir()
-        (self.secrets / "broker_secret").write_text("chan")
+        # A shared fake SPS client the forwarder writes through. Tests that
+        # need to assert writebacks read self.secrets.writes afterwards.
+        self.secrets = _FakeSecrets()
 
         _Upstream.seen = []
         self.upstream = HTTPServer(("127.0.0.1", 0), _Upstream)
@@ -105,7 +111,7 @@ class RestE2E(unittest.TestCase):
         self.addCleanup(server.shutdown)
         return thread
 
-    def _forwarder(self, base_url=None):
+    def _forwarder(self, base_url=None, secrets=None):
         port = _free_port()
         toml = self.root / "toolyard.toml"
         toml.write_text(f"""\
@@ -139,12 +145,17 @@ name = "auth_token"
 field = "REST_DEMO_AUTH_TOKEN"
 writable = true
 """)
-        server = serve("127.0.0.1", port, load_config(toml), self.secrets, timeout=2, max_body=1024 * 1024)
+        server = serve("127.0.0.1", port, load_config(toml),
+                       secrets if secrets is not None else self.secrets,
+                       timeout=2, max_body=1024 * 1024)
         self._start(server)
         self.addCleanup(server.server_close)
         return port
 
     def _runtime(self):
+        # Channel secret shared with the forwarder set via $TOOLSTACK_E_SECRET
+        # (the broker runtime sends it as X-Toolstack-Secret; the forwarder
+        # verifies the header matches). Same key tests use everywhere.
         return HttpRuntime(timeout=3, tool_secret=lambda tool_id: "chan")
 
     def _op(self, port, name="get_item", verb="GET", path="/items/{item_id}", body_kind="none"):
@@ -174,24 +185,22 @@ writable = true
             )
         self.assertIn("header_not_allowed", str(cm.exception))
 
-    @unittest.skip("Phase 5: writeback path is the SPS SDK now, not a host UNIX socket")
-    def test_login_writeback_uses_write_proxy(self):
-        _WriteProxy.writes = []
-        proxy_sock = str(self.root / "secrets.sock")
-        proxy = socketserver.UnixStreamServer(proxy_sock, _WriteProxy)
-        self._start(proxy)
-        self.addCleanup(proxy.server_close)
-        port = self._forwarder()
-        with mock.patch.dict(os.environ, {"TOOLYARD_SECRETS_SOCKET": proxy_sock}):
-            result = self._runtime().execute(
-                self._op(port, "login", "POST", "/login", "text"),
-                {"body": "{}"},
-                8,
-                "hermes",
-            )
+    def test_login_writeback_writes_via_SDK(self):
+        # Phase 5: secret_update_rules now call SPS via the SDK (no host UNIX
+        # write-proxy socket). The forwarder reads the upstream's JSON, extracts
+        # session.token, and calls secrets.writeback("auth_token", value). Verify
+        # the SDK stub captured that call instead of asserting on a UNIX socket.
+        secrets = _FakeSecrets({"auth_token": "stale"})
+        port = self._forwarder(secrets=secrets)
+        result = self._runtime().execute(
+            self._op(port, "login", "POST", "/login", "text"),
+            {"body": "{}"},
+            8,
+            "hermes",
+        )
         self.assertEqual(result["status"], 200)
-        self.assertEqual(_WriteProxy.writes[0][0], "POST /v1/secrets/auth_token HTTP/1.1")
-        self.assertEqual(_WriteProxy.writes[0][1]["value"], "rotated-token")
+        self.assertEqual(secrets.writes, [("auth_token", "rotated-token")])
+        self.assertEqual(secrets.table["auth_token"], "rotated-token")
 
     def test_upstream_unreachable_maps_to_tool_unreachable(self):
         port = self._forwarder(base_url="http://127.0.0.1:1")
