@@ -42,6 +42,15 @@ class SecretClient:
 
     @classmethod
     def from_env(cls, tool_id: str) -> "SecretClient":
+        if os.environ.get("TOOLSTACK_SPS_FAKE") == "1":
+            # Test fixture: skip the SPS roundtrip. Used by toolyard/tests so the
+            # tool can boot without a real server. Production never sets this.
+            obj = cls.__new__(cls)
+            obj._tool_id = tool_id
+            obj._esecret = "test-fixture-esecret"
+            obj._cli = None  # type: ignore[assignment]
+            obj._cache = {}
+            return obj
         esecret = os.environ.get("TOOLSTACK_E_SECRET")
         if not esecret:
             raise RuntimeError(

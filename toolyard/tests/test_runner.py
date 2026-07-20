@@ -43,6 +43,25 @@ def setUpModule():
     # Individual tests that need a clean env (`test_runner_skips_sps_when_env_skip_set`)
     # unset this in their own setUp.
     os.environ.setdefault('TOOLSTACK_E_SECRET', 'chan')
+    # Phase 5: tool boot pulls secrets from SPS. The 12 tool-starting tests
+    # don't exercise the SPS wire (that's covered in sps/tests); they only
+    # need the tool subprocess to come up. TOOLSTACK_SPS_FAKE=1 makes the
+    # SDK's from_env() return a fake client whose cache is empty and whose
+    # _cli is None, so the tool boots without ever dialing SPS. The SpsRegistration
+    # tests reset os.environ under their own mock.patch.dict, so this flag never
+    # leaks into assertions there. Production never sets this env var.
+    os.environ.setdefault('TOOLSTACK_SPS_FAKE', '1')
+    # Phase 5 verify_broker reads $TOOLSTACK_E_SECRET (set just above) and the
+    # broker runtime reads TOOLSTACK_TOOL_SECRET_<TOOL> to fill the matching
+    # X-Toolstack-Secret header. Set the legacy env vars here so the default
+    # HttpRuntime() path used by _call/_mcp_call/build_server() sends a header
+    # the spawned tool will accept. (TOOLSTACK_TOOL_SECRET_ECHO is also the
+    # name the real broker uses for the per-tool channel secret; the runner
+    # normally writes ToolState() instead, but the in-tree tests bypass cli.py
+    # and never touch that file.) SharedSecretE2E passes its own tool_secret
+    # callable to HttpRuntime, so this env var is ignored for that class.
+    os.environ.setdefault('TOOLSTACK_TOOL_SECRET_ECHO', 'chan')
+    os.environ.setdefault('TOOLSTACK_TOOL_SECRET_ECHO_MCP', 'chan')
 
 TOOL_TOML = REPO / "tools" / "echo_api" / "toolyard.toml"
 TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
@@ -121,14 +140,12 @@ class ProcessRunnerE2E(unittest.TestCase):
         else:
             os.environ["TOOLSTACK_E_SECRET"] = self._prev_e
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_broker_forwards_call(self):
         # Plain broker -> tool call. Secret resolution (api_key) is
         # covered by the SPS suite (test_wire_end_to_end, test_tool_sdk);
         # the runner path here is just "do the call dispatch + HTTP path".
         self.assertEqual(_call(self.tool.port, "say", {"m": "hi"}), {"echoed": {"m": "hi"}})
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_tool_sees_broker_context(self):
         who = _call(self.tool.port, "whoami", {}, request_id=99, caller="hermes")
         self.assertEqual(who["caller"], "hermes")
@@ -144,6 +161,16 @@ class SharedSecretE2E(unittest.TestCase):
     SHARED = "broker-shh-456"
 
     def setUp(self):
+        # Phase 5: verify_broker on the tool reads $TOOLSTACK_E_SECRET and
+        # requires the broker's X-Toolstack-Secret header to match it. The
+        # test's tool_secret callable returns SHARED, so the spawned tool
+        # must see SHARED in its env for the matching-secret assertion to
+        # pass. (Module-level setUpModule sets TOOLSTACK_E_SECRET=chan for
+        # the other classes; SharedSecretE2E overrides to SHARED and lets
+        # ProcessRunnerE2E override back to chan via _prev_e bookkeeping.)
+        self._prev_e = os.environ.get("TOOLSTACK_E_SECRET")
+        os.environ["TOOLSTACK_E_SECRET"] = self.SHARED
+        self.addCleanup(self._restore_e)
         self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
         self.runner = ProcessRunner()
         self.running = self.runner.start(
@@ -151,6 +178,12 @@ class SharedSecretE2E(unittest.TestCase):
         self.addCleanup(self.runner.stop, self.running)
         if not self._ready():
             self.fail("echo tool did not start")
+
+    def _restore_e(self):
+        if self._prev_e is None:
+            os.environ.pop("TOOLSTACK_E_SECRET", None)
+        else:
+            os.environ["TOOLSTACK_E_SECRET"] = self._prev_e
 
     def _signed_call(self, secret, op="say", arguments=None):
         rt = HttpRuntime(tool_secret=lambda tool_id: secret)
@@ -167,17 +200,14 @@ class SharedSecretE2E(unittest.TestCase):
                 time.sleep(0.25)
         return False
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_matching_secret_is_accepted(self):
         self.assertEqual(self._signed_call(self.SHARED, "say", {"m": "hi"}),
                          {"echoed": {"m": "hi"}})
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_missing_secret_is_rejected(self):
         with self.assertRaises(RuntimeError):  # no header -> tool 401
             self._signed_call(None, "say", {"m": "hi"})
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_wrong_secret_is_rejected(self):
         with self.assertRaises(RuntimeError):  # mismatched header -> tool 401
             self._signed_call("not-the-secret", "say", {"m": "hi"})
@@ -189,6 +219,12 @@ class McpOverHttpE2E(unittest.TestCase):
     through the same request lifecycle that the /v1/actions path uses. No Docker needed."""
 
     def setUp(self):
+        # Pin TOOLSTACK_E_SECRET for the duration of the test (the SharedSecretE2E
+        # class leaves it set to its SHARED value, which would still pass the channel
+        # check here -- but pinning keeps this class independent of test ordering).
+        self._prev_e = os.environ.get("TOOLSTACK_E_SECRET")
+        os.environ["TOOLSTACK_E_SECRET"] = "chan"
+        self.addCleanup(self._restore_e)
         self.tool = dataclasses.replace(load(TOOL_TOML), port=_free_port())
         self.runner = ProcessRunner()
         self.running = self.runner.start(self.tool)
@@ -210,13 +246,18 @@ class McpOverHttpE2E(unittest.TestCase):
         self.bthread.start()
         self.addCleanup(self._stop_broker)
 
+    def _restore_e(self):
+        if self._prev_e is None:
+            os.environ.pop("TOOLSTACK_E_SECRET", None)
+        else:
+            os.environ["TOOLSTACK_E_SECRET"] = self._prev_e
+
     def _stop_broker(self):
         self.server.shutdown()
         self.bthread.join(timeout=5)
         self.server.server_close()
         self.server.ctx.store.close()
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_mcp_call_over_http_reaches_the_real_tool(self):
         msg = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                "params": {"name": "echo__say", "arguments": {"m": "hi"}}}
@@ -248,13 +289,11 @@ class McpProcessRunnerE2E(unittest.TestCase):
         if not _wait_for_mcp_tool(self.tool.port):
             self.fail("echo-mcp tool did not start")
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_broker_calls_tool_over_mcp(self):
         result = _mcp_call(self.tool.port, "say", {"m": "hi"})
         self.assertFalse(result["isError"])
         self.assertEqual(result["structuredContent"], {"echoed": {"m": "hi"}})
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_tool_sees_broker_context_via_meta(self):
         result = _mcp_call(self.tool.port, "whoami", {}, request_id=99, caller="hermes")
         who = result["structuredContent"]
@@ -266,7 +305,6 @@ class ProcessRunnerHardening(unittest.TestCase):
     """start() fails cleanly: a taken port and an immediately-exiting command both raise, and a
     failed start never leaves the plaintext secrets dir behind."""
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_port_in_use_raises_clearly(self):
         s = socket.socket()
         s.bind(("127.0.0.1", 0))
@@ -274,7 +312,7 @@ class ProcessRunnerHardening(unittest.TestCase):
         self.addCleanup(s.close)
         tool = dataclasses.replace(load(TOOL_TOML), port=port)
         with self.assertRaises(RuntimeError) as cm:
-            ProcessRunner().start(tool, {"api_key": SECRET})
+            ProcessRunner().start(tool)
         self.assertIn(str(port), str(cm.exception))
 
     @unittest.skip("Phase 5: secrets-dir cleanup is gone (runner no longer writes a "
@@ -288,7 +326,6 @@ class ProcessRunnerLogging(unittest.TestCase):
     """The process runner captures a tool's stdout/stderr onto a per-tool logfile under the
     tool folder, so a crashed/noisy tool is diagnosable instead of lost."""
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_start_creates_the_per_tool_logfile(self):
         import toolyard.runner as runner_mod
         state = tempfile.mkdtemp()
@@ -297,7 +334,7 @@ class ProcessRunnerLogging(unittest.TestCase):
         runner = ProcessRunner()
         with mock.patch.dict(os.environ, {"XDG_STATE_HOME": state}):
             logpath = runner_mod._tool_log_path(tool)
-            running = runner.start(tool, {"api_key": SECRET})
+            running = runner.start(tool)
             self.addCleanup(runner.stop, running)
             self.assertTrue(logpath.exists())   # the child's fd 1/2 were redirected here
 
@@ -320,17 +357,15 @@ class RestRunnerConfig(unittest.TestCase):
         )
         self.tool = load(self.tool_dir / "toolyard.toml")
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_process_runner_sets_tool_config_env(self):
         with mock.patch("toolyard.runner._check_port_free"), \
              mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
              mock.patch("os.posix_spawn", return_value=_TEST_PID) as spawn:
-            running = ProcessRunner().start(self.tool, {})
+            running = ProcessRunner().start(self.tool)
         env = spawn.call_args.args[2]
         self.assertEqual(env["TOOLSTACK_TOOL_CONFIG"], str(self.tool_dir / "toolyard.toml"))
         self.assertEqual(running.handle, str(_TEST_PID))
 
-    @unittest.skip("Phase 5: tool boot no longer needs SPS at the test level; the SPS path is exercised in sps/tests")
     def test_process_runner_binds_forwarder_to_this_interpreter(self):
         # The forwarder's `python3 -m toolstack_forwarder` must run under the broker's own
         # interpreter (sys.executable) so it finds the venv-installed module, not system python3.
@@ -338,7 +373,7 @@ class RestRunnerConfig(unittest.TestCase):
         with mock.patch("toolyard.runner._check_port_free"), \
              mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
              mock.patch("os.posix_spawn", return_value=_TEST_PID) as spawn:
-            ProcessRunner().start(self.tool, {})
+            ProcessRunner().start(self.tool)
         script = spawn.call_args.args[1][2]  # ["/bin/sh", "-c", script]
         self.assertIn(f"exec {shlex.quote(sys.executable)} -m toolstack_forwarder", script)
         self.assertNotIn("exec python3 -m", script)
