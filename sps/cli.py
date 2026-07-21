@@ -102,6 +102,39 @@ def _cmd_regen_tls(args) -> None:
     print(f"regenerated {cert}, {key}, {ca} (SP_SECRET and sps.env unchanged)")
 
 
+def _cmd_init_vault(args) -> None:
+    """Create the localfile vault file at the path sps.env points at, using
+    $SP_VAULT_PASSPHRASE (or $SP_VAULT_PASSPHRASE_FILE) for the encryption key.
+    Idempotent: refuses to overwrite an existing vault file (the operator
+    always wins; pass --force to re-init, which destroys all stored secrets)."""
+    import getpass
+    cfg = cfgmod.load_config(args.config)
+    if cfg.sp_plugin != "localfile" or cfg.localfile is None:
+        raise SystemExit("sps init-vault requires SP_PLUGIN=localfile")
+    passphrase = os.environ.get("SP_VAULT_PASSPHRASE")
+    file_path = os.environ.get("SP_VAULT_PASSPHRASE_FILE")
+    if file_path:
+        passphrase = Path(file_path).read_text().strip()
+    elif not passphrase and sys.stdin.isatty():
+        passphrase = getpass.getpass("vault passphrase: ")
+    elif not passphrase:
+        passphrase = sys.stdin.readline().rstrip("\n")
+    if not passphrase:
+        raise SystemExit("vault passphrase not provided (set SP_VAULT_PASSPHRASE or stdin it)")
+    from .plugins.localfile import _Vault
+    vault_file = cfg.localfile.vault_file
+    if Path(vault_file).exists() and not args.force:
+        raise SystemExit(
+            f"vault already exists at {vault_file}; pass --force to re-init "
+            "(this destroys all stored secrets)"
+        )
+    if Path(vault_file).exists() and args.force:
+        Path(vault_file).unlink()
+    _Vault.init(vault_file, passphrase=passphrase)
+    os.chmod(vault_file, 0o600)
+    print(f"initialized vault at {vault_file} (mode 0600)")
+
+
 def _cmd_init(args) -> None:
     """Generate a starter sps.env + cert/key/CA. Idempotent on the env file."""
     import shutil
@@ -143,7 +176,26 @@ def _cmd_init(args) -> None:
     with open(cfg_path, "w") as f:
         f.write(content)
     os.chmod(cfg_path, 0o600)
-    print(f"wrote {cfg_path} (mode 0600); SP_SECRET generated; cert at {cert}; CA at {ca}")
+    # When the chosen plugin is localfile, `vault-set` / `vault-get` need the actual
+    # vault file to exist. If the operator passed SP_VAULT_PASSPHRASE in env, generate
+    # the empty vault now (idempotent: skip if one already exists). Otherwise print a
+    # hint about how to set the passphrase before first vault-set.
+    vault_msg = ""
+    if "SP_PLUGIN = \"localfile\"" in content:
+        passphrase = os.environ.get("SP_VAULT_PASSPHRASE")
+        if passphrase:
+            try:
+                from .plugins.localfile import _Vault
+                _Vault.init(vault_file, passphrase=passphrase)
+                vault_msg = f"; vault initialized at {vault_file}"
+            except FileExistsError:
+                vault_msg = f"; vault at {vault_file} (kept existing)"
+        else:
+            vault_msg = (
+                f"\n  vault not created (no $SP_VAULT_PASSPHRASE in env); set it then "
+                f"`python3 -m sps.cli init-vault --config {cfg_path}`"
+            )
+    print(f"wrote {cfg_path} (mode 0600); SP_SECRET generated; cert at {cert}; CA at {ca}{vault_msg}")
 
 
 def _cmd_vault_set(args) -> None:
@@ -183,6 +235,11 @@ def main() -> None:
     p_init = sub.add_parser("init", help="write a starter sps.env (cert + key + CA)")
     p_init.add_argument("--config", default="/etc/toolstack/sps.env")
     p_init.set_defaults(func=_cmd_init)
+    p_iv = sub.add_parser("init-vault", help="create the localfile vault file (separate from init)")
+    p_iv.add_argument("--config", default="/etc/toolstack/sps.env")
+    p_iv.add_argument("--force", action="store_true",
+                      help="re-initialize an existing vault (destroys all stored secrets)")
+    p_iv.set_defaults(func=_cmd_init_vault)
     p_regen = sub.add_parser("regen-tls", help="regenerate the TLS cert/key/CA (sps.env kept)")
     p_regen.add_argument("--config", default="/etc/toolstack/sps.env")
     p_regen.set_defaults(func=_cmd_regen_tls)
