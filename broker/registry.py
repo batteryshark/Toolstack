@@ -110,7 +110,29 @@ class Registry:
                 "args": o.get("args", []),
                 **rest_fields,
             }
-        # NOTE: data["secrets"] is deliberately never read here.
+        # Auto-inject refresh + refresh_one for tools that have [[secrets]] declared.
+        # The broker dispatches these to the tool (api/mcp) or forwarder (rest) which calls
+        # its own SPS-backed SecretClient to re-pull from the backend. Tool-side handlers
+        # (in echo_api/echo_mcp/app.py and toolstack_forwarder/server.py) are required for
+        # dispatch; without them the broker will surface the tool's 404. A secret refresh is
+        # read-only for security purposes (risk="read"): the tool never returns the value over
+        # the wire, just the refreshed name list / length.
+        if isinstance(data.get("secrets"), list) and any(
+            isinstance(s, dict) and s.get("name") for s in data["secrets"]
+        ):
+            ops["refresh"] = {
+                "risk": "read",
+                "description": "Re-pull every declared secret from the backend into the tool's in-memory cache.",
+                "args": [],
+            }
+            ops["refresh_one"] = {
+                "risk": "read",
+                "description": "Re-pull a single secret by name (arg: name).",
+                "args": [{"name": "name", "type": "string", "required": True,
+                          "description": "Secret name to refresh."}],
+            }
+        # NOTE: data["secrets"] is still not read directly beyond the auto-injection above;
+        # the runner reads it for SPS registration and the tool reads it for handler wiring.
         catalog[tool_id] = {"port": port, "type": tool_type, "ops": ops}
 
     @classmethod

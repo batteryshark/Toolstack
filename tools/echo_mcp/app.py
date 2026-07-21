@@ -82,6 +82,16 @@ def call_tool(name: str, arguments: dict, meta: dict):
     if name == "whoami":
         caller = (meta.get("caller") or {}).get("name")
         return {"caller": caller, "broker_request_id": meta.get("broker_request_id")}
+    if name == "refresh":
+        # Re-pull every declared secret from SPS into the in-memory cache.
+        _secrets.refresh_all()
+        return {"refreshed": list(_secrets.names())}
+    if name == "refresh_one":
+        target = arguments.get("name") if isinstance(arguments, dict) else None
+        if not isinstance(target, str) or not target:
+            raise ValueError("refresh_one: 'name' argument is required")
+        new_value = _secrets.refresh(target)
+        return {"refreshed": [target], "len": len(new_value)}
     raise KeyError(name)
 
 
