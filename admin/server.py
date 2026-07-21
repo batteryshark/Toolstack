@@ -437,7 +437,7 @@ def create_app() -> FastAPI:
             else:
                 getattr(toolyard_ops, action)(
                     tool_id, config.tools_root, config.tool_dirs,
-                    settings.sps_env_path(), settings.tool_runner_backend())
+                    settings.tool_runner_backend())
             with open_store(config) as store:
                 operations.record_admin_event(store, user, events[action], {"tool": tool_id})
         except Exception as exc:
