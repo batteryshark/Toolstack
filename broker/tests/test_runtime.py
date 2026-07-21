@@ -316,32 +316,44 @@ class McpForward(unittest.TestCase):
 
 
 class EnvToolSecret(unittest.TestCase):
-    """_env_tool_secret: the default resolver mapping a tool id to its env var."""
+    """_env_tool_secret: the default resolver, sourced from the toolyard state file.
 
-    def test_reads_per_tool_env_var(self):
-        with mock.patch.dict(os.environ, {"TOOLSTACK_TOOL_SECRET_ECHO": "abc"}):
-            self.assertEqual(_env_tool_secret("echo"), "abc")
+    The legacy TOOLSTACK_TOOL_SECRET_<TOOL> env var path was retired in Phase 5;
+    these tests pin the new state-file-only contract so a future change can't
+    re-introduce the silent override that produced channel_secret_mismatch when
+    the env var happened to be set on a fresh install.
+    """
 
-    def test_collapses_non_alphanumerics_in_tool_id(self):
-        with mock.patch.dict(os.environ, {"TOOLSTACK_TOOL_SECRET_APPLE_CALENDAR": "xyz"}):
-            self.assertEqual(_env_tool_secret("apple-calendar"), "xyz")
+    def test_reads_from_state_file(self):
+        fake = mock.Mock(e_secret_for=mock.Mock(return_value="sekret"))
+        with mock.patch("broker.tool_state.ToolState", return_value=fake):
+            self.assertEqual(_env_tool_secret("echo"), "sekret")
+            fake.e_secret_for.assert_called_once_with("echo")
 
-    def test_unset_is_none(self):
-        with mock.patch.dict(os.environ, {}, clear=True):
+    def test_missing_tool_returns_none(self):
+        fake = mock.Mock(e_secret_for=mock.Mock(return_value=None))
+        with mock.patch("broker.tool_state.ToolState", return_value=fake):
             self.assertIsNone(_env_tool_secret("absent"))
 
     def test_empty_value_is_none(self):
-        with mock.patch.dict(os.environ, {"TOOLSTACK_TOOL_SECRET_GHOST": ""}):
+        fake = mock.Mock(e_secret_for=mock.Mock(return_value=""))
+        with mock.patch("broker.tool_state.ToolState", return_value=fake):
             self.assertIsNone(_env_tool_secret("ghost"))
 
     def test_strips_surrounding_whitespace(self):
         # the tool reads its copy through .strip(); the broker must match or every call 401s
-        with mock.patch.dict(os.environ, {"TOOLSTACK_TOOL_SECRET_ECHO": "  abc\n"}):
+        fake = mock.Mock(e_secret_for=mock.Mock(return_value="  abc\n"))
+        with mock.patch("broker.tool_state.ToolState", return_value=fake):
             self.assertEqual(_env_tool_secret("echo"), "abc")
 
-    def test_whitespace_only_is_none(self):
-        with mock.patch.dict(os.environ, {"TOOLSTACK_TOOL_SECRET_GHOST": "   "}):
-            self.assertIsNone(_env_tool_secret("ghost"))
+    def test_legacy_env_var_is_ignored(self):
+        # The retired TOOLSTACK_TOOL_SECRET_<TOOL> env var must NOT shadow the
+        # state file. Pin this so a future change can't re-introduce the bug
+        # (a stray /etc/toolstack/admin.env value producing channel_secret_mismatch).
+        fake = mock.Mock(e_secret_for=mock.Mock(return_value="from_state_file"))
+        with mock.patch.dict(os.environ, {"TOOLSTACK_TOOL_SECRET_ECHO": "from_env"}):
+            with mock.patch("broker.tool_state.ToolState", return_value=fake):
+                self.assertEqual(_env_tool_secret("echo"), "from_state_file")
 
 
 if __name__ == "__main__":
