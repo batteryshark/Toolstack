@@ -29,10 +29,13 @@ def maybe_generate_tls_material(cert_path: str, key_path: str, ca_path: str, sub
     if os.path.exists(cert_path) and os.path.exists(key_path) and os.path.exists(ca_path):
         return False
     # Self-signed cert generated for both server and CA-verify (dev/single-host).
+    # `-addext subjectAltName=IP:127.0.0.1,DNS:localhost` is required: Python's
+    # ssl module rejects CN-only certs for hostname/IP verification (RFC 6125).
     cmd = [
         "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
         "-keyout", key_path, "-out", cert_path,
         "-days", "365", "-subj", subj,
+        "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost",
     ]
     subprocess.run(cmd, check=True, capture_output=True)
     # Copy the cert as the CA bundle (self-signed == own CA in dev).
@@ -73,6 +76,30 @@ def _cmd_serve(args) -> None:
         pass
     finally:
         server.server_close()
+
+
+def _cmd_regen_tls(args) -> None:
+    """Regenerate the self-signed TLS cert/key/CA bundle. Existing sps.env is
+    preserved (SP_SECRET unchanged). Idempotent: rerun is a no-op. Operators
+    who replaced the self-signed cert with one from a real CA should not run
+    this -- it will overwrite their cert."""
+    import shutil
+    cfg_path = args.config
+    base_dir = os.path.dirname(cfg_path) or "."
+    cert = os.path.join(base_dir, "sps.crt")
+    key = os.path.join(base_dir, "sps.key")
+    ca = os.path.join(base_dir, "sps-ca.crt")
+    if shutil.which("openssl") is None:
+        print("openssl is required for `sps regen-tls`", file=sys.stderr)
+        sys.exit(3)
+    for p in (cert, key, ca):
+        if os.path.exists(p):
+            os.remove(p)
+    maybe_generate_tls_material(cert, key, ca, "/CN=127.0.0.1")
+    if os.geteuid() == 0:
+        # Match sps.env's mode-0600 posture; the key is the sensitive half.
+        os.chmod(key, 0o600)
+    print(f"regenerated {cert}, {key}, {ca} (SP_SECRET and sps.env unchanged)")
 
 
 def _cmd_init(args) -> None:
@@ -150,6 +177,9 @@ def main() -> None:
     p_init = sub.add_parser("init", help="write a starter sps.env (cert + key + CA)")
     p_init.add_argument("--config", default="/etc/toolstack/sps.env")
     p_init.set_defaults(func=_cmd_init)
+    p_regen = sub.add_parser("regen-tls", help="regenerate the TLS cert/key/CA (sps.env kept)")
+    p_regen.add_argument("--config", default="/etc/toolstack/sps.env")
+    p_regen.set_defaults(func=_cmd_regen_tls)
     p_serve = sub.add_parser("serve", help="run the SPS server")
     p_serve.add_argument("--config", default="/etc/toolstack/sps.env")
     p_serve.set_defaults(func=_cmd_serve)
