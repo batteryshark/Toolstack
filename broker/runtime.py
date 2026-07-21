@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import urllib.error
 import urllib.request
 
@@ -76,26 +75,23 @@ _OPENER = urllib.request.build_opener(_NoRedirect)
 def _env_tool_secret(tool_id: str) -> str | None:
     """The shared secret the broker presents to ``tool_id``.
 
-    Phase 4 re-sources this from the toolyard state file (each running tool
-    has the E_SECRET the runner minted for it). Falls back to the
-    ``TOOLSTACK_TOOL_SECRET_<TOOL>`` env var for legacy operator-provisioned
-    channel secrets -- which the design doc says we are removing, but which
-    still drives the existing tests until Phase 5 closes that gap. The
-    legacy branch is opt-in (the env var is unset by default).
+    Sourced from the toolyard state file: each running tool has the E_SECRET
+    the runner minted at start. The HttpRuntime constructor accepts an
+    ``e_secret_lookup`` callable; production wires it to ToolState.e_secret_for.
+    This function is the default used when the caller didn't inject one.
 
-    Returns None when both lookups come up empty; the feature is opt-in
-    and an unconfigured tool gets no header. The value is stripped of
-    surrounding whitespace so it matches the tool side, which reads its copy
-    through the same strip (a stray trailing newline in the env must not
-    silently 401 every call)."""
-    key = "TOOLSTACK_TOOL_SECRET_" + re.sub(r"[^A-Z0-9]+", "_", tool_id.upper())
-    legacy = (os.environ.get(key) or "").strip() or None
-    if legacy is not None:
-        return legacy
-    # Phase 4: toolyard state file is the source of truth for the
-    # SPS-minted E_SECRET. The runtime constructor accepts a `e_secret_lookup`
-    # callable; production wires it to ToolState.e_secret_for. This fallback
-    # here is the legacy-callable path for callers that didn't inject one.
+    Returns None when the tool isn't in the state file (not running, or started
+    under a different service account). The value is stripped of surrounding
+    whitespace so it matches the tool side, which reads its copy through the
+    same strip -- a stray trailing newline in the env must not silently 401
+    every call.
+
+    The historical ``TOOLSTACK_TOOL_SECRET_<TOOL>`` env var path was retired
+    in Phase 5; it is no longer consulted. Operators who provisioned that env
+    var in /etc/toolstack/admin.env or the systemd unit should remove it -- the
+    state file is now the single source of truth, and a leftover env value
+    would have silently shadowed the real E_SECRET, producing ``channel_secret_mismatch``
+    on every call."""
     from .tool_state import ToolState
     val = ToolState().e_secret_for(tool_id)
     return val.strip() if val else None
