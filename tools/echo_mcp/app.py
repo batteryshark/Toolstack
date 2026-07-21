@@ -18,6 +18,7 @@ Stdlib only (``http.server``), so it runs as a bare process or in a container un
 import hmac
 import json
 import os
+import tomllib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from sps.tool_sdk import SecretClient
@@ -33,19 +34,38 @@ TOOLS = [
         "description": "Echo the given arguments back.",
         "inputSchema": {
             "type": "object",
-            "properties": {"m": {"type": "string", "description": "any value to echo back"}},
+            "properties": {"m": {"type": "string", "description": "any value to echo"}},
         },
     },
     {
         "name": "whoami",
         "description": "Return the calling caller name and broker request id (read from _meta).",
-        "inputSchema": {"type": "object", "properties": {}},
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
     },
 ]
 
+
+def _tool_id_from_config() -> str:
+    """Read the canonical tool id from the toml the runner mounted at
+    ``$TOOLSTACK_TOOL_CONFIG``. The runner registers this same id with SPS, so
+    the value the tool passes to ``SecretClient.from_env`` always matches the
+    SPS-side registration (no drift between the hardcoded id and the toml id).
+    """
+    path = os.environ.get("TOOLSTACK_TOOL_CONFIG", "")
+    if not path:
+        raise RuntimeError(
+            "TOOLSTACK_TOOL_CONFIG is not set; cannot determine tool id"
+        )
+    with open(path, "rb") as f:
+        return tomllib.load(f)["id"]
+
+
 # Phase 5: SPS path only; no /run/secrets fallback. The credentials cache lives
 # in memory; the broker_secret dev shim lives only in the api echo test now.
-_secrets = SecretClient.from_env("echo-mcp")
+_secrets = SecretClient.from_env(_tool_id_from_config())
 
 
 def verify_broker(headers) -> bool:
