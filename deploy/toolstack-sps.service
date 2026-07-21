@@ -7,10 +7,12 @@ Wants=network-online.target
 Type=simple
 User=toolstack
 Group=toolstack
+# EDIT: absolute path to the Toolstack checkout (same root as the ExecStart line below).
 WorkingDirectory=/opt/toolstack
 EnvironmentFile=-/etc/toolstack/sps.env
-# EDIT: replace with the python that owns the venv (or system python3).
-ExecStart=/opt/toolstack/.venv/bin/python -m sps.cli serve --config /etc/toolstack/sps.env
+# EDIT: absolute path to the admin venv's python (install.sh creates it at admin/.venv;
+# the SPS plugin runs in the same venv so infisical/cryptography deps are available).
+ExecStart=/opt/toolstack/admin/.venv/bin/python -m sps.cli serve --config /etc/toolstack/sps.env
 Restart=on-failure
 RestartSec=3
 
