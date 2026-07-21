@@ -1,9 +1,11 @@
 """Entrypoint for ``python3 -m toolstack_forwarder``.
 
 Reads secrets from SPS (via sps.tool_sdk.SecretClient) instead of the
-historical host-disk ``$TOOLSTACK_SECRETS_DIR``. The runner passes
-``TOOLSTACK_TOOL_ID`` (the tool id from toolyard.toml) plus the SPS
-connection params the SDK needs.
+historical host-disk ``$TOOLSTACK_SECRETS_DIR``. The tool id is read
+from the same toolyard.toml the forwarder already loads -- the runner
+mounts it in at ``$TOOLSTACK_TOOL_CONFIG`` -- so the canonical id and
+the SPS-registered id are always the same value (no risk of the
+hardcoded-id / toml-id drift that bit the original echo tool).
 """
 
 from __future__ import annotations
@@ -22,11 +24,6 @@ DEFAULT_MAX_BODY = 20 * 1024 * 1024
 
 def main() -> None:
     config_path = Path(os.environ.get("TOOLSTACK_TOOL_CONFIG", "toolyard.toml"))
-    tool_id = os.environ.get("TOOLSTACK_TOOL_ID")
-    if not tool_id:
-        raise SystemExit(
-            "toolstack-forwarder: TOOLSTACK_TOOL_ID is not set; cannot reach SPS"
-        )
     try:
         config = load_config(config_path)
         port = _int_env("TOOLSTACK_PORT", config.port)
@@ -40,7 +37,7 @@ def main() -> None:
     except ConfigError as exc:
         raise SystemExit(f"toolstack-forwarder: {exc}")
 
-    secrets = SecretClient.from_env(tool_id)
+    secrets = SecretClient.from_env(config.tool_id)
     serve(bind, port, config, secrets, timeout=timeout, max_body=max_body).serve_forever()
 
 
