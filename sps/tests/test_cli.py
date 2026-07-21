@@ -53,11 +53,18 @@ class TlsMaterial(unittest.TestCase):
 
 class CliHelp(unittest.TestCase):
     def test_help_lists_all_subcommands(self):
+        import io, contextlib
         from sps.cli import main
+        # argparse prints the full help to stdout when invoked with --help; capture
+        # it so the help text doesn't pollute the unittest output.
+        buf = io.StringIO()
         with mock.patch("sys.argv", ["sps", "--help"]):
-            with self.assertRaises(SystemExit):
-                main()
-        # argparse writes to stderr on -h; we just verify it doesn't crash mid-parsing.
+            with contextlib.redirect_stdout(buf):
+                with self.assertRaises(SystemExit) as cm:
+                    main()
+        self.assertEqual(cm.exception.code, 0)
+        for sub in ("init", "init-vault", "regen-tls", "serve", "vault-set", "vault-get"):
+            self.assertIn(sub, buf.getvalue())
 
 
 if __name__ == "__main__":
