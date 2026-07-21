@@ -151,4 +151,10 @@ def _validate_rest(path: Path, data: dict) -> None:
 
 
 def discover(root: str | Path) -> list[ToolDef]:
-    return [load(p) for p in sorted(Path(root).glob("*/toolyard.toml"))]
+    # Resolve to absolute so the ToolDef.path we hand back is stable regardless of
+    # whatever cwd the runner was started from. A relative path here means the runner's
+    # `cd {tool_def.path}` is relative, and any relative path the tool opens (e.g. the
+    # TOOLSTACK_TOOL_CONFIG we inject for the tool-side SecretClient) resolves against
+    # the wrong root and fails with FileNotFoundError.
+    root = Path(root).resolve()
+    return [load(p) for p in sorted(root.glob("*/toolyard.toml"))]
