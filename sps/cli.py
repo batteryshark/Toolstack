@@ -121,6 +121,12 @@ def _cmd_init(args) -> None:
     # SP_SECRET: 32 random bytes -> 64 hex chars (way above the 32-char lower
     # bound). SP_PLUGIN defaults to localfile for the dev path.
     secret = os.urandom(32).hex()
+    # Derive runtime paths from --config's directory so a test init --config /tmp/x.env
+    # never writes to the production /var/lib/toolstack or /var/log/toolstack paths.
+    # base_dir above is already this; the audit log + localfile vault file live next
+    # to sps.env so the env file is fully self-contained.
+    audit_log = os.path.join(base_dir, "sps-audit.jsonl")
+    vault_file = os.path.join(base_dir, "sps.vault.json")
     content = (
         'SP_HOST = "127.0.0.1"\n'
         'SP_PORT = "8743"\n'
@@ -128,11 +134,11 @@ def _cmd_init(args) -> None:
         f'SP_TLS_KEY = "{key}"\n'
         f'SP_TLS_CA = "{ca}"\n'
         f'SP_SECRET = "{secret}"\n'
-        'SP_AUDIT_LOG = "/var/log/toolstack/sps.audit"\n'
+        f'SP_AUDIT_LOG = "{audit_log}"\n'
         'SP_PLUGIN = "localfile"\n'
         '\n'
         '[localfile]\n'
-        'VAULT_FILE = "/var/lib/toolstack/sps.vault.json"\n'
+        f'VAULT_FILE = "{vault_file}"\n'
     )
     with open(cfg_path, "w") as f:
         f.write(content)
