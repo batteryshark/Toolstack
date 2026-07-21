@@ -48,8 +48,10 @@ fi
 echo "==> Installing the package + admin dependencies"
 sudo -u "$SERVICE_USER" sh -c "cd '$REPO_ROOT' && '$VENV_PIP' install --quiet -e '.[vault]' -r admin/requirements.txt"
 
-# 4. State dir (the unit's StateDirectory keeps it; pre-create so set-password lands right)
+# 4. State + log dirs (the unit's StateDirectory/ReadWritePaths keep them; pre-create
+#    so set-password + the SPS audit logger land right instead of crashing on first write)
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 700 /var/lib/toolstack
+install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 750 /var/log/toolstack
 
 # 5. Admin password (the panel fails closed without one)
 if run_admin "'$VENV_PY' -c 'from admin import settings; raise SystemExit(0 if settings.read_password_hash() else 1)'"; then
@@ -59,26 +61,51 @@ else
     run_admin "'$VENV_PY' -m admin set-password"
 fi
 
-# 6. systemd unit: fill the template's install root + service account
+# 6. systemd units: fill the templates' install root + service account, install both
 echo "==> Installing $UNIT"
 sed -e "s|/opt/toolstack|$REPO_ROOT|g" \
     -e "s|^User=toolstack|User=$SERVICE_USER|" \
     -e "s|^Group=toolstack|Group=$SERVICE_GROUP|" \
     "$REPO_ROOT/deploy/toolstack-admin.service" > "$UNIT"
+
+SPS_UNIT="/etc/systemd/system/toolstack-sps.service"
+echo "==> Installing $SPS_UNIT"
+sed -e "s|/opt/toolstack|$REPO_ROOT|g" \
+    -e "s|^User=toolstack|User=$SERVICE_USER|" \
+    -e "s|^Group=toolstack|Group=$SERVICE_GROUP|" \
+    "$REPO_ROOT/deploy/toolstack-sps.service" > "$SPS_UNIT"
+
 systemctl daemon-reload
 systemctl enable --now toolstack-admin
+if [ -f /etc/toolstack/sps.env ]; then
+    # Env file already exists (operator provisioned it): take ownership so the
+    # service user can read it, then start. (New installs: run `python3 -m sps.cli init`
+    # to bootstrap sps.env, then systemctl start toolstack-sps.)
+    chown "$SERVICE_USER:$SERVICE_GROUP" /etc/toolstack/sps.env
+    chmod 600 /etc/toolstack/sps.env
+    systemctl enable --now toolstack-sps
+else
+    echo "==> /etc/toolstack/sps.env not found; enabling toolstack-sps unit without autostart."
+    echo "    Run:  sudo -u $SERVICE_USER python3 -m sps.cli init --config /etc/toolstack/sps.env"
+    echo "    then: sudo systemctl start toolstack-sps"
+    systemctl enable toolstack-sps
+fi
 
 cat <<EOF
 
 Toolstack is installed and running.
   Panel:   http://127.0.0.1:8780   (reach it over a TLS tunnel; never bind a public interface)
-  Status:  systemctl status toolstack-admin
+  SPS:     tcp://127.0.0.1:8743 (TLS; tools register here on startup)
+  Status:  systemctl status toolstack-admin toolstack-sps
   Logs:    journalctl -u toolstack-admin -f
+            journalctl -u toolstack-sps -f
+            tail -f /var/log/toolstack/sps.audit    (SPS secret-access audit log)
 
   Provision an agent (its bearer token prints once):
     sudo -u $SERVICE_USER env XDG_CONFIG_HOME=/var/lib XDG_STATE_HOME=/var/lib \\
         $REPO_ROOT/admin/.venv/bin/brokerctl create-caller --name my-agent --allow echo_api.echo
 
   Docker runner / encrypted vault / Infisical: fill in /etc/toolstack/admin.env, then
-  'systemctl restart toolstack-admin'. See deploy/README.md.
+  'systemctl restart toolstack-admin'. For the SPS plugin (Infisical / Vault / localfile),
+  fill in /etc/toolstack/sps.env and 'systemctl restart toolstack-sps'. See deploy/README.md.
 EOF
