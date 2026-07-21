@@ -39,6 +39,7 @@ from .sandbox import EgressPolicy, ResourceCaps, SandboxPolicy
 # E_SECRET + SPS connection params into the child env. The tool itself
 # then talks to SPS to retrieve its secrets (see Phase 3 tool migration).
 _DEFAULT_SPS_ENV = "/etc/toolstack/sps.env"
+_DEFAULT_SPS_CA = "/etc/toolstack/sps-ca.crt"
 _DEFAULT_SPS_HOST = "127.0.0.1"
 _DEFAULT_SPS_PORT = 8743
 
@@ -364,7 +365,7 @@ class ProcessRunner:
                 env["TOOLSTACK_SPS_PORT"] = os.environ.get(
                     "TOOLSTACK_SPS_PORT", str(_DEFAULT_SPS_PORT))
                 env["TOOLSTACK_SPS_CA"] = os.environ.get(
-                    "TOOLSTACK_SPS_CA", _DEFAULT_SPS_ENV)
+                    "TOOLSTACK_SPS_CA", _DEFAULT_SPS_CA)
             if egress_port:
                 # Route the tool's outbound HTTP(S) through its egress proxy; the sandbox
                 # allows outbound only to this port, so the proxy is the sole exit.
