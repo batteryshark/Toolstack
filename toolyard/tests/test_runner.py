@@ -31,7 +31,7 @@ from broker.runtime import HttpRuntime
 from broker.server import build_server
 from toolyard.config import load
 from toolyard.egress_proxy import serve as _serve_egress_proxy
-from toolyard.runner import (BwrapRunner, DockerRunner, ProcessRunner, SeatbeltRunner,
+from toolyard.runner import (BwrapRunner, DockerRunner, ProcessRunner, RunningTool, SeatbeltRunner,
                              _SANDBOX_EXEC, _netguard_argv, _seatbelt_profile)
 from toolyard.sandbox import EgressPolicy, SandboxPolicy
 
@@ -320,6 +320,23 @@ class ProcessRunnerHardening(unittest.TestCase):
                    "test")
     def test_failed_start_cleans_up_the_secrets_dir(self):
         pass
+
+    def test_persisted_pid_from_another_boot_is_not_alive(self):
+        stale = RunningTool(
+            "echo", 4601, "process", "123", boot_id="previous-boot")
+        with mock.patch("toolyard.runner.os.waitpid", side_effect=ChildProcessError), \
+             mock.patch("toolyard.runner._boot_id", return_value="current-boot"), \
+             mock.patch("toolyard.runner.os.killpg") as killpg:
+            self.assertFalse(ProcessRunner().is_alive(stale))
+        killpg.assert_not_called()
+
+    def test_stop_never_signals_pid_from_another_boot(self):
+        stale = RunningTool(
+            "echo", 4601, "process", "123", boot_id="previous-boot")
+        with mock.patch("toolyard.runner._boot_id", return_value="current-boot"), \
+             mock.patch("toolyard.runner.os.killpg") as killpg:
+            ProcessRunner().stop(stale)
+        killpg.assert_not_called()
 
 
 class ProcessRunnerLogging(unittest.TestCase):

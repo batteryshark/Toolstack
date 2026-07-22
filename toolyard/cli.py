@@ -50,8 +50,16 @@ def cmd_up(args) -> None:
         if tool_id not in defs:
             raise SystemExit(f"unknown tool: {tool_id}")
         if tool_id in state:
-            print(f"{tool_id}: already running")
-            continue
+            recorded = RunningTool(**state[tool_id])
+            recorded_runner = get_runner(recorded.backend)
+            if recorded_runner.is_alive(recorded):
+                print(f"{tool_id}: already running")
+                continue
+            recorded_runner.stop(recorded)
+            del state[tool_id]
+            # Persist the cleanup before starting. If start fails, the dead record must
+            # not make every later `up` look successful while doing nothing.
+            _save_state(state)
         running = runner.start(defs[tool_id])
         state[tool_id] = asdict(running)
         print(f"{tool_id}: started ({running.backend}) on 127.0.0.1:{running.port}")

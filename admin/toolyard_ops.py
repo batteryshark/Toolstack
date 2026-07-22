@@ -76,7 +76,15 @@ def start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") ->
         raise LookupError(f"unknown tool: {tool_id}")
     state = _load_state()
     if tool_id in state:
-        return  # already running
+        # The state file survives the process, VM, and host. Treat it as running
+        # intent, not proof that the recorded runtime still exists.
+        recorded = RunningTool(**state[tool_id])
+        recorded_runner = get_runner(recorded.backend)
+        if recorded_runner.is_alive(recorded):
+            return  # genuinely already running
+        recorded_runner.stop(recorded)
+        del state[tool_id]
+        _save_state(state)
     running = get_runner(backend).start(defs[tool_id])
     state[tool_id] = asdict(running)
     _save_state(state)
