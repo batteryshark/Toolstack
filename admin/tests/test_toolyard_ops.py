@@ -6,9 +6,14 @@ import os
 import shutil
 import tempfile
 import unittest
+from dataclasses import asdict
 from pathlib import Path
+from unittest import mock
 
 from admin import toolyard_ops
+from admin.views.tools import tools_view
+from toolyard.cli import _save_state
+from toolyard.runner import RunningTool
 
 
 class ToolyardOps(unittest.TestCase):
@@ -62,7 +67,47 @@ class ToolyardOps(unittest.TestCase):
 
     def test_start_unknown_tool_raises(self):
         with self.assertRaises(LookupError):
-            toolyard_ops.start("ghost", str(self.tools_root), [], "secrets.toml")
+            toolyard_ops.start("ghost", str(self.tools_root), [])
+
+    def test_start_replaces_dead_record(self):
+        stale = RunningTool("echo", 4601, "process", "123")
+        _save_state({"echo": asdict(stale)})
+        old_runner = mock.Mock()
+        old_runner.is_alive.return_value = False
+        replacement = RunningTool("echo", 4601, "process", "456")
+        new_runner = mock.Mock()
+        new_runner.start.return_value = replacement
+
+        with mock.patch.object(toolyard_ops, "get_runner",
+                               side_effect=[old_runner, new_runner]):
+            toolyard_ops.start("echo", str(self.tools_root), [])
+
+        old_runner.stop.assert_called_once_with(stale)
+        new_runner.start.assert_called_once()
+        self.assertEqual(toolyard_ops._load_state()["echo"], asdict(replacement))
+
+    def test_start_keeps_live_record(self):
+        running = RunningTool("echo", 4601, "process", "123")
+        _save_state({"echo": asdict(running)})
+        runner = mock.Mock()
+        runner.is_alive.return_value = True
+
+        with mock.patch.object(toolyard_ops, "get_runner", return_value=runner):
+            toolyard_ops.start("echo", str(self.tools_root), [])
+
+        runner.stop.assert_not_called()
+        runner.start.assert_not_called()
+        self.assertEqual(toolyard_ops._load_state()["echo"], asdict(running))
+
+    def test_dead_record_leaves_start_button_enabled(self):
+        html = tools_view(
+            user="operator", csrf="token", tools=[{
+                "id": "echo", "port": 4601, "path": str(self.tools_root / "echo"),
+                "running": True, "alive": False, "removable": False,
+            }], tools_root=str(self.tools_root))
+        start = html.split("action='/toolyard/tools/echo/start'", 1)[1].split("</form>", 1)[0]
+        self.assertIn(">Start</button>", start)
+        self.assertNotIn("disabled", start)
 
     def test_remove_deletes_a_managed_tool_dir(self):
         self.assertTrue((self.tools_root / "echo").exists())
