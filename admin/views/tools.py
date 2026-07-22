@@ -38,6 +38,7 @@ def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str
         else:
             state, cls = "stopped", "muted"
         running = t["running"]
+        alive = t["alive"]
         update = ""
         src = t.get("source")
         if src:
@@ -67,7 +68,7 @@ def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str
             f"<td><code>{esc(t.get('path', ''))}</code></td>"
             "<td class='actions'>"
             f"<a class='button' href='/tools/{esc(t['id'])}/edit'>Edit</a>"
-            f"{action(t['id'], 'start', 'Start', running)}"
+            f"{action(t['id'], 'start', 'Start', alive)}"
             f"{action(t['id'], 'stop', 'Stop', not running)}"
             f"{action(t['id'], 'restart', 'Restart', not running)}"
             f"{update}"

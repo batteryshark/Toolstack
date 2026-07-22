@@ -79,6 +79,27 @@ def _check_port_free(port: int) -> None:
         s.close()
 
 
+@functools.cache
+def _boot_id() -> str | None:
+    """Return an identifier that changes on reboot, when the OS exposes one."""
+    try:
+        return Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        pass
+    try:
+        result = subprocess.run(
+            ["sysctl", "-n", "kern.boottime"], capture_output=True, text=True, timeout=5)
+        return result.stdout.strip() or None if result.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _pids_are_current(running: "RunningTool") -> bool:
+    """Whether persisted PIDs in this record belong to the current boot."""
+    current = _boot_id()
+    return current is not None and running.boot_id == current
+
+
 # ---- SPS integration (Phase 2) --------------------------------------------
 
 def _mint_e_secret() -> str:
@@ -202,6 +223,9 @@ class RunningTool:
     sps_host: str = "127.0.0.1"
     sps_port: int = 8743
     sps_ca: str | None = None
+    # A persisted PID may be recycled after reboot. Old records (without this field)
+    # deserialize as unknown and are never probed or signalled by PID.
+    boot_id: str | None = None
 
 
 def _pick_free_port() -> int:
@@ -230,11 +254,13 @@ def _start_egress_proxy(allow: tuple[str, ...]) -> tuple[str, int]:
 
 
 def _stop_log_follower(running: RunningTool) -> None:
-    _terminate(running.log_pid)
+    if _pids_are_current(running):
+        _terminate(running.log_pid)
 
 
 def _stop_egress_proxy(running: RunningTool) -> None:
-    _terminate(running.egress_pid)
+    if _pids_are_current(running):
+        _terminate(running.egress_pid)
 
 
 def _start_docker_log_follower(container: str, log_path: Path) -> str:
@@ -394,6 +420,7 @@ class ProcessRunner:
                 sps_host=env.get("TOOLSTACK_SPS_HOST", _DEFAULT_SPS_HOST),
                 sps_port=int(env.get("TOOLSTACK_SPS_PORT", str(_DEFAULT_SPS_PORT))),
                 sps_ca=env.get("TOOLSTACK_SPS_CA") if e_secret else None,
+                boot_id=_boot_id(),
             )
             time.sleep(_READINESS_WAIT)
             if not self.is_alive(running):
@@ -411,15 +438,16 @@ class ProcessRunner:
             raise
 
     def stop(self, running: RunningTool) -> None:
-        pid = int(running.handle)
-        try:
-            os.killpg(pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
-        try:
-            os.waitpid(pid, 0)
-        except (ChildProcessError, ProcessLookupError):
-            pass
+        if _pids_are_current(running):
+            pid = int(running.handle)
+            try:
+                os.killpg(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                os.waitpid(pid, 0)
+            except (ChildProcessError, ProcessLookupError):
+                pass
         _stop_log_follower(running)
         _stop_egress_proxy(running)
         if running.e_secret:
@@ -444,8 +472,11 @@ class ProcessRunner:
             reaped, _ = os.waitpid(pid, os.WNOHANG)
             if reaped:
                 return False
+            return True  # waitpid proved this is our current, live child
         except ChildProcessError:
             pass
+        if not _pids_are_current(running):
+            return False
         try:
             os.killpg(pid, 0)
             return True
@@ -627,7 +658,8 @@ class BwrapRunner:
                 os.close(log_fd)
             running = RunningTool(tool_def.id, tool_def.port, self.backend, tool_def.id,
                                   log_path=str(log_path),
-                                  egress_pid=egress_pid, launcher_pid=str(launcher_pid))
+                                  egress_pid=egress_pid, launcher_pid=str(launcher_pid),
+                                  boot_id=_boot_id())
             time.sleep(_SANDBOX_READINESS_WAIT)
             if not self.is_alive(running):
                 raise RuntimeError(f"tool {tool_def.id} did not start under the sandbox: see {log_path}")
@@ -645,7 +677,8 @@ class BwrapRunner:
         # directly; then reap the sudo launcher.
         subprocess.run(_netguard_argv("teardown", "--tool", running.handle),
                        capture_output=True, timeout=15)
-        _terminate(running.launcher_pid)
+        if _pids_are_current(running):
+            _terminate(running.launcher_pid)
         _stop_egress_proxy(running)
         log.info("stopped tool %s (cgroup %s)", running.tool_id, running.handle)
 
@@ -714,7 +747,7 @@ class DockerRunner:
             self._docker(run_args, _DOCKER_RUN_TIMEOUT, check=True)
             log_pid = _start_docker_log_follower(name, log_path)
             running = RunningTool(tool_def.id, tool_def.port, self.backend, name,
-                                  log_pid=log_pid, log_path=str(log_path))
+                                  log_pid=log_pid, log_path=str(log_path), boot_id=_boot_id())
             time.sleep(_READINESS_WAIT)
             if not self.is_alive(running):
                 raise RuntimeError(f"tool {tool_def.id} container exited immediately: see {log_path}")
