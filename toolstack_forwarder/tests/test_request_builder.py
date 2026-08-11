@@ -93,14 +93,12 @@ class RequestBuilder(unittest.TestCase):
         self.assertEqual(req.url, "https://api.example.test/v1/search?q=a%2Fb%2Bc&tenant=acme")
 
     def test_rejects_variable_slash_dot_whitespace_non_ascii_and_encoded_dot(self):
-        bad = ["a/b", "u 42", "caf\xe9"]
+        bad = ["a/b", "a.b", "u 42", "caf\xe9", "%2E"]
         for value in bad:
             with self.subTest(value=value):
                 with self.assertRaises(RequestBuildError) as cm:
                     self.build("get_user", {"variables": {"user_id": value}})
                 self.assertEqual(cm.exception.code, "invalid_variable")
-        # Disabled: single-dot values like "a.b" and "%2E" are intentionally
-        # accepted as path variables — only ".." sequences are rejected.
 
     def test_path_variable_still_rejects_internal_space(self):
         with self.assertRaises(RequestBuildError) as cm:
