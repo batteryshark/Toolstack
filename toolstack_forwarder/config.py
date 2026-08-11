@@ -23,8 +23,6 @@ _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _HEADER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 _SECRET_RE = re.compile(r"^[A-Za-z0-9_-]+\Z")
 _TEMPLATE_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
-_PATH_PRINTABLE = frozenset(chr(c) for c in range(0x21, 0x7F))
-_QUERY_PRINTABLE = _PATH_PRINTABLE | {" ", "'"}
 
 VERBS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 BODY_KINDS = frozenset({"none", "text", "binary"})
@@ -240,15 +238,13 @@ def _validate_base_url(path: Path, value: str) -> None:
 
 
 def _validate_path_template(path: Path, field: str, value: str) -> None:
-    path_part, _, query_part = value.partition("?")
+    path_part, _, _query = value.partition("?")
     if not path_part.startswith("/") or path_part.startswith("//"):
         raise _err(path, field, "must start with a single /")
     if "#" in value:
         raise _err(path, field, "must not include fragment text")
-    if any(c not in _PATH_PRINTABLE for c in path_part):
-        raise _err(path, field, "path portion must be printable ASCII without spaces")
-    if any(c not in _QUERY_PRINTABLE for c in query_part):
-        raise _err(path, field, "query portion must be printable ASCII with spaces and single quotes allowed")
+    if any(not (0x21 <= ord(c) <= 0x7e) for c in value):
+        raise _err(path, field, "must be printable ASCII without spaces")
     stripped = _TEMPLATE_VAR.sub("", value)
     if "{" in stripped or "}" in stripped:
         raise _err(path, field, "only single-segment {name} path variables are supported")

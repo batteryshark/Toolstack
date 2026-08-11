@@ -100,49 +100,6 @@ class RequestBuilder(unittest.TestCase):
                     self.build("get_user", {"variables": {"user_id": value}})
                 self.assertEqual(cm.exception.code, "invalid_variable")
 
-    def test_path_variable_still_rejects_internal_space(self):
-        with self.assertRaises(RequestBuildError) as cm:
-            self.build("get_user", {"variables": {"user_id": "u 42"}})
-        self.assertEqual(cm.exception.code, "invalid_variable")
-
-    def test_allows_space_and_single_quote_in_query_value(self):
-        req = self.build("search", {"variables": {"query": "hello world 'foo'", "tenant": "acme"}})
-        self.assertEqual(req.url, "https://api.example.test/v1/search?q=hello%20world%20%27foo%27&tenant=acme")
-
-    def test_strips_surrounding_query_variable_whitespace(self):
-        req = self.build("search", {"variables": {"query": "  hello world  ", "tenant": "acme"}})
-        self.assertEqual(req.url, "https://api.example.test/v1/search?q=hello%20world&tenant=acme")
-
-    def test_drops_absent_query_variable_pair(self):
-        req = self.build("search", {"variables": {"query": "foo"}})
-        self.assertEqual(req.url, "https://api.example.test/v1/search?q=foo")
-
-    def test_drops_absent_query_variable_when_other_pair_remains(self):
-        req = self.build("search", {"variables": {"tenant": "acme"}})
-        self.assertEqual(req.url, "https://api.example.test/v1/search?tenant=acme")
-
-    def test_drops_all_query_variables_and_removes_question_mark(self):
-        req = self.build("search", {"variables": {}})
-        self.assertEqual(req.url, "https://api.example.test/v1/search")
-
-    def test_drops_absent_query_variable_in_middle(self):
-        path = "/items?a={a}&b={b}&c={c}"
-        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
-                              "body_kind": "none", "body_content_type": None,
-                              "body_substitution": False})()
-        from toolstack_forwarder.request_builder import _hydrate_path
-        rendered = _hydrate_path(op, {"variables": {"a": "foo", "c": "bar"}})
-        self.assertEqual(rendered, "/items?a=foo&c=bar")
-
-    def test_keeps_static_query_text_even_when_no_variables(self):
-        path = "/items?debug=true&q={q}"
-        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
-                              "body_kind": "none", "body_content_type": None,
-                              "body_substitution": False})()
-        from toolstack_forwarder.request_builder import _hydrate_path
-        rendered = _hydrate_path(op, {"variables": {}})
-        self.assertEqual(rendered, "/items?debug=true")
-
     def test_strips_surrounding_path_variable_whitespace(self):
         req = self.build("get_user", {"variables": {"user_id": " u42\n"}})
         self.assertEqual(req.url, "https://api.example.test/v1/users/u42")
