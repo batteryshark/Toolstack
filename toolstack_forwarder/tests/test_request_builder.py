@@ -145,6 +145,43 @@ class RequestBuilder(unittest.TestCase):
         rendered = _hydrate_path(op, {"variables": {}})
         self.assertEqual(rendered, "/items?debug=true")
 
+    def test_substitutes_placeholder_in_query_value_side(self):
+        # Placeholder on the value side: "key={var}" — the common case.
+        path = "/items?key={k}"
+        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
+                              "body_kind": "none", "body_content_type": None,
+                              "body_substitution": False})()
+        from toolstack_forwarder.request_builder import _hydrate_path
+        rendered = _hydrate_path(op, {"variables": {"k": "v"}})
+        self.assertEqual(rendered, "/items?key=v")
+
+    def test_substitutes_placeholder_in_query_key_side(self):
+        path = "/items?{k}=v"
+        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
+                              "body_kind": "none", "body_content_type": None,
+                              "body_substitution": False})()
+        from toolstack_forwarder.request_builder import _hydrate_path
+        rendered = _hydrate_path(op, {"variables": {"k": "key"}})
+        self.assertEqual(rendered, "/items?key=v")
+
+    def test_substitutes_multiple_placeholders_in_one_pair(self):
+        path = "/items?a={x}b{y}c"
+        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
+                              "body_kind": "none", "body_content_type": None,
+                              "body_substitution": False})()
+        from toolstack_forwarder.request_builder import _hydrate_path
+        rendered = _hydrate_path(op, {"variables": {"x": "1", "y": "2"}})
+        self.assertEqual(rendered, "/items?a=1b2c")
+
+    def test_drops_pair_when_only_placeholder_key_is_missing(self):
+        path = "/items?{missing}=v&q=keep"
+        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
+                              "body_kind": "none", "body_content_type": None,
+                              "body_substitution": False})()
+        from toolstack_forwarder.request_builder import _hydrate_path
+        rendered = _hydrate_path(op, {"variables": {}})
+        self.assertEqual(rendered, "/items?q=keep")
+
     def test_strips_surrounding_path_variable_whitespace(self):
         req = self.build("get_user", {"variables": {"user_id": " u42\n"}})
         self.assertEqual(req.url, "https://api.example.test/v1/users/u42")

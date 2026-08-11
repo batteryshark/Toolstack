@@ -44,7 +44,6 @@ _HEADER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 _FORBIDDEN_PATH_VARIABLE_CHARS = set("/\\")
 _PATH_VALUE_CHARS = frozenset(chr(c) for c in range(0x21, 0x7F))
 _QUERY_VALUE_CHARS = _PATH_VALUE_CHARS | {" ", "'"}
-_QUERY_PAIR_LHS_VAR = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 
 
 def build_request(config: RestConfig, op_name: str, arguments: dict,
@@ -115,18 +114,23 @@ def _hydrate_query(query_suffix: str, variables: dict) -> str:
     for pair in query_suffix[1:].split("&"):
         if not pair:
             continue
-        m = _QUERY_PAIR_LHS_VAR.match(pair)
-        if m is not None:
-            var_name = m.group(1)
-            if var_name not in variables:
-                continue
-            value = variables[var_name]
-            if not isinstance(value, str):
-                raise RequestBuildError("missing_variable", f"missing query variable {var_name!r}", name=var_name)
-            rendered_value = urllib.parse.quote(_validate_query_variable(var_name, value), safe="")
-            pairs.append(f"{pair.split('=', 1)[0]}={rendered_value}")
-        else:
+        referenced = _TEMPLATE_VAR.findall(pair)
+        if not referenced:
             pairs.append(pair)
+            continue
+        missing = [name for name in referenced if name not in variables]
+        if missing:
+            continue
+        for name in referenced:
+            value = variables[name]
+            if not isinstance(value, str):
+                raise RequestBuildError(
+                    "missing_variable", f"missing query variable {name!r}", name=name,
+                )
+        def fill(match: re.Match[str], _variables=variables) -> str:
+            name = match.group(1)
+            return urllib.parse.quote(_validate_query_variable(name, _variables[name]), safe="")
+        pairs.append(_TEMPLATE_VAR.sub(fill, pair))
     return "&".join(pairs)
 
 
