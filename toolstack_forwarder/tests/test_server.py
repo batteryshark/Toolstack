@@ -169,7 +169,7 @@ allowed_headers = ["X-Trace"]
         self.assertEqual(self.upstream.seen[-1]["path"], "/v1/items/i1")
         self.assertEqual(self.upstream.seen[-1]["headers"]["X-Trace"], "abc")
 
-    def test_logs_substituted_url_with_headers_and_body(self):
+    def test_logs_substituted_url_without_headers_or_body(self):
         with mock.patch("sys.stdout") as fake_stdout:
             status, _ = self._post(
                 self._forwarder(),
@@ -182,8 +182,8 @@ allowed_headers = ["X-Trace"]
                          if call.args and isinstance(call.args[0], str))
         self.assertIn("http://127.0.0.1:", logged)
         self.assertIn("/v1/items/i1", logged)
-        self.assertIn("X-Trace", logged)
-        self.assertIn("abc", logged)
+        self.assertNotIn("X-Trace", logged)
+        self.assertNotIn("abc", logged)
 
     def test_broker_secret_mismatch_is_401_json_when_configured(self):
         status, body = self._post(self._forwarder(), {"op": "get_item", "arguments": {}}, secret="wrong")
