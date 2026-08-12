@@ -95,10 +95,7 @@ def _handler(config: RestConfig, secrets: SecretClient, timeout: float, max_body
             except RequestBuildError as exc:
                 status = 400 if exc.code != "unknown_op" else 404
                 return self._reply(status, exc.envelope())
-            body_repr = req.body.decode("utf-8", "replace") if req.body is not None else None
-            print(f"outbound {config.tool_id}/{op} {req.url} headers={req.headers} body={body_repr}", flush=True)
             result = outbound.send(req, timeout=timeout, max_body=max_body)
-            print(f"response {config.tool_id}/{op} {result}", flush=True)
             if "status" in result:
                 try:
                     apply_secret_update_rules(config.operations[op], result, secrets)
