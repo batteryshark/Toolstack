@@ -16,6 +16,7 @@ start so they never touch host disk; the bind mount here is the simpler form.)
 from __future__ import annotations
 
 import functools
+import json
 import logging
 import os
 import re
@@ -98,6 +99,88 @@ def _pids_are_current(running: "RunningTool") -> bool:
     """Whether persisted PIDs in this record belong to the current boot."""
     current = _boot_id()
     return current is not None and running.boot_id == current
+
+
+# ---- DIAGNOSTIC (temporary) -----------------------------------------------
+# Capture a per-tool fingerprint of the spawned PID at start time, then re-probe /proc at
+# is_alive time. If comm/starttime diverges, the PID has been recycled by an unrelated
+# process and the recorded handle no longer points at our forwarder -- the root cause of
+# the broker's ECONNREFUSED. Remove once root cause is known.
+_DIAG_DIR = Path(
+    os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+) / "toolstack" / "toolyard" / "fingerprints"
+
+
+def _fingerprint_pid(pid: int) -> dict | None:
+    """Snapshot of /proc/<pid> at this moment: comm, starttime (ns since boot), exe target.
+    None if the PID has already disappeared."""
+    try:
+        with open(f"/proc/{pid}/comm") as f:
+            comm = f.read().strip()
+        with open(f"/proc/{pid}/stat") as f:
+            stat = f.read()
+        # /proc/<pid>/stat is "pid (comm) state ppid pgrp session ..."
+        # comm can contain spaces or parens; split from the right on ')'.
+        rparen = stat.rfind(")")
+        # starttime is the 22nd field after the leading "pid (comm)" block (index 21 zero-based).
+        fields = stat[rparen + 2:].split()
+        starttime = int(fields[19]) if len(fields) > 19 else None
+        try:
+            exe_target = os.readlink(f"/proc/{pid}/exe")
+        except OSError:
+            exe_target = None
+        return {"comm": comm, "starttime": starttime, "exe": exe_target, "ts": time.time()}
+    except (OSError, ProcessLookupError, ValueError):
+        return None
+
+
+def _fingerprint_path(tool_id: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", tool_id)
+    return _DIAG_DIR / f"{safe}.json"
+
+
+def _save_fingerprint(tool_id: str, fp: dict) -> None:
+    try:
+        _DIAG_DIR.mkdir(parents=True, exist_ok=True)
+        _fingerprint_path(tool_id).write_text(json.dumps(fp), encoding="utf-8")
+    except OSError as exc:
+        log.warning("could not write tool fingerprint for %s: %s", tool_id, exc)
+
+
+def _load_fingerprint(tool_id: str) -> dict | None:
+    try:
+        return json.loads(_fingerprint_path(tool_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _check_fingerprint_drift(tool_id: str, pid: int) -> None:
+    """If /proc/<pid> no longer matches the fingerprint saved at spawn, log it.
+    This is the smoking gun for the ECONNREFUSED bug.
+
+    Compare by starttime (kernel clock since boot, set at execve) only -- comm
+    is the argv[0]/exe name and *does* legitimately change when the wrapper
+    ``sh`` execs into ``python``. exe may also change for the same reason.
+    A different starttime means a different process occupies the PID."""
+    fp = _load_fingerprint(tool_id)
+    if not fp:
+        return
+    now = _fingerprint_pid(pid)
+    if now is None:
+        log.warning(
+            "[tool-diagnostics] PID_GONE tool=%s pid=%s recorded_comm=%r recorded_starttime=%s",
+            tool_id, pid, fp.get("comm"), fp.get("starttime"),
+        )
+        return
+    if now.get("starttime") != fp.get("starttime"):
+        log.warning(
+            "[tool-diagnostics] PID_REUSED tool=%s pid=%s "
+            "fingerprint_comm=%r starttime=%s exe=%s "
+            "now_comm=%r now_starttime=%s now_exe=%s",
+            tool_id, pid,
+            fp.get("comm"), fp.get("starttime"), fp.get("exe"),
+            now.get("comm"), now.get("starttime"), now.get("exe"),
+        )
 
 
 # ---- SPS integration (Phase 2) --------------------------------------------
@@ -400,7 +483,13 @@ class ProcessRunner:
                     env[var] = proxy_url
             # posix_spawn (not Popen) so the detached child has no lifecycle object to
             # warn about; setpgroup=0 gives it its own group so stop() can killpg it.
-            inner_script = f"cd {shlex.quote(str(tool_def.path))} && exec {_bind_interpreter(tool_def.command)}"
+            # DIAGNOSTIC: prepend ulimit -c unlimited so any segfault/abort leaves a core
+            # in /var/lib/toolstack/cores/ for post-mortem. Remove with the other diagnostics.
+            inner_script = (
+                f"cd {shlex.quote(str(tool_def.path))} && "
+                f"ulimit -c unlimited 2>/dev/null; "
+                f"exec {_bind_interpreter(tool_def.command)}"
+            )
             executable, argv = self._spawn_argv(tool_def, inner_script, None, egress_port)
             log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
             try:
@@ -422,6 +511,14 @@ class ProcessRunner:
                 sps_ca=env.get("TOOLSTACK_SPS_CA") if e_secret else None,
                 boot_id=_boot_id(),
             )
+            # DIAGNOSTIC: save a fingerprint of the freshly spawned PID so is_alive can
+            # detect PID reuse later.
+            fp = _fingerprint_pid(pid)
+            if fp is not None:
+                fp["tool_id"] = tool_def.id
+                fp["port"] = tool_def.port
+                fp["backend"] = self.backend
+                _save_fingerprint(tool_def.id, fp)
             time.sleep(_READINESS_WAIT)
             if not self.is_alive(running):
                 raise RuntimeError(f"tool {tool_def.id} exited immediately on start: see {log_path}")
@@ -440,6 +537,21 @@ class ProcessRunner:
     def stop(self, running: RunningTool) -> None:
         if _pids_are_current(running):
             pid = int(running.handle)
+            # DIAGNOSTIC: log what's actually at this PID before we signal it. If the PID has
+            # been recycled to an unrelated process, this stop() will SIGTERM a bystander --
+            # log it loudly so we can correlate with the broker's ECONNREFUSED.
+            now = _fingerprint_pid(pid)
+            recorded = _load_fingerprint(running.tool_id)
+            if now and recorded:
+                if now.get("comm") != recorded.get("comm") or now.get("starttime") != recorded.get("starttime"):
+                    log.warning(
+                        "[tool-diagnostics] STOP_KILLING_REUSED_PID tool=%s pid=%s "
+                        "recorded_comm=%r recorded_starttime=%s "
+                        "now_comm=%r now_starttime=%s now_exe=%s -- SIGTERM will hit an unrelated process",
+                        running.tool_id, pid,
+                        recorded.get("comm"), recorded.get("starttime"),
+                        now.get("comm"), now.get("starttime"), now.get("exe"),
+                    )
             try:
                 os.killpg(pid, signal.SIGTERM)
             except (ProcessLookupError, PermissionError):
@@ -462,6 +574,14 @@ class ProcessRunner:
 
     def is_alive(self, running: RunningTool) -> bool:
         pid = int(running.handle)
+        # DIAGNOSTIC: probe /proc first and compare to the spawn-time fingerprint. If the
+        # recorded PID is alive but is no longer our forwarder, we want to know -- and we
+        # should report False so the runner can replace it. The signal probe below would
+        # happily return True for any recycled PID that happens to be a process-group leader.
+        try:
+            _check_fingerprint_drift(running.tool_id, pid)
+        except Exception:
+            pass
         # Reap-aware liveness. The tool is our own posix_spawn child, so poll it with waitpid
         # first: on Linux a just-exited child that has not been reaped is a zombie whose pid still
         # answers killpg(pid, 0) as "alive", which would let start()'s readiness check pass a tool
