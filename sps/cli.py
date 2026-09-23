@@ -12,13 +12,40 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 import subprocess
 import sys
+from pathlib import Path
 
 from . import audit, config as cfgmod
 from .plugins import loader as plugin_loader
 from .server import AppContext, build_server
 from .store import ToolRegistrationStore
+
+
+# Where SPS writes its boot identity so long-running tools can detect a restart
+# and re-register. Overridable for tests (TOOLSTACK_SPS_BOOT_ID_PATH).
+_DEFAULT_BOOT_ID_PATH = (
+    Path(os.environ.get("XDG_STATE_HOME") or "/var/lib")
+    / "toolstack"
+    / "sps.boot_id"
+)
+
+
+def _write_boot_id(path: Path) -> str:
+    """Write a fresh random boot_id atomically (write-temp + os.replace).
+    Returns the new id. SPS regenerates this on every startup; the admin
+    watchdog polls the file and re-registers running tools when it changes."""
+    boot_id = secrets.token_hex(16)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(boot_id + "\n", encoding="utf-8")
+    try:
+        os.chmod(tmp, 0o644)
+    except OSError:
+        pass  # best-effort; not critical for the watchdog
+    os.replace(tmp, path)
+    return boot_id
 
 
 def maybe_generate_tls_material(cert_path: str, key_path: str, ca_path: str, subj: str) -> bool:
@@ -65,9 +92,17 @@ def _cmd_serve(args) -> None:
         ssl_ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_SERVER)
         ssl_ctx.load_cert_chain(certfile=cfg.sp_tls_cert, keyfile=cfg.sp_tls_key)
     server = build_server(ctx, host=cfg.sp_host, port=cfg.sp_port, ssl_ctx=ssl_ctx)
+    # Announce a fresh boot_id so the toolyard watchdog (admin side) can detect
+    # this restart and re-register every running tool. Without this, SPS's
+    # in-memory tool pool starts empty on every startup and any tool that was
+    # already running gets "Not found" until it's manually bounced.
+    boot_id_path = Path(
+        os.environ.get("TOOLSTACK_SPS_BOOT_ID_PATH") or _DEFAULT_BOOT_ID_PATH
+    )
+    boot_id = _write_boot_id(boot_id_path)
     print(
         f"sps: listening on https://{cfg.sp_host}:{cfg.sp_port} "
-        f"(plugin={cfg.sp_plugin}, audit={audit_log_path})",
+        f"(plugin={cfg.sp_plugin}, audit={audit_log_path}, boot_id={boot_id[:8]}...)",
         flush=True,
     )
     try:

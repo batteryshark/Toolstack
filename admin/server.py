@@ -41,6 +41,29 @@ def create_app() -> FastAPI:
     guard = loginguard.LoginGuard()  # shared by /login and /api/login
     app = FastAPI(title="Toolstack Admin", docs_url=None, redoc_url=None, openapi_url=None)
 
+    # --- SPS-restart watchdog --------------------------------------------------
+    # SPS is in-memory only (see sps/store.py). If SPS bounces (crash, lib
+    # upgrade, manual restart) every running tool loses its registration and
+    # starts getting "Not found" until the operator bounces each tool. This
+    # watchdog polls SPS's boot_id file and re-registers every running tool
+    # whenever it changes. See admin/sps_watchdog.py for the rationale.
+    from .sps_watchdog import SPSWatchdog
+    from toolyard.runner import reregister_all_with_sps
+
+    _initial_cfg = broker_config.load()
+    _sps_env_path = os.environ.get("TOOLSTACK_SPS_ENV", "/etc/toolstack/sps.env")
+    _watchdog = SPSWatchdog(
+        config=_initial_cfg,
+        sps_env_path=_sps_env_path,
+        re_register_fn=reregister_all_with_sps,
+    )
+    _watchdog.start()
+    app.state.sps_watchdog = _watchdog
+
+    @app.on_event("shutdown")
+    def _stop_watchdog() -> None:
+        _watchdog.stop()
+
     @app.exception_handler(sqlite3.OperationalError)
     async def _operational_error(request: Request, exc: sqlite3.OperationalError):
         # The admin opens short-lived connections; under sustained write contention with the
