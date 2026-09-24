@@ -41,8 +41,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
-import time
 import urllib.error
 import urllib.request
 
@@ -53,52 +51,6 @@ class ToolUnreachable(RuntimeError):
     """The broker could not reach the tool at all (connection refused, DNS, or timeout),
     i.e. the tool process is probably not running. Kept distinct from a tool that ran and
     returned an error, so the lifecycle can report `tool_unreachable` vs `tool_failed`."""
-
-
-# --- DIAGNOSTIC (temporary): on ECONNREFUSED-ish tool hop failure, capture what process
-# actually occupies the recorded handle PID. The recorded PID is what the toolyard runner
-# stored at spawn; if /proc at that PID shows a different process (or nothing), the
-# forwarder died and its PID was reused. Logs one stderr line per event; the broker captures
-# stderr into broker.log. Remove once the root cause is identified.
-_STATE_DIR = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-_DIAG_STATE_PATH = os.environ.get("TOOLSTACK_TOOLYARD_STATE") or os.path.join(
-    _STATE_DIR, "toolstack", "toolyard", "state.json"
-)
-
-
-def _diagnose_tool_unreachable(tool_id: str, reason: str) -> None:
-    """Look up the recorded handle for tool_id and probe /proc to see what process
-    actually occupies that PID right now. One-line stderr log for the broker log."""
-    try:
-        with open(_DIAG_STATE_PATH) as f:
-            state = json.load(f)
-    except (OSError, ValueError):
-        state = {}
-    rec = state.get(tool_id, {}) if isinstance(state, dict) else {}
-    handle = rec.get("handle")
-    boot = rec.get("boot_id")
-    pid_info = "unparseable"
-    if handle is not None:
-        try:
-            pid = int(handle)
-        except (ValueError, TypeError):
-            pid_info = f"unparseable handle={handle!r}"
-        else:
-            try:
-                with open(f"/proc/{pid}/comm") as f:
-                    comm = f.read().strip()
-                with open(f"/proc/{pid}/cmdline", "rb") as f:
-                    cmdline = f.read().replace(b"\x00", b" ").decode("utf-8", "replace")[:200]
-                pid_info = f"{comm!r} cmdline={cmdline!r}"
-            except (OSError, ProcessLookupError):
-                pid_info = "GONE"
-    print(
-        f"[tool-diagnostics] {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} "
-        f"tool_unreachable tool={tool_id} reason={reason!r} "
-        f"recorded_handle={handle!r} recorded_boot_id={boot!r} "
-        f"at_pid_now={pid_info}",
-        file=sys.stderr, flush=True,
-    )
 
 
 # Protocol version the broker advertises in `initialize`. A streamable-HTTP MCP
@@ -195,7 +147,6 @@ class HttpRuntime:
             exc.close()
             raise RuntimeError(f"tool returned HTTP {exc.code}")
         except urllib.error.URLError as exc:
-            _diagnose_tool_unreachable(tool_op.tool, str(exc.reason))
             raise ToolUnreachable(f"tool unreachable: {exc.reason}")
         try:
             return json.loads(body)
@@ -227,7 +178,6 @@ class HttpRuntime:
             finally:
                 exc.close()
         except urllib.error.URLError as exc:
-            _diagnose_tool_unreachable(tool_op.tool, str(exc.reason))
             raise ToolUnreachable(f"tool unreachable: {exc.reason}")
         try:
             parsed = json.loads(body)
@@ -306,7 +256,6 @@ class HttpRuntime:
             exc.close()
             raise RuntimeError(f"tool returned HTTP {exc.code}")
         except urllib.error.URLError as exc:
-            _diagnose_tool_unreachable(tool_op.tool, str(exc.reason))
             raise ToolUnreachable(f"tool unreachable: {exc.reason}")
         message = self._parse_jsonrpc(raw, ctype)
         if "error" in message:

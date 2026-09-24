@@ -10,11 +10,7 @@ hardcoded-id / toml-id drift that bit the original echo tool).
 
 from __future__ import annotations
 
-import atexit
 import os
-import signal
-import sys
-import time
 from pathlib import Path
 
 from sps.tool_sdk import SecretClient
@@ -24,44 +20,6 @@ from .server import serve
 
 
 DEFAULT_MAX_BODY = 20 * 1024 * 1024
-
-
-# --- DIAGNOSTIC (temporary): record every signal/exit the forwarder takes so we can see
-# what kills it when ECONNREFUSED hits the broker. Writes to stderr (captured to tool.log).
-_LIFECYCLE_TAG = f"[lifecycle {os.getpid()} ppid={os.getppid()}]"
-
-
-def _lifecycle_log(msg: str) -> None:
-    sys.stderr.write(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} "
-                     f"{_LIFECYCLE_TAG} {msg}\n")
-    sys.stderr.flush()
-
-
-def _signal_log_handler(signum, frame):
-    _lifecycle_log(f"received signal signum={signum} name={signal.Signals(signum).name}")
-    # Re-raise the default action so the normal shutdown / termination path runs.
-    signal.signal(signum, signal.SIG_DFL)
-    os.kill(os.getpid(), signum)
-
-
-_atexit_logged = False
-
-
-def _atexit_log():
-    global _atexit_logged
-    if _atexit_logged:
-        return
-    _atexit_logged = True
-    _lifecycle_log("atexit normal-return-from-main")
-
-
-for _sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGPIPE):
-    try:
-        signal.signal(_sig, _signal_log_handler)
-    except (ValueError, OSError):
-        pass  # SIGPIPE may be unavailable in some configs
-
-atexit.register(_atexit_log)
 
 
 def main() -> None:
