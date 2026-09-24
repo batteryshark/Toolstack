@@ -100,6 +100,62 @@ def _pids_are_current(running: "RunningTool") -> bool:
     return current is not None and running.boot_id == current
 
 
+# ---- SPS re-registration helper (used by the admin watchdog) ---------------
+# SPS state is in-memory only (see sps/store.py). When SPS restarts -- crash,
+# library upgrade, manual -- every running tool's registration is lost, and
+# subsequent SPS calls (writeback, get_secrets, refresh) fail with "Not found".
+# The runner re-registers on every fresh tool start; this helper re-registers
+# already-running tools without bouncing them, called by the admin watchdog
+# when it sees a new SPS boot_id.
+def reregister_all_with_sps(*, tools_root: str, tool_dirs, sps_env_path: str) -> int:
+    """Re-register every tool currently in the toolyard state file with SPS.
+
+    Idempotent: calling it for tools that are already registered is a no-op
+    (SPS.register overwrites). Returns the number of tools successfully
+    re-registered. Skips tools with no e_secret in their state record
+    (they were started without SPS, so there's nothing to re-register).
+
+    Used by ``admin.sps_watchdog`` whenever SPS announces a new boot_id.
+    """
+    if not os.path.exists(sps_env_path):
+        log.warning("SPS re-register: sps.env not found at %s; skipping", sps_env_path)
+        return 0
+    from .cli import _load_state
+    from .config import discover, load as load_tool
+    state = _load_state()
+    if not state:
+        return 0
+    defs: dict[str, ToolDef] = {}
+    if tools_root:
+        for d in discover(tools_root):
+            defs[d.id] = d
+    for path in tool_dirs or ():
+        toml_path = Path(path) / "toolyard.toml"
+        if toml_path.exists():
+            try:
+                defs[load_tool(toml_path).id] = load_tool(toml_path)
+            except Exception as exc:
+                log.warning("SPS re-register: cannot load %s: %s", toml_path, exc)
+    count = 0
+    for tool_id, rec in state.items():
+        if not isinstance(rec, dict):
+            continue
+        e_secret = rec.get("e_secret")
+        if not e_secret:
+            continue
+        tool_def = defs.get(tool_id)
+        if tool_def is None:
+            log.warning("SPS re-register: tool %s has e_secret but no tool_def", tool_id)
+            continue
+        try:
+            _sps_register(tool_def, e_secret, sps_env_path)
+            count += 1
+            log.info("SPS re-registered %s", tool_id)
+        except Exception as exc:
+            log.warning("SPS re-register %s failed: %s", tool_id, exc)
+    return count
+
+
 # ---- SPS integration (Phase 2) --------------------------------------------
 
 def _mint_e_secret() -> str:
