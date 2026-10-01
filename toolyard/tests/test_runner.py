@@ -8,6 +8,7 @@ TOOLSTACK_TEST_DOCKER=1.
 """
 
 import dataclasses
+from dataclasses import asdict
 import json
 import os
 import shlex
@@ -833,6 +834,17 @@ class SpsRegistration(unittest.TestCase):
         )
         return dataclasses.replace(load(d / "toolyard.toml"), port=_free_port())
 
+    def _tool_without_secrets(self):
+        # Same shape as _tool() but with no [[secrets]] entries, so the
+        # secretless-degradation path must still work.
+        d = Path(tempfile.mkdtemp(prefix="tsr-nosps-"))
+        self.addCleanup(shutil.rmtree, str(d), ignore_errors=True)
+        (d / "toolyard.toml").write_text(
+            'id = "echonosps"\ntype = "api"\n'
+            '[entrypoint]\nport = 4702\ncommand = "python3 echo.py"\n'
+        )
+        return dataclasses.replace(load(d / "toolyard.toml"), port=_free_port())
+
     def test_runner_mints_e_secret_and_registers(self):
         tool = self._tool()
         runner = ProcessRunner()
@@ -900,8 +912,10 @@ class SpsRegistration(unittest.TestCase):
              mock.patch("toolyard.runner._check_sps_env"), \
              mock.patch("toolyard.runner._sps_register"), \
              mock.patch("toolyard.runner._sps_unregister") as unreg, \
+             mock.patch("toolyard.runner.os.killpg"), \
+             mock.patch("toolyard.runner.os.waitpid"), \
              mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
-             mock.patch("os.posix_spawn", return_value=123), \
+             mock.patch("os.posix_spawn", return_value=_TEST_PID), \
              mock.patch.dict(os.environ,
                               {"TOOLSTACK_SPS_ENV": "/tmp/spfake.env", "TOOLSTACK_SPS_SKIP": "0"},
                               clear=False), \
@@ -910,6 +924,117 @@ class SpsRegistration(unittest.TestCase):
             runner.stop(running)
         unreg.assert_called_once()
         self.assertEqual(unreg.call_args.args[0], "echosps")
+
+    def test_register_failure_aborts_when_tool_has_secrets(self):
+        tool = self._tool()  # declares [[secrets]] api_key
+        runner = ProcessRunner()
+        with mock.patch("toolyard.runner._check_port_free"), \
+             mock.patch("toolyard.runner._check_sps_env"), \
+             mock.patch("toolyard.runner._sps_register",
+                        side_effect=RuntimeError("connection refused")), \
+             mock.patch("toolyard.runner._sps_unregister") as unreg, \
+             mock.patch("toolyard.runner._cleanup_partial_start") as cleanup, \
+             mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
+             mock.patch("os.posix_spawn", return_value=_TEST_PID), \
+             mock.patch.dict(os.environ,
+                             {"TOOLSTACK_SPS_ENV": "/tmp/spfake.env",
+                              "TOOLSTACK_SPS_SKIP": "0"}, clear=False):
+            with mock.patch("os.path.exists", return_value=True):
+                with self.assertRaises(RuntimeError) as cm:
+                    runner.start(tool)
+        cleanup.assert_called_once()
+        unreg.assert_not_called()
+        self.assertIn("refusing to launch it secretless", str(cm.exception))
+
+    def test_sps_env_config_error_is_fatal(self):
+        tool = self._tool()
+        runner = ProcessRunner()
+        with mock.patch("toolyard.runner._check_port_free"), \
+             mock.patch("toolyard.runner._check_sps_env",
+                        side_effect=SystemExit("bad mode")), \
+             mock.patch("toolyard.runner._sps_register"), \
+             mock.patch("toolyard.runner._cleanup_partial_start") as cleanup, \
+             mock.patch("os.posix_spawn", return_value=_TEST_PID), \
+             mock.patch.dict(os.environ,
+                             {"TOOLSTACK_SPS_ENV": "/tmp/spfake.env",
+                              "TOOLSTACK_SPS_SKIP": "0"}, clear=False):
+            with mock.patch("os.path.exists", return_value=True):
+                with self.assertRaises(SystemExit):
+                    runner.start(tool)
+        cleanup.assert_called_once()
+
+    def test_register_failure_degrades_when_tool_has_no_secrets(self):
+        tool = self._tool_without_secrets()
+        runner = ProcessRunner()
+        with mock.patch("toolyard.runner._check_port_free"), \
+             mock.patch("toolyard.runner._check_sps_env"), \
+             mock.patch("toolyard.runner._sps_register",
+                        side_effect=RuntimeError("connection refused")), \
+             mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
+             mock.patch("os.posix_spawn", return_value=_TEST_PID), \
+             mock.patch.dict(os.environ,
+                             {"TOOLSTACK_SPS_ENV": "/tmp/spfake.env",
+                              "TOOLSTACK_SPS_SKIP": "0"}, clear=False):
+            with mock.patch("os.path.exists", return_value=True):
+                running = runner.start(tool)
+        self.assertIsNone(running.e_secret)
+
+
+class ReregisterAll(unittest.TestCase):
+    """``reregister_all_with_sps`` must register every tool it cannot prove dead:
+    a live tool is (re-)registered, a positively dead record is left to the
+    reconciler, and a liveness-check failure registers anyway so a genuinely
+    live tool is never silently orphaned."""
+
+    def setUp(self):
+        from toolyard.cli import _save_state
+        self.tmp = tempfile.mkdtemp(prefix="rereg-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        prev = os.environ.get("XDG_STATE_HOME")
+        os.environ["XDG_STATE_HOME"] = self.tmp
+        self.addCleanup(
+            lambda: os.environ.__setitem__("XDG_STATE_HOME", prev)
+            if prev is not None else os.environ.pop("XDG_STATE_HOME", None))
+        self.tool_dir = Path(self.tmp) / "tools" / "echo"
+        self.tool_dir.mkdir(parents=True)
+        (self.tool_dir / "toolyard.toml").write_text(
+            'id = "echo"\ntype = "api"\n[entrypoint]\ncommand = "true"\nport = 4601\n',
+            encoding="utf-8")
+        _save_state({"echo": asdict(RunningTool("echo", 4601, "process", "123",
+                                                e_secret="e" * 32, boot_id="b"))})
+        self.env = Path(self.tmp) / "sps.env"
+        self.env.write_text('SP_HOST="h"\nSP_PORT="1"\nSP_SECRET="s"\n'
+                            'SP_PLUGIN="localfile"\n', encoding="utf-8")
+        os.chmod(self.env, 0o600)
+
+    def _reregister(self):
+        from toolyard.runner import reregister_all_with_sps
+        return reregister_all_with_sps(
+            tools_root="", tool_dirs=[str(self.tool_dir)], sps_env_path=str(self.env))
+
+    def test_registers_live_records(self):
+        with mock.patch("toolyard.runner.get_runner") as gr, \
+             mock.patch("toolyard.runner._sps_register") as reg:
+            gr.return_value.is_alive.return_value = True
+            n = self._reregister()
+        self.assertEqual(n, 1)
+        reg.assert_called_once()
+
+    def test_skips_dead_records(self):
+        with mock.patch("toolyard.runner.get_runner") as gr, \
+             mock.patch("toolyard.runner._sps_register") as reg:
+            gr.return_value.is_alive.return_value = False
+            n = self._reregister()
+        self.assertEqual(n, 0)
+        reg.assert_not_called()
+
+    def test_registers_when_liveness_check_errors(self):
+        with mock.patch("toolyard.runner.get_runner") as gr, \
+             mock.patch("toolyard.runner._sps_register") as reg:
+            gr.return_value.is_alive.side_effect = RuntimeError("docker daemon down")
+            n = self._reregister()
+        self.assertEqual(n, 1)
+        reg.assert_called_once()
 
 
 class MintEphemeral(unittest.TestCase):

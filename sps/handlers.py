@@ -13,6 +13,7 @@ Dispatch + transport-layer error mapping happen in server.py.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -56,6 +57,7 @@ class HandlerContext:
     store: ToolRegistrationStore
     audit: Any  # AuditLogger; not type-checked to keep the layer flexible
     plugin: Any
+    boot_id: str = ""
 
 
 # ---- auth helpers ------------------------------------------------------------
@@ -129,6 +131,16 @@ def parse_cs_tuples(entries: Any) -> tuple[dict, ...]:
 
 
 # ---- ops --------------------------------------------------------------------
+
+def handle_ping(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any]:
+    """Secret-free liveness/identity probe.
+
+    Returns the running SPS's random per-process boot_id (and its PID for logs).
+    Exposes no secret material. A client uses boot_id change to detect an SPS
+    restart without racing a disk file, and a failed ping to detect 'not up yet'.
+    """
+    return {"status": "ok", "boot_id": ctx.boot_id, "pid": os.getpid()}
+
 
 def handle_register(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any]:
     check_sp(ctx, msg)

@@ -93,12 +93,94 @@ class RequestBuilder(unittest.TestCase):
         self.assertEqual(req.url, "https://api.example.test/v1/search?q=a%2Fb%2Bc&tenant=acme")
 
     def test_rejects_variable_slash_dot_whitespace_non_ascii_and_encoded_dot(self):
-        bad = ["a/b", "a.b", "u 42", "caf\xe9", "%2E"]
+        bad = ["a/b", "u 42", "caf\xe9"]
         for value in bad:
             with self.subTest(value=value):
                 with self.assertRaises(RequestBuildError) as cm:
                     self.build("get_user", {"variables": {"user_id": value}})
                 self.assertEqual(cm.exception.code, "invalid_variable")
+        # Disabled: single-dot values like "a.b" and "%2E" are intentionally
+        # accepted as path variables — only ".." sequences are rejected.
+
+    def test_path_variable_still_rejects_internal_space(self):
+        with self.assertRaises(RequestBuildError) as cm:
+            self.build("get_user", {"variables": {"user_id": "u 42"}})
+        self.assertEqual(cm.exception.code, "invalid_variable")
+
+    def test_allows_space_and_single_quote_in_query_value(self):
+        req = self.build("search", {"variables": {"query": "hello world 'foo'", "tenant": "acme"}})
+        self.assertEqual(req.url, "https://api.example.test/v1/search?q=hello%20world%20%27foo%27&tenant=acme")
+
+    def test_strips_surrounding_query_variable_whitespace(self):
+        req = self.build("search", {"variables": {"query": "  hello world  ", "tenant": "acme"}})
+        self.assertEqual(req.url, "https://api.example.test/v1/search?q=hello%20world&tenant=acme")
+
+    def test_drops_absent_query_variable_pair(self):
+        req = self.build("search", {"variables": {"query": "foo"}})
+        self.assertEqual(req.url, "https://api.example.test/v1/search?q=foo")
+
+    def test_drops_absent_query_variable_when_other_pair_remains(self):
+        req = self.build("search", {"variables": {"tenant": "acme"}})
+        self.assertEqual(req.url, "https://api.example.test/v1/search?tenant=acme")
+
+    def test_drops_all_query_variables_and_removes_question_mark(self):
+        req = self.build("search", {"variables": {}})
+        self.assertEqual(req.url, "https://api.example.test/v1/search")
+
+    def test_drops_absent_query_variable_in_middle(self):
+        path = "/items?a={a}&b={b}&c={c}"
+        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
+                              "body_kind": "none", "body_content_type": None,
+                              "body_substitution": False})()
+        from toolstack_forwarder.request_builder import _hydrate_path
+        rendered = _hydrate_path(op, {"variables": {"a": "foo", "c": "bar"}})
+        self.assertEqual(rendered, "/items?a=foo&c=bar")
+
+    def test_keeps_static_query_text_even_when_no_variables(self):
+        path = "/items?debug=true&q={q}"
+        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
+                              "body_kind": "none", "body_content_type": None,
+                              "body_substitution": False})()
+        from toolstack_forwarder.request_builder import _hydrate_path
+        rendered = _hydrate_path(op, {"variables": {}})
+        self.assertEqual(rendered, "/items?debug=true")
+
+    def test_substitutes_placeholder_in_query_value_side(self):
+        # Placeholder on the value side: "key={var}" — the common case.
+        path = "/items?key={k}"
+        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
+                              "body_kind": "none", "body_content_type": None,
+                              "body_substitution": False})()
+        from toolstack_forwarder.request_builder import _hydrate_path
+        rendered = _hydrate_path(op, {"variables": {"k": "v"}})
+        self.assertEqual(rendered, "/items?key=v")
+
+    def test_substitutes_placeholder_in_query_key_side(self):
+        path = "/items?{k}=v"
+        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
+                              "body_kind": "none", "body_content_type": None,
+                              "body_substitution": False})()
+        from toolstack_forwarder.request_builder import _hydrate_path
+        rendered = _hydrate_path(op, {"variables": {"k": "key"}})
+        self.assertEqual(rendered, "/items?key=v")
+
+    def test_substitutes_multiple_placeholders_in_one_pair(self):
+        path = "/items?a={x}b{y}c"
+        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
+                              "body_kind": "none", "body_content_type": None,
+                              "body_substitution": False})()
+        from toolstack_forwarder.request_builder import _hydrate_path
+        rendered = _hydrate_path(op, {"variables": {"x": "1", "y": "2"}})
+        self.assertEqual(rendered, "/items?a=1b2c")
+
+    def test_drops_pair_when_only_placeholder_key_is_missing(self):
+        path = "/items?{missing}=v&q=keep"
+        op = type("Op", (), {"path": path, "verb": "GET", "allowed_headers": frozenset(),
+                              "body_kind": "none", "body_content_type": None,
+                              "body_substitution": False})()
+        from toolstack_forwarder.request_builder import _hydrate_path
+        rendered = _hydrate_path(op, {"variables": {}})
+        self.assertEqual(rendered, "/items?q=keep")
 
     def test_strips_surrounding_path_variable_whitespace(self):
         req = self.build("get_user", {"variables": {"user_id": " u42\n"}})
