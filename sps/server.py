@@ -40,9 +40,11 @@ class AppContext:
     store: ToolRegistrationStore
     audit: AuditLogger
     plugin: Any
+    boot_id: str
 
 
 _HANDLER_BY_OP = {
+    "ping": handlers.handle_ping,
     "register": handlers.handle_register,
     "unregister": handlers.handle_unregister,
     "get_secrets": handlers.handle_get_secrets,

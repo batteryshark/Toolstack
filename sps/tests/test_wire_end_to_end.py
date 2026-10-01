@@ -83,8 +83,9 @@ class Wire(unittest.TestCase):
             sp_audit_log="/tmp/sps.audit", sp_plugin="infisical",
             infisical=None, vault=None, localfile=None,
         )
-        AppCtx = make_dataclass("AppCtx", ["config", "store", "audit", "plugin"])
-        ctx = AppCtx(config=cfg, store=self.store, audit=self.audit, plugin=self.plugin)
+        AppCtx = make_dataclass("AppCtx", ["config", "store", "audit", "plugin", "boot_id"])
+        ctx = AppCtx(config=cfg, store=self.store, audit=self.audit, plugin=self.plugin,
+                     boot_id="test-boot")
         server = build_server(ctx, host="127.0.0.1", port=0,
                               ssl_ctx=_tls_context(self.cert, self.key))
         self.port = server.server_address[1]

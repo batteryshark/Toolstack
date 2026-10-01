@@ -76,8 +76,9 @@ class _ServerHarness:
             sp_audit_log="/tmp/sps.audit", sp_plugin="infisical",
             infisical=None, vault=None, localfile=None,
         )
-        AppCtx = make_dataclass("AppCtx", ["config", "store", "audit", "plugin"])
-        ctx = AppCtx(config=cfg, store=store, audit=_FakeAudit(), plugin=_FakePlugin())
+        AppCtx = make_dataclass("AppCtx", ["config", "store", "audit", "plugin", "boot_id"])
+        ctx = AppCtx(config=cfg, store=store, audit=_FakeAudit(), plugin=_FakePlugin(),
+                     boot_id="test-boot")
         ssl_ctx = _tls_server_context(self.cert, self.key)
         server = build_server(ctx, host="127.0.0.1", port=0, ssl_ctx=ssl_ctx)
         self.port = server.server_address[1]

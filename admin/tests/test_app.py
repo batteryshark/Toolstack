@@ -14,6 +14,7 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -86,6 +87,45 @@ class AdminApp(unittest.TestCase):
         r = self.client.post("/login", data={"username": "admin", "password": PASSWORD})
         self.assertEqual(r.status_code, 200)  # followed the 303 to the dashboard
         self.assertIn("Toolstack Admin", r.text)
+
+    def test_create_app_starts_reconciler_when_sps_unconfigured(self):
+        with mock.patch.dict(os.environ, {"TOOLSTACK_SPS_ENV": "/nonexistent/sps.env"}), \
+             mock.patch("admin.server.SPSLink") as link, \
+             mock.patch("admin.server.start_reconciler_thread") as recon:
+            link.from_env.return_value = None
+            sentinel = object()
+            recon.return_value = sentinel
+            app = create_app()
+        recon.assert_called_once_with(mock.ANY, None)
+        self.assertIs(app.state.reconciler, sentinel)
+
+    def test_create_app_starts_watchdog_when_sps_linked(self):
+        with mock.patch.dict(os.environ, {
+                "TOOLSTACK_SPS_ENV": "/etc/toolstack/sps.env",
+                "TOOLSTACK_SPS_SKIP": "0"}), \
+             mock.patch("admin.server.os.path.exists", return_value=True), \
+             mock.patch("admin.server.SPSLink") as link, \
+             mock.patch("admin.sps_watchdog.SPSWatchdog") as watchdog, \
+             mock.patch("admin.server.start_reconciler_thread") as recon:
+            link_obj = mock.Mock()
+            link_obj.boot_id = mock.Mock()
+            link.from_env.return_value = link_obj
+            create_app()
+        watchdog.assert_called_once()
+        watchdog.return_value.start.assert_called_once()
+        recon.assert_called_once_with(mock.ANY, link_obj)
+
+    def test_create_app_skips_reconcile_when_sps_configured_but_unavailable(self):
+        with mock.patch.dict(os.environ, {
+                "TOOLSTACK_SPS_ENV": "/etc/toolstack/sps.env",
+                "TOOLSTACK_SPS_SKIP": "0"}), \
+             mock.patch("admin.server.os.path.exists", return_value=True), \
+             mock.patch("admin.server.SPSLink") as link, \
+             mock.patch("admin.server.start_reconciler_thread") as recon:
+            link.from_env.return_value = None
+            app = create_app()
+        recon.assert_not_called()
+        self.assertIsNone(app.state.reconciler)
 
     def test_requires_login(self):
         r = self.client.get("/")

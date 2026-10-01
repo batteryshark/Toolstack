@@ -30,10 +30,20 @@ args = [
 ```
 
 `path` supports single-segment `{name}` variables in the path and query text, for
-example `/users?email={email}`. Path variable values are stripped, bounded,
-validated as printable ASCII, rejected for `/`, `.`, whitespace, and encoded
-forbidden forms, then percent-encoded before insertion. Query variable values use
-the same printable-ASCII bound but allow query-safe content before percent-encoding.
+example `/users?email={email}`. The path portion (before `?`) is restricted to
+printable ASCII without spaces; the query portion (after `?`) additionally
+allows spaces and single quotes as literal characters. Path variable values are
+stripped, bounded, validated against the printable-ASCII set without spaces,
+rejected for `/`, `\`, `..`, and encoded forbidden forms, then percent-encoded
+before insertion. Query variable values are stripped, bounded, validated against
+the same printable-ASCII set plus space and single quote, and percent-encoded
+before insertion.
+
+When a query variable referenced by the template is absent from the caller's
+`variables`, the entire `name=value` pair is dropped from the query string; if no
+pairs remain, the leading `?` is removed from the URL entirely before the
+outbound call. Static query text (pairs without a `{name}` placeholder) is
+always preserved. Path placeholders still raise `missing_variable` when absent.
 
 `body_kind` is `none`, `text`, or `binary`. Text bodies are UTF-8 strings and may
 substitute `{{secret:NAME}}`; binary bodies are base64 and force substitution off.
