@@ -8,7 +8,7 @@ Usage: deploy/redeploy-toolstack [--pull] [--skip-venv] [--skip-service] [--skip
 Redeploy the local Toolstack checkout:
   1. optionally fast-forward git (--pull)
   2. refresh the admin virtualenv dependencies
-  3. restart the toolstack-admin systemd service (admin panel + broker)
+  3. restart the toolstack-sps and toolstack-admin systemd services (SPS + admin panel + broker)
   4. restart every tool registered in the saved admin run-config
 
 Run this from anywhere inside the repository.
@@ -36,6 +36,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 SERVICE_FILE="$SCRIPT_DIR/toolstack-admin.service"
 SERVICE_NAME="${TOOLSTACK_SYSTEMD_SERVICE:-toolstack-admin.service}"
+SPS_SERVICE_NAME="${TOOLSTACK_SPS_SYSTEMD_SERVICE:-toolstack-sps.service}"
 VENV_PY="$REPO_ROOT/admin/.venv/bin/python"
 VENV_PIP="$REPO_ROOT/admin/.venv/bin/pip"
 
@@ -138,6 +139,15 @@ print(f"  ✓ {dest}")
 PY
   fi
 
+  # Restart SPS first: the admin's watchdog/reconciler probe it via the ping op,
+  # which old-code SPS builds reject. Restarting admin alone would leave them inert.
+  echo "==> Restarting $SPS_SERVICE_NAME"
+  if systemctl restart "$SPS_SERVICE_NAME" 2>/dev/null; then
+    :
+  else
+    sudo systemctl restart "$SPS_SERVICE_NAME"
+  fi
+
   echo "==> Restarting $SERVICE_NAME"
   if systemctl restart "$SERVICE_NAME" 2>/dev/null; then
     :
@@ -180,7 +190,6 @@ for tool in tools:
             tool_id,
             cfg.tools_root,
             cfg.tool_dirs,
-            settings.tool_secrets_file(),
             settings.tool_runner_backend(),
         )
         print(f"  ✓ {tool_id}")

@@ -50,11 +50,12 @@ _ERROR_MAP = {
 class SPSClient:
     def __init__(self, host: str, port: int, *, sp_secret: str | None = None,
                  esecret: str | None = None, ca_file: str | None = None,
-                 verify: bool = True) -> None:
+                 verify: bool = True, timeout: float = 15.0) -> None:
         self.host = host
         self.port = port
         self.sp_secret = sp_secret
         self.esecret = esecret
+        self._timeout = timeout
         # Build the client TLS context. If `verify` is False (dev with
         # self-signed cert), accept any cert. Otherwise require `ca_file`.
         self._ctx: ssl.SSLContext | None
@@ -103,6 +104,11 @@ class SPSClient:
                      "value": value,
                      "esecret": self._require("es")})
 
+    # ---- liveness/identity --------------------------------------------------
+    def ping(self) -> dict:
+        """Liveness/identity probe. No secret required."""
+        return self._call({"op": "ping"})
+
     # ---- private ------------------------------------------------------------
     def _require(self, kind: str) -> str:
         val = self.sp_secret if kind == "sp" else self.esecret
@@ -116,7 +122,7 @@ class SPSClient:
         # and per-process usages are short-lived.
         with self._lock:
             payload = (json.dumps(msg) + "\n").encode("utf-8")
-            with socket.create_connection((self.host, self.port), timeout=15) as raw_sock:
+            with socket.create_connection((self.host, self.port), timeout=self._timeout) as raw_sock:
                 assert self._ctx is not None
                 with self._ctx.wrap_socket(raw_sock, server_hostname=self.host) as s:
                     s.sendall(payload)

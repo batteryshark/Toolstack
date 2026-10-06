@@ -26,6 +26,8 @@ from toolyard import openapi_import
 
 from . import (api, auth, broker_config, loginguard, settings, supervisor,
                tool_authoring, tool_sources, toolyard_ops, views)
+from .reconciler import RECONCILE_LOCK, start_reconciler_thread
+from .sps_link import SPSLink
 from .store_access import open_store
 
 log = logging.getLogger(__name__)
@@ -40,6 +42,50 @@ def create_app() -> FastAPI:
     secret = settings.load_or_create_session_secret()
     guard = loginguard.LoginGuard()  # shared by /login and /api/login
     app = FastAPI(title="Toolstack Admin", docs_url=None, redoc_url=None, openapi_url=None)
+
+    # --- SPS restart watchdog + startup reconciliation -------------------------
+    # SPS is in-memory only (see sps/store.py). If SPS bounces (crash, library
+    # upgrade, manual restart) every running tool loses its registration. The
+    # watchdog detects that from a live boot_id ping and re-registers the tools
+    # that are still alive.
+    from .sps_watchdog import SPSWatchdog
+    from toolyard.runner import reregister_all_with_sps
+
+    _initial_cfg = broker_config.load()
+    _sps_env_path = settings.sps_env_path() or "/etc/toolstack/sps.env"
+
+    # One live link serves both readiness gating (reconciler) and restart
+    # detection (watchdog). None in dev / no-secrets mode.
+    _sps_link = SPSLink.from_env(_sps_env_path)
+    app.state.sps_link = _sps_link
+    _sps_configured = (
+        os.environ.get("TOOLSTACK_SPS_SKIP") != "1" and os.path.exists(_sps_env_path)
+    )
+
+    if _sps_link is not None:
+        _watchdog = SPSWatchdog(
+            config=_initial_cfg,
+            probe=_sps_link.boot_id,
+            re_register_fn=reregister_all_with_sps,
+            sps_env_path=_sps_env_path,
+            lock=RECONCILE_LOCK,
+        )
+        _watchdog.start()
+        app.state.sps_watchdog = _watchdog
+
+        @app.on_event("shutdown")
+        def _stop_watchdog() -> None:
+            _watchdog.stop()
+
+    # Restart forwarders that state.json says should be running. The reconciler
+    # gates on SPS readiness itself. If SPS is configured but no usable link was
+    # built, do NOT reconcile -- fail closed and surface the misconfiguration.
+    if _sps_configured and _sps_link is None:
+        app.state.reconciler = None
+        log.error("SPS is configured at %s but no usable link was built; "
+                  "skipping tool reconciliation", _sps_env_path)
+    else:
+        app.state.reconciler = start_reconciler_thread(_initial_cfg, _sps_link)
 
     @app.exception_handler(sqlite3.OperationalError)
     async def _operational_error(request: Request, exc: sqlite3.OperationalError):

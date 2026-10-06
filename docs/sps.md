@@ -57,6 +57,11 @@ python3 -m sps.cli vault-get echo API_KEY
 Vault-set is for operator provisioning, NOT for the tool's runtime
 writeback path; tools call `write_secret` over the wire.
 
+The secret-free `ping` op returns the running server's random per-process
+`boot_id` (and pid). The admin uses it to detect SPS restarts and to wait for
+SPS readiness before starting tool forwarders; it exposes no secret material and
+requires no credential.
+
 ## Plugins
 
 The plugin harness is one class per backend with three methods:
@@ -96,8 +101,8 @@ sps/
 ├── cli.py              # serve | init | vault-set | vault-get
 ├── client.py           # SPSClient (TLS/TCP, one socket per call)
 ├── config.py           # sps.env parser + mode-0600 enforcement
-├── handlers.py         # 5 ops: register / unregister / get_secrets /
-│                       #          get_secret / write_secret
+├── handlers.py         # 6 ops: register / unregister / get_secrets /
+│                       #          get_secret / write_secret / ping
 ├── plugins/
 │   ├── base.py
 │   ├── infisical.py

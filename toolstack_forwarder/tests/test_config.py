@@ -148,6 +148,26 @@ writable = true
             load_config(self._write(BASE.replace("/users/{user_id}", "/users/{+tail}")))
         self.assertIn("single-segment", str(cm.exception))
 
+    def test_path_portion_rejects_space(self):
+        with self.assertRaises(ConfigError) as cm:
+            load_config(self._write(BASE.replace("/users/{user_id}", "/My Folder/{user_id}")))
+        self.assertIn("path portion", str(cm.exception))
+
+    def test_query_portion_allows_space_and_single_quote(self):
+        cfg = load_config(self._write(BASE.replace(
+            "/users/{user_id}",
+            "/users?email={email}&label=it's+good",
+        )))
+        self.assertEqual(
+            cfg.operations["get_user"].path,
+            "/users?email={email}&label=it's+good",
+        )
+
+    def test_query_portion_still_rejects_hash_fragment(self):
+        with self.assertRaises(ConfigError) as cm:
+            load_config(self._write(BASE.replace("/users/{user_id}", "/users?x=1#frag")))
+        self.assertIn("fragment", str(cm.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
