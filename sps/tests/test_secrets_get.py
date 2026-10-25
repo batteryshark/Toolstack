@@ -74,7 +74,7 @@ class Bulk(unittest.TestCase):
 
     def test_unknown_tool(self):
         ctx = _registered_ctx()
-        with self.assertRaises(ToolNotFound):
+        with self.assertRaises(AuthError):
             handle_get_secrets(ctx, {"op": "get_secrets", "toolid": "nope", "esecret": ESECRET})
 
 

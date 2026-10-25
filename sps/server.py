@@ -19,12 +19,13 @@ import ssl
 import threading
 import hashlib
 import time
+import select
 from dataclasses import dataclass
 from typing import Any
 
 from . import handlers
 from .audit import AuditLogger
-from .config import Config
+from .config import Config, validate_listener
 from .store import ToolRegistrationStore
 from .wire import (
     OversizedBodyError,
@@ -36,6 +37,31 @@ from .wire import (
 
 SOCKET_TIMEOUT = 5.0  # seconds per connection: a slow client cannot hold the server
 BODY_TIMEOUT = 5.0  # absolute JSON-line read budget, not reset by dribbled bytes
+
+
+def handshake_with_deadline(request, timeout):
+    """Nonblocking TLS progress shares one absolute deadline."""
+    deadline = time.monotonic() + timeout
+    request.setblocking(False)
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("TLS handshake deadline exceeded")
+            try:
+                request.do_handshake()
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("TLS handshake deadline exceeded")
+                return
+            except ssl.SSLWantReadError:
+                readers, writers = [request], []
+            except ssl.SSLWantWriteError:
+                readers, writers = [], [request]
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not any(select.select(readers, writers, [], remaining)[:2]):
+                raise TimeoutError("TLS handshake deadline exceeded")
+    finally:
+        request.settimeout(SOCKET_TIMEOUT)
 
 
 @dataclass
@@ -117,8 +143,20 @@ class _StreamHandler(socketserver.StreamRequestHandler):
                        response.get("message"))
             if outcome not in MESSAGE_SET and outcome != "ok":
                 outcome = "Backend error"
-            self.ctx.audit.event(op, outcome=outcome,
-                                 tool_id=identity("toolid"), secret_name=identity("name"))
+            if op in ("ping", "invalid") or outcome in ("Bad request", "Unauthorized"):
+                self.server._record_reject("ping" if op == "ping" else "invalid")
+            else:
+                extra = {}
+                if op == "register" and outcome == "ok":
+                    entries = msg["secrets"]
+                    digest = lambda value: "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+                    extra = {"entries": [{"field": digest(e["field"]),
+                                          "item": digest(e.get("item") or msg["toolid"])}
+                                         for e in entries],
+                             "entry_count": len(entries),
+                             "writable_count": sum(e.get("writable", False) for e in entries)}
+                self.ctx.audit.event(op, outcome=outcome,
+                                     tool_id=identity("toolid"), secret_name=identity("name"), **extra)
         except Exception:
             response = err_envelope("Backend error")
         try:
@@ -137,7 +175,7 @@ class ThreadingTCPServer(socketserver.ThreadingTCPServer):
         self.request_queue_size = max(self.request_queue_size, max_workers)
         self._slots = threading.BoundedSemaphore(max_workers)
         self._reject_lock = threading.Lock()
-        self._rejects = {"admission": 0, "transport": 0}
+        self._rejects = {"admission": 0, "transport": 0, "ping": 0, "invalid": 0}
         self._last_reject_audit = float("-inf")
         self.ssl_ctx = None
         super().__init__(*args, **kwargs)
@@ -160,7 +198,7 @@ class ThreadingTCPServer(socketserver.ThreadingTCPServer):
             if self.ssl_ctx is not None:
                 request = self.ssl_ctx.wrap_socket(request, server_side=True,
                                                    do_handshake_on_connect=False)
-                request.do_handshake()
+                handshake_with_deadline(request, SOCKET_TIMEOUT)
             super().process_request_thread(request, client_address)
         except (OSError, ssl.SSLError):
             self._record_reject("transport")
@@ -175,7 +213,7 @@ class ThreadingTCPServer(socketserver.ThreadingTCPServer):
             self._rejects[kind] = min(self._rejects[kind] + 1, 2**31 - 1)
 
     def _flush_rejects(self):
-        # Best-effort operational summaries, at most two writes/second across
+        # Best-effort operational summaries, at most four writes/second across
         # all workers. Counts saturate and may be lost on failure/exit; these
         # are not durable per-rejection application audit records.
         with self._reject_lock:
@@ -207,6 +245,7 @@ def build_server(ctx: AppContext, host: str = "127.0.0.1", port: int = 0,
     Plaintext requires the explicit allow_plaintext_for_tests opt-in."""
     if ssl_ctx is None and not allow_plaintext_for_tests:
         raise ValueError("SPS requires TLS; plaintext is test-only")
+    validate_listener(host, getattr(getattr(ctx, "config", None), "sp_allow_nonloopback", False))
     if not issubclass(server_class, ThreadingTCPServer):
         raise ValueError("SPS requires bounded handshake worker server")
     class _Bound(_StreamHandler):

@@ -61,6 +61,9 @@ def _default_context(**kwargs):
 
 
 class SPSClient:
+    def __repr__(self) -> str:
+        return "SPSClient(credentials=<redacted>)"
+
     def __init__(self, host: str, port: int, *, sp_secret: str | None = None,
                  esecret: str | None = None, ca_file: str | None = None,
                  verify: bool = True, timeout: float = 15.0,

@@ -47,7 +47,7 @@ class _FakeAudit:
     def __init__(self):
         self.events: list[tuple[str, str, str]] = []
 
-    def event(self, action, *, tool_id="", secret_name="", outcome="ok"):
+    def event(self, action, *, tool_id="", secret_name="", outcome="ok", **metadata):
         self.events.append((action, tool_id, secret_name))
 
 
