@@ -210,7 +210,7 @@ def _rest_envelope_args(path_template: str, allowed_headers: list[str], body_kin
     return args
 
 
-def validate(data: dict) -> list[str]:
+def validate(data: dict, *, confirm_secret_items: bool = False) -> list[str]:
     """Return a list of human-readable problems (empty == valid). Uniqueness of the
     id across other tools is the caller's job (it needs the registry)."""
     errors: list[str] = []
@@ -274,6 +274,8 @@ def validate(data: dict) -> list[str]:
                 errors.append(f"argument '{a['name']}' in '{o['name']}' may contain only letters, digits and _")
     writable = {sec["name"] for sec in data["secrets"] if sec.get("writable")}
     for sec in data["secrets"]:
+        if sec.get("item") and sec["item"] != data["id"] and not confirm_secret_items:
+            errors.append(f"secret '{sec['name']}' uses another item; explicitly confirm secret items")
         if not _SECRET_RE.match(sec["name"]):
             errors.append(f"secret name '{sec['name']}' has invalid characters")
         if not sec["field"]:
@@ -442,11 +444,11 @@ def read(dir_path: str | Path) -> dict:
     })
 
 
-def write(dir_path: str | Path, data: dict, runner: str | None = None) -> Path:
+def write(dir_path: str | Path, data: dict, runner: str | None = None, *, confirm_secret_items=False) -> Path:
     """Validate and write ``<dir_path>/toolyard.toml``. Raises ValueError on invalid
     input, a missing directory, or an entrypoint the ``runner`` can't start; only ever
     writes a file named toolyard.toml. ``runner`` defaults to the deployment's runner."""
-    errors = validate(data)
+    errors = validate(data, confirm_secret_items=confirm_secret_items)
     if errors:
         raise ValueError("; ".join(errors))
     path = Path(dir_path)

@@ -14,13 +14,13 @@ through this module; provisioning is host-side and inspection may be unknown.
 from __future__ import annotations
 
 import shutil
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 # Reuse the toolyard's single state file so the panel and the CLI never disagree
 # about which tools are running.
 from toolyard.cli import _load_state, _save_state
-from toolyard.config import discover
+from toolyard.config import discover, SecretSpec
 from toolyard.config import load as load_tool
 from toolyard.runner import RunningTool, RunnerStartCleanupError, get_runner
 
@@ -95,12 +95,13 @@ def list_tools(tools_root: str, tool_dirs=()) -> list[dict]:
             "state": "unknown" if alive is None else "running" if alive else "crashed" if record else "stopped",
             "health": "unknown" if alive or alive is None else "stopped",
             "backend": record["backend"] if record else None,
+            "secrets": [asdict(s) for s in d.secrets],
             "removable": str(Path(d.path).resolve()) in dir_set,
         })
     return tools
 
 
-def _start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") -> None:
+def _start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process", *, recovery=False) -> None:
     """Start the tool via the runner. Secrets are resolved by the tool at
     boot (Phase 5: SPS pull), so the panel hands the runner nothing but
     the tool definition."""
@@ -108,6 +109,13 @@ def _start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") -
     if tool_id not in defs:
         raise LookupError(f"unknown tool: {tool_id}")
     state = _load_state()
+    if recovery:
+        rec = state.get(tool_id, {})
+        if rec.get("secret_declarations") is None or not rec.get("manifest_digest"):
+            raise ValueError("recorded declarations missing; operator Start required")
+        defs[tool_id] = replace(defs[tool_id], secrets=tuple(
+            SecretSpec(**s) for s in rec["secret_declarations"]),
+            manifest_digest=rec["manifest_digest"])
     if tool_id in state:
         # The state file survives the process, VM, and host. Treat it as running
         # intent, not proof that the recorded runtime still exists.
@@ -157,9 +165,22 @@ def restart(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") 
         _start(tool_id, tools_root, tool_dirs, backend)
 
 
-def start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") -> None:
+def start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process", *, recovery=False) -> None:
     with state_lock():
-        _start(tool_id, tools_root, tool_dirs, backend)
+        _start(tool_id, tools_root, tool_dirs, backend, recovery=recovery)
+
+
+def record_edited_declarations(tool):
+    """An explicit operator edit may change the next recovery registration."""
+    import hashlib
+    from .tool_authoring import to_toml
+    digest = hashlib.sha256(to_toml(tool).encode("utf-8")).hexdigest()
+    with state_lock():
+        state = _load_state()
+        if tool["id"] in state:
+            state[tool["id"]]["secret_declarations"] = [dict(s) for s in tool["secrets"]]
+            state[tool["id"]]["manifest_digest"] = digest
+            _save_state(state)
 
 
 def stop(tool_id: str) -> None:

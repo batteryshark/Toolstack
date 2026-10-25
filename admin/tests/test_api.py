@@ -289,6 +289,7 @@ class JsonApi(unittest.TestCase):
     def test_edit_tool_updates_description_and_secrets(self):
         r = self.client.post("/api/tools/echo", headers=self._auth(), json={
             "description": "now with feeling",
+            "confirm_secret_items": True,
             "secrets": [{"name": "api_key", "field": "NEW_KEY", "writable": False},
                         {"name": "token", "field": "TOKEN", "writable": True, "item": "oauth"}]})
         self.assertEqual(r.status_code, 200, r.text)

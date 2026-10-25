@@ -132,7 +132,7 @@ class PartialCleanup(unittest.TestCase):
 
     def start_fixture(self):
         directory = self.stack.enter_context(tempfile.TemporaryDirectory())
-        tool = SimpleNamespace(id="fake", port=123, path=Path(directory).resolve(), command="fake", secrets=[])
+        tool = SimpleNamespace(id="fake", port=123, path=Path(directory).resolve(), command="fake", secrets=[], manifest_digest="recorded")
         sps_env = tool.path / "fake.env"
         sps_env.touch()
         self.stack.enter_context(patch.dict(os.environ, {"TOOLSTACK_SPS_SKIP": "0", "TOOLSTACK_SPS_ENV": str(sps_env)}))

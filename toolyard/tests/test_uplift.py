@@ -114,7 +114,7 @@ class UpliftTests(unittest.TestCase):
 
     def test_resolved_verify_normalized_once(self):
         cfg = SimpleNamespace(sp_host="fake", sp_port=123, sp_secret="fake", sp_tls_ca="fake-ca")
-        with patch("sps.config.load_config", return_value=cfg), patch.dict(os.environ, {"TOOLSTACK_SPS_VERIFY": "YeS"}, clear=True):
+        with patch("toolyard.sps_config.load_registration_config", return_value=cfg), patch.dict(os.environ, {"TOOLSTACK_SPS_VERIFY": "YeS"}, clear=True):
             resolved = runner._resolve_sps("fake.env")
         self.assertIs(resolved.verify, True)
         with patch.dict(os.environ, {"TOOLSTACK_SPS_VERIFY": "invalid"}, clear=True), patch("sps.client.SPSClient") as client:
@@ -194,7 +194,8 @@ class UpliftTests(unittest.TestCase):
         for value in ["1", "TRUE", "yes"]:
             self.assertTrue(runner.strict_bool(value))
         for value in ["0", "false", "NO"]:
-            self.assertFalse(runner.strict_bool(value))
+            with patch.dict(os.environ, {"TOOLSTACK_SPS_DEV": "1"}):
+                self.assertFalse(runner.strict_bool(value))
         with self.assertRaises(ValueError):
             runner.strict_bool("typo")
 
@@ -250,7 +251,7 @@ class UpliftTests(unittest.TestCase):
 
     def test_sps_resolution_reused_and_channel_independent(self):
         cfg = SimpleNamespace(sp_host="configured.invalid", sp_port=4444, sp_tls_ca="fake-ca", verify=False)
-        tool = SimpleNamespace(id="fake", port=123, path=Path("."), command="fake", secrets=[])
+        tool = SimpleNamespace(id="fake", port=123, path=Path("."), command="fake", secrets=[], manifest_digest="recorded")
         with patch.object(runner, "_check_port_free"), patch.object(runner.os.path, "exists", return_value=True), patch.object(runner, "_resolve_sps", return_value=cfg) as resolve, patch.object(runner, "_sps_register") as register, patch.object(runner, "_tool_log_path", return_value=Path(os.devnull)), patch.object(runner.os, "fchmod"), patch.object(runner.os, "posix_spawn", return_value=999) as spawn, patch.object(runner, "_process_identity", return_value="start"), patch.object(runner.ProcessRunner, "is_alive", return_value=True), patch.object(runner.time, "sleep"), patch.dict(os.environ, {"TOOLSTACK_SPS_SKIP": "0", "TOOLSTACK_SPS_ENV": "fake.env"}):
             record = runner.ProcessRunner().start(tool)
         resolve.assert_called_once_with("fake.env")

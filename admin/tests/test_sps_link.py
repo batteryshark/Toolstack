@@ -52,18 +52,18 @@ class SPSLinkTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"TOOLSTACK_SPS_PORT": "not-a-port"}):
             self.assertIsNone(SPSLink.from_env(str(env)))
 
-    def test_from_env_missing_plugin_block_key_returns_none(self):
+    def test_from_env_ignores_provider_configuration(self):
         tmp = Path(tempfile.mkdtemp(prefix="spslink-"))
         self.addCleanup(__import__("shutil").rmtree, tmp, ignore_errors=True)
         env = tmp / "sps.env"
         env.write_text(
             'SP_HOST = "127.0.0.1"\nSP_PORT = "8743"\nSP_SECRET = "s"\n'
             'SP_TLS_CA = "/tmp/ca.crt"\nSP_PLUGIN = "localfile"\n'
-            '[localfile]\n',  # missing VAULT_FILE -> KeyError inside load_config
+            '[localfile]\n',
             encoding="utf-8",
         )
         os.chmod(env, 0o600)
-        self.assertIsNone(SPSLink.from_env(str(env)))
+        self.assertIsNotNone(SPSLink.from_env(str(env)))
 
     def test_wait_until_up_retries_then_succeeds(self):
         link = SPSLink(host="h", port=1, ca_file=None, verify=False)

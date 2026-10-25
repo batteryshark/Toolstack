@@ -46,7 +46,7 @@ class ReconcileTests(unittest.TestCase):
             get_runner.return_value.is_alive.return_value = False
             n = reconciler.reconcile_running_tools(_Cfg(), link, wait_timeout=1.0)
         self.assertEqual(n, 1)
-        start.assert_called_once_with("echo", "/tools", [], backend="process")
+        start.assert_called_once_with("echo", "/tools", [], backend="process", recovery=True)
 
     def test_skips_alive_tools(self):
         _save_state({"echo": _record()})
@@ -86,7 +86,7 @@ class ReconcileTests(unittest.TestCase):
             get_runner.return_value.is_alive.return_value = False
             n = reconciler.reconcile_running_tools(_Cfg(), None, wait_timeout=1.0)
         self.assertEqual(n, 1)
-        start.assert_called_once_with("echo", "/tools", [], backend="process")
+        start.assert_called_once_with("echo", "/tools", [], backend="process", recovery=True)
 
     def test_gate_exception_is_contained(self):
         _save_state({"echo": _record()})
