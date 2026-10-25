@@ -123,10 +123,21 @@ neither process liveness nor health. `DELETE /api/tools/{id}` returns
 `deleted: true` for managed-folder deletion. Missing deletion metadata leaves the
 filesystem outcome unknown; other duplicate sources may still discover the tool.
 
-OpenAPI `auth_headers` are caller-envelope hints, not stored automatic injection.
-Preserve `allowed_headers` and secret declarations; callers supply
-`{{secret:NAME}}` placeholders in request headers. Never enter actual secret values
-in the operator UI.
+OpenAPI imports store authentication in each operation's operator-owned `headers`
+and `allowed_secrets`. The tool editor exposes those fields and an optional
+`body_template` for a fully operator-owned text body. References such as
+`{{secret:api_token}}` are permitted only in these templates and only for that
+operation's declared secret allowlist. Never enter actual secret values in the UI.
+Caller header values and bodies containing `{{secret:` are rejected with HTTP 400.
+`allowed_headers` is only for caller-provided headers and must exclude static
+header names. Caller bodies cannot override a body template.
+
+To migrate older tools, move placeholder-bearing headers/body into the operator
+templates, fill `allowed_secrets`, remove the static names from `allowed_headers`,
+and uncheck legacy caller substitution. Explicit `body_substitution = true` now
+fails validation; the default is false. Update caller envelopes to omit the
+operator-owned fields. See [REST forwarder](../docs/rest-forwarder.md).
+Forwarder refresh operations return status only, without names or value lengths.
 
 At source 855da6e (broker a9319b9 / release059dd13), see [integrated security contracts](../docs/security-contracts.md)
 for disclosure and remaining gates. Optional operation approval_fields is preserved
@@ -156,6 +167,17 @@ erasure. Native canonical fixture/status adoption is implemented, not full web p
 Password reset rotates the session generation atomically. Running admin instances
 reject old browser cookies and bearer tokens on their next request, without a
 restart. An already-authorized in-flight action is not cancelled by reset.
+
+Browser sign-out and `POST /api/logout` revoke the presented session on the server.
+Sessions have independent random identifiers; revocations persist until expiry.
+At the bounded revocation capacity, the signing generation rotates to invalidate
+all sessions. Upgrading from the older session format requires signing in again.
+The native app calls logout before discarding its client token; an unreachable
+server cannot confirm revocation. Accepted HTTP hosts are localhost, loopback
+addresses, and the configured admin host.
+
+`GET /api/audit` includes request metadata only, never stored action arguments or
+result payloads. Correlation identifiers remain available to native clients.
 
 Configuration audit records changed schema field names, never values, tokens,
 paths or destinations. An intent audit must succeed before saving. If completion

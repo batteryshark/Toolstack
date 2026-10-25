@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
@@ -47,7 +48,7 @@ class JsonApi(unittest.TestCase):
             encoding="utf-8")
         self.db_path = str(Path(self.tmp, "broker.sqlite3"))
         broker_config.save(BrokerRunConfig(db_path=self.db_path, tools_root=str(Path(self.tmp, "tools"))))
-        self.client = TestClient(create_app())
+        self.client = TestClient(create_app(), base_url="http://127.0.0.1")
 
     def _restore_env(self):
         for key, prev in self._env.items():
@@ -55,6 +56,41 @@ class JsonApi(unittest.TestCase):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = prev
+
+    def test_logout_revokes_only_presented_session_and_survives_app_recreation(self):
+        first, second = self._auth(), self._auth()
+        self.assertNotEqual(first, second)
+        self.assertEqual(self.client.post("/api/logout", headers=first).status_code, 200)
+        fresh = TestClient(create_app(), base_url="http://127.0.0.1")
+        self.assertEqual(fresh.get("/api/config", headers=first).status_code, 401)
+        self.assertEqual(fresh.get("/api/config", headers=second).status_code, 200)
+        self.assertEqual((settings.config_dir() / "revoked-sessions.json").stat().st_mode & 0o777, 0o600)
+
+    def test_host_is_checked_before_login(self):
+        for host in ("attacker.invalid", "localhost.attacker.invalid", "127.0.0.1.attacker.invalid"):
+            self.assertEqual(self.client.post("/api/login", headers={"Host": host}, json={"password": PASSWORD}).status_code, 400)
+        for host in ("localhost:8780", "127.0.0.1:8780", "[::1]:8780"):
+            self.assertEqual(self.client.post("/api/login", headers={"Host": host}, json={"password": PASSWORD}).status_code, 200)
+        with mock.patch.dict(os.environ, {"TOOLSTACK_ADMIN_HOST": "configured.invalid", "TOOLSTACK_ADMIN_ALLOW_NONLOOPBACK": "1"}):
+            self.assertEqual(self.client.post("/api/login", headers={"Host": "configured.invalid"}, json={"password": PASSWORD}).status_code, 200)
+
+    def test_audit_requests_have_only_metadata(self):
+        from broker.tests.support import seed_caller, make_registry, FakeRuntime
+        from broker.context import BrokerContext
+        from broker.audit import AuditLog
+        from broker.identity import authenticate
+        from broker.request_lifecycle import submit
+        with closing(Store(self.db_path)) as store:
+            token = seed_caller(store, allow=["echo.say"])
+            ctx = BrokerContext(store=store, registry=make_registry({"echo": {"say": "read"}}), runtime=FakeRuntime(), audit=AuditLog(store, sink=None))
+            submit(ctx, authenticate(store, f"Bearer {token}"), "echo", "say", {"private": "fake-payload"}, "fake-correlation")
+        response = self.client.get("/api/audit", headers=self._auth())
+        self.assertEqual(response.status_code, 200)
+        row = response.json()["requests"][0]
+        self.assertEqual(row["correlation_id"], "fake-correlation")
+        self.assertEqual(row["status"], "completed")
+        self.assertFalse({"arguments_json", "action_json", "result_json"} & row.keys())
+        self.assertNotIn("fake-payload", response.text)
 
     def test_reset_invalidates_live_bearer_without_restart(self):
         authz = self._auth()
@@ -289,6 +325,7 @@ class JsonApi(unittest.TestCase):
     def test_edit_tool_updates_description_and_secrets(self):
         r = self.client.post("/api/tools/echo", headers=self._auth(), json={
             "description": "now with feeling",
+            "confirm_secret_items": True,
             "secrets": [{"name": "api_key", "field": "NEW_KEY", "writable": False},
                         {"name": "token", "field": "TOKEN", "writable": True, "item": "oauth"}]})
         self.assertEqual(r.status_code, 200, r.text)

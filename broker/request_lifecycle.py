@@ -24,6 +24,7 @@ from . import approval
 from . import policy as policy_rules
 from .approval_summary import summarize
 from .runtime import NotDispatched
+from .redaction import redact
 
 OK = "ok"
 PENDING = "pending_approval"
@@ -287,6 +288,7 @@ def resolve_request(ctx, request_id, now=None, caller=None) -> Outcome:
         return _outcome_from_request(ctx.store.request(request_id), ctx.store.approval_for_request(request_id))
 
     state = ctx.surface.poll(approval_row["surface_ref"])
+    state = replace(state, note=redact(state.note))
     after_poll = max(now, time.time())
     current_req = ctx.store.request(request_id)
     current_approval = ctx.store.approval_for_request(request_id)
@@ -351,7 +353,7 @@ def _outcome_from_request(req, approval_row=None) -> Outcome:
     }
     reason = "approval_rejected" if req["error"] == "approval_rejected" else None
     approver = approval_row["approver"] if approval_row else None
-    note = approval_row["note"] if approval_row else None
+    note = redact(approval_row["note"]) if approval_row else None
     decided_at = approval_row["decided_at"] if approval_row else None
     return Outcome(mapping.get(status, UNKNOWN), request_id=req["id"],
                    result=result, error=req["error"], reason=reason,

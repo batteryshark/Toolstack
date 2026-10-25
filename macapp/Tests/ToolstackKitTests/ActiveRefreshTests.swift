@@ -17,6 +17,7 @@ final class ActiveRefreshTests: XCTestCase {
             case "/api/broker": json = #"{"running":true}"#
             case "/api/callers": json = #"{"callers":[{"id":1,"name":"demo","revoked_at":123}]}"#
             case "/api/tools": json = #"{"tools":[]}"#
+            case "/api/logout": json = #"{"ok":true}"#
             default: XCTFail("Unexpected request: \(request)"); json = "{}"
             }
             return (200, [:], Data(json.utf8))
@@ -80,7 +81,7 @@ final class ActiveRefreshTests: XCTestCase {
         await first.value; await second.value
         XCTAssertEqual(PendingTransport.count, 3)
     }
-    @MainActor func testSignOutDeletesStoredTokenClearsClientAndReturnsToLoginWithoutServerLogout() async throws {
+    @MainActor func testSignOutRevokesSessionDeletesStoredTokenAndReturnsToLogin() async throws {
         stub()
         let api = client()
         var tokens = [account: "FAKE-TEST-TOKEN"]
@@ -94,6 +95,8 @@ final class ActiveRefreshTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer FAKE-TEST-TOKEN")
         let count = StubURLProtocol.requestCount
         await model.logout()
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/logout")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer FAKE-TEST-TOKEN")
         XCTAssertEqual(deleted, [account]); XCTAssertNil(storage.load(account))
         let authorized = await api.isAuthenticated
         XCTAssertFalse(authorized)
@@ -101,7 +104,7 @@ final class ActiveRefreshTests: XCTestCase {
         XCTAssertTrue(model.callers.isEmpty); XCTAssertNil(model.broker)
         await model.refreshWhileActive(true)
         await model.refreshAll()
-        XCTAssertEqual(StubURLProtocol.requestCount, count, "Sign-out is client-side only; no logout endpoint or signed-out refresh")
+        XCTAssertEqual(StubURLProtocol.requestCount, count + 1, "Sign-out revokes once; no signed-out refresh")
         _ = try await api.brokerStatus()
         XCTAssertNil(StubURLProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"))
     }
@@ -114,11 +117,13 @@ final class ActiveRefreshTests: XCTestCase {
         PendingTransport.started = { started.fulfill() }
         let task = Task { await model.refreshWhileActive(true) }
         await fulfillment(of: [started], timeout: 2)
+        let held = PendingTransport.pending
+        PendingTransport.started = { PendingTransport.pending?.respond(200, #"{"ok":true}"#) }
         await model.logout()
-        PendingTransport.pending?.respond(200, #"{"running":true}"#)
+        held?.respond(200, #"{"running":true}"#)
         await task.value
         await model.refreshWhileActive(true)
-        XCTAssertEqual(PendingTransport.count, 1)
+        XCTAssertEqual(PendingTransport.count, 2)
         XCTAssertNil(model.broker); XCTAssertTrue(model.callers.isEmpty)
     }
     override func tearDown() {

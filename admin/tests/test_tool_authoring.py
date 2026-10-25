@@ -42,6 +42,39 @@ REST_FULL = {
 }
 
 class Serialize(unittest.TestCase):
+    def test_operator_secret_templates_round_trip_through_editor_and_runtime(self):
+        from toolstack_forwarder.config import load_config
+        data = tool_authoring.normalize(REST_FULL)
+        op = data["operations"][1]
+        op.update(headers={"Authorization": "Bearer {{secret:auth_token}}"},
+                  allowed_secrets=["auth_token"], body_template='{"token":"{{secret:auth_token}}"}')
+        data = tool_authoring.normalize(data)
+        self.assertEqual(tool_authoring.validate(data), [])
+        self.assertNotIn("body", [a["name"] for a in data["operations"][1]["args"]])
+        with tempfile.TemporaryDirectory() as directory:
+            path = tool_authoring.write(directory, data)
+            edited = tool_authoring.read(directory)
+            self.assertEqual(edited, data)
+            cfg = load_config(path)
+            self.assertEqual(cfg.operations["login"].headers, op["headers"])
+            self.assertEqual(cfg.operations["login"].body_template, op["body_template"])
+            self.assertFalse(cfg.operations["login"].body_substitution)
+
+    def test_authoring_rejects_unsafe_template_and_legacy_fields(self):
+        for fields in (
+            {"body_substitution": True},
+            {"body_substitution": "false"},
+            {"headers": {"Authorization": "{{secret:auth_token}}"}},
+            {"allowed_secrets": ["undeclared"]},
+            {"headers": []},
+            {"headers": {"X-Trace": "fixed"}},
+            {"body_template": "text on a bodyless operation"},
+        ):
+            with self.subTest(fields=fields):
+                data = tool_authoring.normalize(REST_FULL)
+                data["operations"][0].update(fields)
+                self.assertTrue(tool_authoring.validate(tool_authoring.normalize(data)))
+
     def test_to_toml_parses_back(self):
         parsed = tomllib.loads(tool_authoring.to_toml(tool_authoring.normalize(FULL)))
         self.assertEqual(parsed["id"], "weather")

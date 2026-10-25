@@ -48,6 +48,11 @@ public actor ApiClient {
         try await send("GET", "/api/broker")
     }
 
+    public func logout() async throws {
+        defer { token = nil }
+        let _: [String: Bool] = try await send("POST", "/api/logout", body: [:])
+    }
+
     public func catalogObservation() async throws -> CatalogObservation {
         guard let token, !token.isEmpty else { throw ApiError.unauthorized }
         return try await send("GET", "/api/catalog")

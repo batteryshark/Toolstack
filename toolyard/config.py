@@ -8,6 +8,7 @@ This is the same file the broker's registry reads; the toolyard additionally rea
 from __future__ import annotations
 
 import re
+import hashlib
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,12 +47,14 @@ class ToolDef:
     path: Path  # directory containing toolyard.toml (and the tool's files)
     description: str = ""  # optional tool-level summary (the broker registry ignores it)
     egress: tuple[str, ...] = ()  # [sandbox] egress: hosts a sandboxed tool may reach outbound
+    manifest_digest: str | None = None
 
 
 def load(toml_path: str | Path) -> ToolDef:
     path = Path(toml_path)
     with open(path, "rb") as f:
-        data = tomllib.load(f)
+        raw = f.read()
+        data = tomllib.loads(raw.decode("utf-8"))
     tool_id = data.get("id")
     # Reject a missing/invalid id at load, naming the file + id; mirrors the broker registry's
     # check (broker/registry.py). A dotted id would slip through here and only misroute policy
@@ -107,6 +110,7 @@ def load(toml_path: str | Path) -> ToolDef:
         image=entry.get("image"),
         secrets=secrets,
         path=path.parent,
+        manifest_digest=hashlib.sha256(raw).hexdigest(),
         description=data.get("description", ""),
         egress=tuple(egress),
     )

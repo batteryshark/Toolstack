@@ -289,7 +289,7 @@ _TOOL_EDITOR_JS = """
   var REST_BODY_KINDS = ["none","text","binary"];
   var REST_RULE_RESPONSE_TYPES = ["json","xml","form","plaintext"];
   function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
-  function opts(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+v+'</option>';}).join('');}
+  function opts(values, sel){return values.map(function(v){var o=document.createElement('option');o.textContent=v;if(v===sel)o.setAttribute('selected','');return o.outerHTML;}).join('');}
   function riskOpts(sel){return RISK_CHOICES.indexOf(sel)<0 ? [sel].concat(RISK_CHOICES) : RISK_CHOICES;}
   function currentSecretNames(){
     return [].map.call(document.querySelectorAll('#secrets .sec-name'), function(n){return n.value.trim();}).filter(Boolean);
@@ -344,6 +344,15 @@ _TOOL_EDITOR_JS = """
     row.querySelector('.rm').onclick = function(){row.remove(); if(onChange)onChange();};
     return row;
   }
+  function staticHeaderRow(name, value){
+    var row = mk('<div class="static-headerrow"><input class="static-header-name" placeholder="Authorization">'
+      + '<input class="static-header-value" placeholder="Bearer {{secret:api_token}}">'
+      + '<button type="button" class="rm">remove</button></div>');
+    row.querySelector('.static-header-name').value = name||'';
+    row.querySelector('.static-header-value').value = value||'';
+    row.querySelector('.rm').onclick = function(){row.remove();};
+    return row;
+  }
   function opCard(o, open){
     o = o||{};
     var card = mk('<div class="card opcard"><details class="opcard-acc"><summary>'
@@ -362,6 +371,13 @@ _TOOL_EDITOR_JS = """
       + '<details class="op-rest rest-sub sub-acc"><summary><strong>Allowed headers</strong><span class="acc-count headers-count"></span></summary>'
       + '<div class="headers"></div>'
       + '<button type="button" class="add-header">add header</button></details>'
+      + '<details class="op-rest rest-sub sub-acc"><summary><strong>Operator-owned secret placement</strong></summary>'
+      + '<p>Only these templates may reference secrets. Caller headers and bodies must contain no secret placeholders.</p>'
+      + '<div class="static-headers"></div><button type="button" class="add-static-header">add operator header</button>'
+      + '<label>Allowed secrets (comma-separated)<input class="op-allowed-secrets"></label>'
+      + '<label><input type="checkbox" class="op-template-enabled"> Use operator body template (text bodies only)</label>'
+      + '<textarea class="op-body-template" placeholder="Operator-authored body"></textarea>'
+      + '<label><input type="checkbox" class="op-legacy-substitution"> Legacy caller substitution — move references above, then uncheck to save</label></details>'
       + '<details class="op-rest rest-sub sub-acc"><summary><strong>Response redaction</strong><span class="acc-count redact-count"></span></summary>'
       + '<label class="op-redact"><input type="checkbox" class="op-redact-body"> Redact response body from the caller</label>'
       + '<label class="op-redact"><input type="checkbox" class="op-redact-headers"> Redact response headers from the caller</label></details>'
@@ -375,7 +391,14 @@ _TOOL_EDITOR_JS = """
     card.querySelector('.op-path').value = o.path||'';
     card.querySelector('.op-body-kind').value = o.body_kind||'none';
     card.querySelector('.op-body-content-type').value = o.body_content_type||'';
-    card._body_substitution = o.body_substitution;
+    card.querySelector('.op-legacy-substitution').checked = !!o.body_substitution;
+    card.querySelector('.op-allowed-secrets').value = (o.allowed_secrets||[]).join(', ');
+    card.querySelector('.op-template-enabled').checked = o.body_template != null;
+    card.querySelector('.op-body-template').value = o.body_template||'';
+    var staticHeaders = card.querySelector('.static-headers');
+    Object.keys(o.headers||{}).forEach(function(name){staticHeaders.appendChild(staticHeaderRow(name, o.headers[name]));});
+    card.querySelector('.add-static-header').onclick = function(){staticHeaders.appendChild(staticHeaderRow());};
+    if (staticHeaders.children.length || o.body_template != null || o.body_substitution) staticHeaders.closest('details').open = true;
     // Nonvisual metadata: retain absence versus an explicit empty allowlist.
     if (Object.prototype.hasOwnProperty.call(o, 'approval_fields')) card._approval_fields = o.approval_fields;
     card.querySelector('.op-redact-body').checked = !!o.redact_response_body;
@@ -444,7 +467,12 @@ _TOOL_EDITOR_JS = """
             allowed_headers: headers,
             body_kind: card.querySelector('.op-body-kind').value,
             body_content_type: card.querySelector('.op-body-content-type').value,
-            body_substitution: card._body_substitution,
+            body_substitution: card.querySelector('.op-legacy-substitution').checked,
+            headers: Object.fromEntries([].map.call(card.querySelectorAll('.static-headerrow'), function(r){
+              return [r.querySelector('.static-header-name').value.trim(), r.querySelector('.static-header-value').value];
+            }).filter(function(h){return h[0];})),
+            allowed_secrets: card.querySelector('.op-allowed-secrets').value.split(',').map(function(s){return s.trim();}).filter(Boolean),
+            body_template: card.querySelector('.op-template-enabled').checked ? card.querySelector('.op-body-template').value : null,
             redact_response_body: card.querySelector('.op-redact-body').checked,
             redact_response_headers: card.querySelector('.op-redact-headers').checked,
             secret_update_rules: rules,

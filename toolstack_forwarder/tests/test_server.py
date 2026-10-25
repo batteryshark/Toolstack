@@ -187,6 +187,41 @@ allowed_headers = ["X-Trace"]
         self.assertEqual(status, 401)
         self.assertEqual(body["error"], "channel_secret_mismatch")
 
+    def test_caller_secret_references_fail_before_outbound_send(self):
+        cfg = self._config('''
+[[operations]]
+name = "create"
+verb = "POST"
+path = "/create"
+''')
+        url = self._forwarder(cfg)
+        for payload in (
+            {"op": "get_item", "arguments": {"variables": {"item_id": "i"}, "headers": {"X-Trace": "{{secret:other}}"}}},
+            {"op": "create", "arguments": {"body": "{{secret:other}}"}},
+        ):
+            with self.subTest(payload=payload), mock.patch("toolstack_forwarder.server.outbound.send") as dispatch:
+                status, body = self._post(url, payload)
+                self.assertEqual(status, 400)
+                self.assertEqual(body["error"], "caller_secret_reference")
+                dispatch.assert_not_called()
+        self.assertEqual(self.upstream.seen, [])
+
+    def test_refresh_returns_status_without_cache_metadata(self):
+        secrets = _fake_secrets({"private_name": "fake-value"})
+        secrets.refresh_all = mock.Mock()
+        secrets.refresh = mock.Mock(wraps=secrets.refresh)
+        url = self._forwarder(secrets=secrets)
+        with mock.patch("toolstack_forwarder.server.outbound.send") as dispatch:
+            for op in ("refresh", "refresh_one"):
+                status, body = self._post(url, {"op": op, "arguments": {"name": "private_name"}})
+                self.assertEqual((status, body), (200, {"status": "ok"}))
+            status, body = self._post(url, {"op": "refresh_one", "arguments": {"name": "missing_name"}})
+            self.assertEqual(status, 404)
+            self.assertEqual(body, {"error": "unknown_secret", "detail": "configured secret is unavailable"})
+            dispatch.assert_not_called()
+        secrets.refresh_all.assert_called_once_with()
+        self.assertEqual(secrets.refresh.call_args_list, [mock.call("private_name"), mock.call("missing_name")])
+
     def test_missing_channel_env_refuses_requests(self):
         # No TOOLSTACK_E_SECRET -> channel auth off; any header value passes.
         os.environ.pop("TOOLSTACK_CHANNEL_SECRET")

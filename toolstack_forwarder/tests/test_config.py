@@ -89,9 +89,9 @@ path = "/login"
         op = cfg.operations["login"]
         self.assertEqual(op.body_kind, "text")
         self.assertEqual(op.body_content_type, "application/json")
-        self.assertTrue(op.body_substitution)
+        self.assertFalse(op.body_substitution)
 
-    def test_binary_forces_body_substitution_off(self):
+    def test_binary_defaults_body_substitution_off(self):
         cfg = load_config(self._write(BASE + """
 
 [[operations]]
@@ -100,12 +100,36 @@ risk = "write"
 verb = "POST"
 path = "/upload/{file_id}"
 body_kind = "binary"
-body_substitution = true
 """))
         op = cfg.operations["upload"]
         self.assertEqual(op.body_kind, "binary")
         self.assertEqual(op.body_content_type, "application/octet-stream")
         self.assertFalse(op.body_substitution)
+
+    def test_legacy_substitution_fails_with_migration_guidance(self):
+        for kind in ("none", "text", "binary"):
+            with self.subTest(kind=kind), self.assertRaisesRegex(ConfigError, "move secret references"):
+                load_config(self._write(BASE + f'body_kind = "{kind}"\nbody_substitution = true\n'))
+
+    def test_operator_templates_require_per_operation_declared_secrets(self):
+        declarations = '\n[[secrets]]\nname="token"\nfield="TOKEN"\n[[secrets]]\nname="admin_token"\nfield="ADMIN_TOKEN"\n'
+        good = 'headers = { Authorization = "Bearer {{secret:token}}" }\nallowed_secrets = ["token"]\n'
+        cfg = load_config(self._write(BASE + good + declarations))
+        self.assertEqual(cfg.operations["get_user"].allowed_secrets, frozenset({"token"}))
+        for bad in (
+            good.replace('["token"]', '[]'),
+            good.replace('["token"]', '["other"]'),
+            good.replace('{{secret:token}}', '{{secret:admin_token}}'),
+            good.replace('{{secret:token}}', '{{secret:token'),
+            good.replace('Authorization', 'x-trace'),
+            'headers = { Auth = "a", auth = "b" }\n',
+            'headers = { Auth = 3 }\n',
+            'headers = []\n',
+            'body_template = "no body permitted"\n',
+            'allowed_secrets = "token"\n',
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ConfigError):
+                load_config(self._write(BASE + bad + declarations))
 
     def test_rejects_credentialed_base_url(self):
         with self.assertRaises(ConfigError) as cm:

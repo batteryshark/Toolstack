@@ -28,8 +28,11 @@ def _secret_backend_note(sps: dict | None) -> str:
 def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None, catalog=None, broker_port=None, focused=False, mutation_outcome=None) -> str:
     def action(tool_id, act, label, disabled, primary=False):
         d = " disabled" if disabled else ""
-        confirmation = (f" data-confirm='{esc('Restart ' + tool_id + '? Stops then starts trusted tool code; interrupts active calls. Requests are not replayed.')}'"
-                        if act == "restart" else "")
+        warning = " This tool runs with this host's credentials. Only start tools you trust."
+        if act == "restart":
+            warning += " Stops then starts tool code; interrupts active calls. Requests are not replayed."
+        confirmation = (f" data-confirm='{esc(('Restart ' if act == 'restart' else 'Start ') + tool_id + '?' + warning)}'"
+                        if act in ("start", "restart") else "")
         return (f"<form method='post' action='/toolyard/tools/{esc(tool_id)}/{act}' class='inline-form' data-mutation{confirmation}>"
                 f"{_csrf_field(csrf)}<button type='submit' class='{'primary' if primary else ''}'{d}>{esc(label)}</button></form>")
 
@@ -80,6 +83,10 @@ def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None, catalo
             f"<td><span class='pill {cls}'>{esc(state)}</span><div class='muted'>{registration}</div></td>"
             f"<td><code>{esc(t.get('path', ''))}</code></td>"
             "<td class='actions'>"
+            + "<div class='muted'>Secrets: " + (", ".join(
+                esc(s["name"]) + " (item: " + esc(s.get("item") or t["id"]) + ")"
+                for s in t.get("secrets", [])) or "none") + "</div>"
+            +
             f"<a class='button' href='/tools/{esc(t['id'])}/edit'>Edit</a>"
             f"{action(t['id'], 'start', 'Start', alive, focused and not running)}"
             f"{action(t['id'], 'stop', 'Stop', not running)}"
@@ -125,6 +132,8 @@ def tool_add_view(*, user, csrf, source_value="", repo_value="", error=None) -> 
         "<input type='hidden' name='kind' value='path'>"
         "<label class='field'>Folder path <span class='muted'>(absolute, on the server)</span>"
         f"<input name='source' value='{esc(source_value)}' placeholder='/srv/tools/weather' required></label>"
+        "<label><input type='checkbox' name='confirm_secret_items' value='1'>"
+        "I reviewed this source's secret declarations and confirm items outside the tool's id.</label>"
         "<div class='actions'><button type='submit' class='primary'>Add from folder</button></div></form>"
 
         "<h3>From a Git repository</h3>"
@@ -136,6 +145,8 @@ def tool_add_view(*, user, csrf, source_value="", repo_value="", error=None) -> 
         "<input name='subdir' placeholder='tools/weather'></label>"
         "<label class='field'>Ref <span class='muted'>(optional: branch, tag, or commit)</span>"
         "<input name='ref' placeholder='main'></label>"
+        "<label><input type='checkbox' name='confirm_secret_items' value='1'>"
+        "I reviewed this source's secret declarations and confirm items outside the tool's id.</label>"
         "<div class='actions'><button type='submit'>Clone and add</button></div></form>"
         "<p class='muted'>Cloned code is copied in, never executed by the panel. Restart the broker to "
         "register the new tool.</p>"
@@ -211,6 +222,8 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         "<span>Path <span class='muted'>(Infisical)</span></span>"
         "<span class='colcenter'>Writable</span><span></span></div>"
         "<div id='secrets'></div><button type='button' id='add-secret'>Add secret</button>"
+        "<label><input type='checkbox' name='confirm_secret_items' value='1'>"
+        "I confirm access to the listed secret items outside this tool's id.</label>"
         "<input type='hidden' name='tool_json' id='tool_json'>"
         "<div class='actions'><button type='submit'>Save tool</button>"
         "<a class='button' href='/tools'>Cancel</a></div></form>"

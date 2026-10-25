@@ -12,7 +12,9 @@ one place and reads identically on every OS backend.
     HTTP:  the tool sends an absolute-form request (`GET http://host/..`); the proxy checks
            the host and forwards it in origin form.
 
-Host matching is exact. Run detached by the runner; serves until killed on tool stop:
+Host matching is exact. CONNECT permits port 443 for a bare host entry; other
+ports require an explicit host:port entry (IPv6: [host]:port).
+Run detached by the runner; serves until killed on tool stop:
 
     python3 -m toolyard.egress_proxy --port <port> --allow <host> [--allow <host> ...]
 """
@@ -144,11 +146,19 @@ def _handler(allow: frozenset[str]):
 
         def do_CONNECT(self) -> None:
             self.close_connection = True
-            host, _, port = self.path.partition(":")
-            if host not in allow:
-                return self._deny(host)
             try:
-                upstream = self._connect((host, int(port or 443)))
+                target = urlsplit("//" + self.path)
+                host = target.hostname
+                port = 443 if target.port is None else target.port
+                if not host or not 1 <= port <= 65535 or target.username is not None or target.password is not None or target.path or target.query or target.fragment:
+                    return self._deny("invalid destination")
+            except ValueError:
+                return self._deny("invalid destination")
+            authority = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+            if not (authority in allow or (port == 443 and host in allow)):
+                return self._deny(authority)
+            try:
+                upstream = self._connect((host, port))
             except (OSError, ValueError):
                 return self.send_error(502, "upstream failed")
             try:

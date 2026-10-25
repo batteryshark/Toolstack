@@ -163,8 +163,8 @@ def _rest_args(path: str, allowed_headers: list[str], body_kind: str) -> list[di
 
 
 def build_operations(spec: dict) -> list[dict]:
-    header_templates, _ = _auth(spec)
-    allowed_headers = [h["name"] for h in header_templates]
+    header_templates, secrets = _auth(spec)
+    allowed_headers = []
     used: set = set()
     ops = []
     for path in sorted((spec.get("paths") or {}).keys()):
@@ -184,6 +184,8 @@ def build_operations(spec: dict) -> list[dict]:
                 "risk": _VERB_RISK[verb],
                 "description": str(operation.get("summary") or operation.get("description") or "")[:200],
                 "allowed_headers": allowed_headers,
+                "headers": {h["name"]: h["value"] for h in header_templates},
+                "allowed_secrets": [s["name"] for s in secrets],
                 "body_kind": body_kind,
                 "body_content_type": body_content_type,
                 "args": _rest_args(path, allowed_headers, body_kind),
@@ -235,6 +237,9 @@ def build_toolyard_toml(spec: dict, *, tool_id: str, port: int) -> str:
             lines.append("args = [ " + ", ".join(_inline(a) for a in op["args"]) + " ]")
         if op["allowed_headers"]:
             lines.append("allowed_headers = [ " + ", ".join(_q(h) for h in op["allowed_headers"]) + " ]")
+        if op["headers"]:
+            lines.append("headers = { " + ", ".join(_q(k) + " = " + _q(v) for k, v in op["headers"].items()) + " }")
+            lines.append("allowed_secrets = [ " + ", ".join(_q(s) for s in op["allowed_secrets"]) + " ]")
         lines.append(f"body_kind = {_q(op['body_kind'])}")
         if op["body_content_type"]:
             lines.append(f"body_content_type = {_q(op['body_content_type'])}")
