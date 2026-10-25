@@ -46,13 +46,46 @@ pairs remain, the leading `?` is removed from the URL entirely before the
 outbound call. Static query text (pairs without a `{name}` placeholder) is
 always preserved. Path placeholders still raise `missing_variable` when absent.
 
-`body_kind` is `none`, `text`, or `binary`. Text bodies are UTF-8 strings and may
-substitute `{{secret:NAME}}`; binary bodies are base64 and force substitution off.
+`body_kind` is `none`, `text`, or `binary`. Caller text bodies are UTF-8 strings;
+binary bodies are base64. Caller header values and bodies (including decoded
+binary bodies) containing `{{secret:` are rejected with HTTP 400 before sending.
 `TOOLSTACK_REST_BODY_MAX` caps outbound body bytes and upstream response bytes.
+
+### Operator-owned secret placement
+
+Only per-operation templates in the manifest can insert secrets:
+
+```toml
+# Inside [[operations]]:
+headers = { Authorization = "Bearer {{secret:api_token}}" }
+allowed_secrets = ["api_token"]
+# Optional, for a fully operator-owned text body:
+# body_kind = "text"
+# body_template = '{"token":"{{secret:api_token}}"}'
+
+[[secrets]]
+name = "api_token"
+field = "API_TOKEN"
+```
+
+Every reference must name a tool secret listed in that operation's
+`allowed_secrets` (default empty). Substitution is single-pass and does not
+interpolate caller data into templates. Operators must choose an appropriate
+encoding for the upstream body format. Static header names cannot also appear
+in `allowed_headers`; callers cannot override them, including with different
+casing. A `body_template` accepts no caller body. Keep secret-bearing responses
+redacted where the upstream may reflect credentials.
+
+`body_substitution` now defaults to `false`; explicit `true` fails configuration
+loading with migration instructions. For older manifests, move caller secret
+references into `headers` or `body_template`, declare `allowed_secrets`, remove
+static header names from `allowed_headers`, and remove `body_substitution = true`.
+Remove those headers/body from caller envelopes and discovery arguments. Old
+caller placeholders fail with a migration error, rather than being sent literally.
 
 Discovery should describe the broker envelope: `variables` for path template
 values, `headers` for the allowlisted outbound headers, and `body` when
-`body_kind` is not `none`.
+`body_kind` is not `none` and there is no `body_template`.
 
 ## OpenAPI Import
 
@@ -62,8 +95,9 @@ Toolyard can scaffold the manifest from an OpenAPI/Swagger JSON file:
 python3 -m toolyard.openapi_import openapi.json --id jira --port 4621 > tools/jira/toolyard.toml
 ```
 
-The importer generates named operations for path templates and header auth
-scaffolding. The admin panel exposes the same parser and accepts YAML when its
+The importer generates named operations with operator-owned auth `headers` and
+`allowed_secrets`. Review the generated authentication bindings for each operation.
+The admin panel exposes the same parser and accepts YAML when its
 optional PyYAML dependency is installed.
 
 ## Broker Wire
@@ -73,7 +107,7 @@ The broker calls the forwarder:
 ```json
 {
   "op": "get_user",
-  "arguments": {"variables": {"user_id": "u42"}, "headers": {}, "body": "{}"},
+  "arguments": {"variables": {"user_id": "u42"}, "headers": {}},
   "broker_request_id": 123,
   "caller": {"name": "hermes"}
 }
@@ -97,6 +131,8 @@ Failure:
 
 The forwarder never follows redirects, strips `Set-Cookie` and hop-by-hop
 headers from result envelopes, and returns upstream 3xx/4xx/5xx as data.
+Local `refresh` and `refresh_one` return only `{"status":"ok"}` on success.
+Refresh and missing-secret errors do not return secret names or value lengths.
 
 ## Secret Update Rules
 
