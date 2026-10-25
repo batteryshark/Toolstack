@@ -295,12 +295,15 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             if repo:
                 tool = await work.run(tool_sources.add_from_github,
                     repo, config.tools_root, existing,
-                    subdir=data.get("subdir", ""), ref=data.get("ref", ""))
+                    subdir=data.get("subdir", ""), ref=data.get("ref", ""),
+                    confirm_secret_items=data.get("confirm_secret_items") is True)
             elif manifest is not None:
                 # author-from-code-only: copy the folder + write the supplied manifest (no toolyard.toml needed)
-                tool = await work.run(tool_sources.add_with_manifest, source, config.tools_root, existing, manifest)
+                tool = await work.run(tool_sources.add_with_manifest, source, config.tools_root, existing, manifest,
+                                      confirm_secret_items=data.get("confirm_secret_items") is True)
             else:
-                tool = await work.run(tool_sources.add_from_path, source, config.tools_root, existing)
+                tool = await work.run(tool_sources.add_from_path, source, config.tools_root, existing,
+                                      confirm_secret_items=data.get("confirm_secret_items") is True)
         except tool_sources.NoManifest:
             raise HTTPException(status_code=422, detail="no toolyard.toml at that location; author one to add it")
         except ValueError as exc:
@@ -354,11 +357,12 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
                 raise HTTPException(status_code=400, detail="secrets must be a list")
             tool["secrets"] = data["secrets"]  # replace: sending `secrets` overwrites all declarations; omit to keep
         tool = tool_authoring.normalize(tool)
-        errors = tool_authoring.validate(tool)
+        errors = tool_authoring.validate(tool, confirm_secret_items=data.get("confirm_secret_items") is True)
         if errors:
             raise HTTPException(status_code=400, detail="; ".join(errors))
         try:
-            tool_authoring.write(dir_path, tool)
+            tool_authoring.write(dir_path, tool, confirm_secret_items=data.get("confirm_secret_items") is True)
+            toolyard_ops.record_edited_declarations(tool)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         with open_store(config) as store:

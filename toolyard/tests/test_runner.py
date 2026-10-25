@@ -1055,7 +1055,8 @@ class ReregisterAll(unittest.TestCase):
             'id = "echo"\ntype = "api"\n[entrypoint]\ncommand = "true"\nport = 4601\n',
             encoding="utf-8")
         _save_state({"echo": asdict(RunningTool("echo", 4601, "process", "123",
-                                                e_secret="e" * 32, boot_id="b"))})
+                                                e_secret="e" * 32, boot_id="b",
+                                                secret_declarations=[], manifest_digest="recorded"))})
         self.env = Path(self.tmp) / "sps.env"
         self.env.write_text('SP_HOST="h"\nSP_PORT="1"\nSP_SECRET="s"\n'
                             'SP_PLUGIN="localfile"\n', encoding="utf-8")

@@ -21,7 +21,7 @@ import socket
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -186,21 +186,11 @@ def _reregister_results(*, tools_root: str, tool_dirs, sps_env_path: str) -> dic
         log.warning("SPS re-register: sps.env not found at %s; skipping", sps_env_path)
         raise RunnerConfigError("SPS configuration missing; recovery must retry")
     from .cli import _load_state
-    from .config import discover, load as load_tool
+    from types import SimpleNamespace
+    from .config import SecretSpec
     state = _load_state()
     if not state:
         return {}
-    defs: dict[str, ToolDef] = {}
-    if tools_root:
-        for d in discover(tools_root):
-            defs[d.id] = d
-    for path in tool_dirs or ():
-        toml_path = Path(path) / "toolyard.toml"
-        if toml_path.exists():
-            try:
-                defs[load_tool(toml_path).id] = load_tool(toml_path)
-            except Exception as exc:
-                log.warning("SPS re-register: cannot load %s: %s", toml_path, exc)
     results = {}
     for tool_id, rec in state.items():
         if not isinstance(rec, dict):
@@ -219,12 +209,13 @@ def _reregister_results(*, tools_root: str, tool_dirs, sps_env_path: str) -> dic
             alive = True
         if not alive:
             continue  # positively dead; reconcile restarts it
-        tool_def = defs.get(tool_id)
-        if tool_def is None:
-            log.warning("SPS re-register: tool %s has e_secret but no tool_def", tool_id)
-            results[tool_id] = "tool definition missing"
+        if rec.get("secret_declarations") is None or not rec.get("manifest_digest"):
+            log.warning("SPS re-register: tool %s needs an operator Start to record declarations", tool_id)
+            results[tool_id] = "recorded declarations missing; operator Start required"
             continue
         try:
+            tool_def = SimpleNamespace(id=tool_id, secrets=tuple(
+                SecretSpec(**s) for s in rec["secret_declarations"]))
             _sps_register(tool_def, e_secret, sps_env_path)
             results[tool_id] = None
             log.info("SPS re-registered %s", tool_id)
@@ -246,9 +237,9 @@ class RunnerConfigError(ValueError):
 
 
 def strict_bool(value: str) -> bool:
-    from sps.config import parse_bool
+    from .sps_config import parse_verify
     try:
-        return parse_bool(value, name="TOOLSTACK_SPS_VERIFY")
+        return parse_verify(value)
     except ValueError as exc:
         raise RunnerConfigError(str(exc)) from exc
 
@@ -263,7 +254,7 @@ class ResolvedSPS:
 
 
 def _resolve_sps(path):
-    from sps.config import load_config
+    from .sps_config import load_registration_config as load_config
     try:
         cfg = load_config(path)
         return ResolvedSPS(os.environ.get("TOOLSTACK_SPS_HOST", cfg.sp_host),
@@ -276,7 +267,7 @@ def _resolve_sps(path):
 
 def _check_sps_env(path: str) -> str:
     """Compatibility validation entry point; start resolves/validates once instead."""
-    from sps.config import ConfigModeError, load_config
+    from .sps_config import ConfigModeError, load_registration_config as load_config
     try:
         load_config(path)
     except ConfigModeError as exc:
@@ -311,7 +302,6 @@ def _sps_unregister(tool_id: str, sps_env_path: str) -> None:
     """Best-effort: a failed unregister should not turn a clean stop into a
     failure. Logged as a warning, never raised to the caller."""
     from sps.client import SPSClient
-    from sps.config import load_config
     try:
         cfg = _resolve_sps(sps_env_path)
     except Exception as exc:
@@ -467,6 +457,8 @@ class RunningTool:
     process_exited: bool = False
     log_exited: bool = False
     egress_exited: bool = False
+    secret_declarations: list[dict] | None = None
+    manifest_digest: str | None = None
 
 
 class RunnerStartCleanupError(RuntimeError):
@@ -619,7 +611,9 @@ class ProcessRunner:
         log_path = _tool_log_path(tool_def)
         running = RunningTool(tool_def.id, tool_def.port, self.backend, "",
                               log_path=str(log_path), boot_id=_boot_id(),
-                              e_secret=e_secret, channel_secret=channel_secret)
+                              e_secret=e_secret, channel_secret=channel_secret,
+                              secret_declarations=[asdict(s) for s in tool_def.secrets],
+                              manifest_digest=tool_def.manifest_digest)
 
         def mark_reaped():
             nonlocal running
