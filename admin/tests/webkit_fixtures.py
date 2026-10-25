@@ -32,18 +32,18 @@ window.fixtureNavigations=[];
 const rows=document.querySelectorAll('[data-caller-policy]'), row=rows[0];
 const doubleClick=el=>el.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
 doubleClick(row.cells[0]);await wait(150);
-check(window.fixtureNavigations.join() === 'https://fixture.invalid/callers/writer-demo/policy','row double-click navigates to caller policy');
+check(window.fixtureNavigations.join() === 'https://fixture.invalid/callers/writer-demo/settings','row double-click opens unified caller settings');
 window.fixtureNavigations=[];
 for(const el of row.querySelectorAll('button,a,input,form'))doubleClick(el);
 await wait(150);check(window.fixtureNavigations.length===0,'nested row controls never trigger double-click navigation');
 row.focus();check(document.activeElement===row && !!row.getAttribute('aria-label'),'caller row focusable and named');
 row.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));await wait(150);
-check(window.fixtureNavigations.join() === 'https://fixture.invalid/callers/writer-demo/policy','Enter on focused row navigates to caller policy');
+check(window.fixtureNavigations.join() === 'https://fixture.invalid/callers/writer-demo/settings','Enter on focused row opens unified caller settings');
 window.fixtureNavigations=[];
 row.querySelector('button').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
 await wait();check(window.fixtureNavigations.length===0,'nested keyboard action does not navigate');
 doubleClick(rows[1].cells[1]);await wait(150);
-check(window.fixtureNavigations.join() === 'https://fixture.invalid/callers/revoked-demo/policy','revoked row retains existing policy destination');
+check(window.fixtureNavigations.join() === 'https://fixture.invalid/callers/revoked-demo/settings','revoked row reaches guarded settings destination');
 """
 
 CONFIRM = r"""
@@ -102,6 +102,7 @@ def instrument(html, checks, returned=None):
     const results=[];const check=(ok,name)=>results.push({name,ok:!!ok});
     const wait=(ms=40)=>new Promise(r=>setTimeout(r,ms));
     const checkDialogButtons=dialog=>{
+      if(dialog.matches('.caller-settings,.settings-compare'))return;
       const buttons=Array.from(dialog.querySelectorAll('button'));
       check(buttons.length===2,'open dialog has two actions');
       const bounds=buttons.map(button=>{
@@ -234,7 +235,8 @@ def fixtures():
         for width in (1440,1180):
             result.append(dict(name=f'{name}-{width}',html=instrument(html,checks,returned),width=width,height=900))
     result.append(dict(name='shell-startup-620',html=instrument(startup_error('http://127.0.0.1:8780','Admin exited with status 7 before /login responded.'),"check(document.body.textContent.includes('status 7'),'shell observed cause');check(document.querySelector('#retry')!==null,'shell Retry available');let retries=0;window.pywebview={api:{retry:()=>{retries++;}}};document.querySelector('#retry').click();document.querySelector('#retry').click();check(retries===1,'shell Retry button latches synthetic duplicate clicks');"),width=620,height=360))
-    return result
+    from admin.tests.settings_fixtures import settings_fixtures
+    return result + settings_fixtures(instrument)
 
 
 if __name__ == '__main__':

@@ -6,6 +6,7 @@ import html
 from typing import Any
 
 from .assets import _CSS, _JS
+from .settings_assets import CSS as SETTINGS_CSS, JS as SETTINGS_JS
 
 
 def esc(value: Any) -> str:
@@ -39,7 +40,7 @@ def page(title: str, body: str, *, user: str | None, csrf: str = "", nav: str = 
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         f"<title>{esc(title)} · Toolstack Admin</title>"
-        f"<style>{_CSS}</style><script>{_JS}</script></head>"
+        f"<style>{_CSS}{SETTINGS_CSS}</style><script>{_JS}\n{SETTINGS_JS}</script></head>"
         f"<body><header>{header}</header>"
         f"<main>{body}</main></body></html>"
     )

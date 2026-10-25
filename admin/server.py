@@ -417,6 +417,51 @@ def create_app() -> FastAPI:
         return redirect("/#audit")
 
     # --- policy ---------------------------------------------------------------
+    @app.get("/callers/{name}/settings")
+    async def edit_settings(request: Request, name: str):
+        from .caller_settings import snapshot
+        from .views.settings import settings_view
+        user = current_user(request)
+        if not user:
+            return redirect("/login")
+        try:
+            config = broker_config.load()
+            with open_store(config) as store:
+                state = snapshot(store, config, name)
+            state["csrf"] = csrf_for(request)
+            state["operator"] = user
+            if request.headers.get("accept") == "application/json":
+                return JSONResponse(state, headers={"Cache-Control": "no-store"})
+            return HTMLResponse(settings_view(user=user, csrf=csrf_for(request), caller=name, state=state),
+                                headers={"Cache-Control": "no-store"})
+        except (LookupError, OSError, ValueError, sqlite3.Error):
+            if request.headers.get("accept") == "application/json":
+                return JSONResponse({"error": "Settings unavailable"}, status_code=503)
+            return HTMLResponse(settings_view(user=user, csrf=csrf_for(request), caller=name, state=None), status_code=503)
+
+    @app.post("/callers/{name}/settings")
+    async def save_settings(request: Request, name: str):
+        from .caller_settings import apply, ChangedElsewhere
+        user = current_user(request)
+        if not user:
+            return JSONResponse({"outcome": "rejected", "error": "Sign in before comparing and saving"}, status_code=401)
+        data = await read_form(request)
+        if not csrf_ok(request, data):
+            return JSONResponse({"outcome": "rejected", "error": "Session check failed. Compare latest."}, status_code=403)
+        try:
+            submitted = json.loads(data.get("settings_json", "null"))
+            if not isinstance(submitted, dict):
+                raise ValueError("Invalid settings")
+            config = broker_config.load()
+            with open_store(config) as store:
+                return JSONResponse(apply(store, config, name, submitted, user))
+        except ChangedElsewhere as exc:
+            return JSONResponse({"outcome": "rejected", "error": str(exc)}, status_code=409)
+        except (ValueError, LookupError) as exc:
+            return JSONResponse({"outcome": "rejected", "error": str(exc)}, status_code=400)
+        except Exception:
+            return JSONResponse({"outcome": "unknown", "error": "Save outcome unknown. Compare latest before retrying."}, status_code=503)
+
     def policy_recovery(request, user, name, data, message, status):
         try:
             config = broker_config.load()
