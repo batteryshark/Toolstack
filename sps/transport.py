@@ -12,6 +12,7 @@ import socket
 import ssl
 import time
 import urllib.request
+import urllib.error
 
 MAX_RESPONSE = 8 * 1024 * 1024
 _active = contextvars.ContextVar("sps_budget", default=None)
@@ -46,19 +47,21 @@ class Budget:
 def operation(fn):
     @functools.wraps(fn)
     def call(self, *args, **kwargs):
-        if _active.get() is not None:
-            return fn(self, *args, **kwargs)
-        token = _active.set(Budget(self.timeout))
+        token = None if _active.get() is not None else _active.set(Budget(self.timeout))
         try:
             return fn(self, *args, **kwargs)
         except KeyError:
             raise KeyError("SPS provider value unavailable") from None
         except ValueError:
             raise ValueError("SPS provider invalid response") from None
+        except urllib.error.HTTPError as exc:
+            exc.close()
+            raise RuntimeError("SPS provider operation failed") from None
         except Exception:
             raise RuntimeError("SPS provider operation failed; mutation outcome may be unknown") from None
         finally:
-            _active.reset(token)
+            if token is not None:
+                _active.reset(token)
     return call
 
 

@@ -91,15 +91,13 @@ def check_sp(ctx: HandlerContext, msg: dict[str, Any]) -> None:
 
 
 def check_es(ctx: HandlerContext, tool_id: str, msg: dict[str, Any]) -> Registration:
-    """Verify the E_SECRET matches the registered tool. Raises AuthError /
-    ToolNotFound on any failure."""
+    """Verify E_SECRET without disclosing whether a tool is registered."""
     val = msg.get(_ES_PREFIX)
     if not isinstance(val, str) or not val:
         raise AuthError(f"{_ES_PREFIX} missing or not a string")
     rec = ctx.store.get(tool_id)
-    if rec is None:
-        raise ToolNotFound(tool_id)
-    if not constant_time_eq(val, rec.esecret):
+    matched = constant_time_eq(val, rec.esecret if rec else "0" * 64)
+    if rec is None or not matched:
         raise AuthError(f"{_ES_PREFIX} mismatch")
     return rec
 
@@ -154,6 +152,10 @@ def handle_register(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(esecret, str) or not _HEX_RE.fullmatch(esecret) or len(esecret) < 32:
         raise BadRegistration("esecret must be a hex string of at least 32 chars")
     entries = parse_cs_tuples(msg.get("secrets"))
+    allowed = ctx.config.grants.get(tool_id, ())
+    if any((entry["item"] or tool_id) != tool_id and entry["item"] not in allowed
+           for entry in entries):
+        raise AuthError("item is not granted to this tool")
     ctx.store.register(tool_id, Registration(esecret=esecret, secret_entries=entries))
     return {"status": "ok"}
 
@@ -184,8 +186,8 @@ def _get_secrets_bounded(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, 
         item = entry.get("item") or tool_id
         try:
             value = ctx.plugin.get_secret(entry["field"], item)
-        except KeyError as exc:
-            raise BackendError(f"{tool_id}.{entry['name']}: {exc}") from exc
+        except Exception as exc:
+            raise BackendError("provider read failed") from exc
         body[entry["name"]] = value
     return {"status": "ok", "secrets": body}
 
@@ -202,8 +204,8 @@ def handle_get_secret(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any
     item = match.get("item") or tool_id
     try:
         value = ctx.plugin.get_secret(match["field"], item)
-    except KeyError as exc:
-        raise BackendError(f"{tool_id}.{name}: {exc}") from exc
+    except Exception as exc:
+        raise BackendError("provider read failed") from exc
     return {"status": "ok", "secrets": {name: value}}
 
 
@@ -221,6 +223,11 @@ def handle_write_secret(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, A
     value = msg.get("value")
     if not isinstance(value, str):
         raise BadRequest("'value' must be a string")
+    try:
+        if len(value.encode("utf-8")) > ctx.config.sp_max_value_bytes:
+            raise BadRequest("value exceeds size limit")
+    except UnicodeEncodeError:
+        raise BadRequest("value must be UTF-8") from None
     item = match.get("item") or tool_id
     try:
         ctx.plugin.write_secret(match["field"], item, value)

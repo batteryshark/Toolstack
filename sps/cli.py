@@ -81,7 +81,7 @@ def maybe_generate_tls_material(cert_path: str, key_path: str, ca_path: str, sub
     cmd = [
         "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
         "-keyout", key_path, "-out", cert_path,
-        "-days", "365", "-subj", subj,
+        "-days", "3650", "-subj", subj,
         "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost",
     ]
     subprocess.run(cmd, check=True, capture_output=True, umask=0o077)
@@ -93,6 +93,14 @@ def maybe_generate_tls_material(cert_path: str, key_path: str, ca_path: str, sub
     return True
 
 
+def warn_certificate_expiry(cert_path: str) -> None:
+    import ssl
+    import time
+    cert = ssl._ssl._test_decode_cert(cert_path)
+    if ssl.cert_time_to_seconds(cert["notAfter"]) - time.time() < 30 * 86400:
+        print("sps: TLS certificate expires in fewer than 30 days; renew and restart clients", file=sys.stderr)
+
+
 def _cmd_serve(args) -> None:
     """Run the SPS server. Mode-0600 re-check fails closed."""
     cfg_path = args.config
@@ -102,6 +110,7 @@ def _cmd_serve(args) -> None:
         raise ValueError("SPS requires TLS certificate and key")
     ssl_ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_SERVER)
     ssl_ctx.load_cert_chain(certfile=cfg.sp_tls_cert, keyfile=cfg.sp_tls_key)
+    warn_certificate_expiry(cfg.sp_tls_cert)
     plugin = plugin_loader.load_plugin(cfg)
     plugin.connect()
     audit_log_path = cfg.sp_audit_log or "/var/log/toolstack/sps.audit"
@@ -118,7 +127,7 @@ def _cmd_serve(args) -> None:
     # Announce a fresh boot_id so the toolyard watchdog (admin side) can detect
     # this restart and re-register every running tool. Without this, SPS's
     # in-memory tool pool starts empty on every startup and any tool that was
-    # already running gets "Not found" until it's manually bounced.
+    # already running gets "Unauthorized" until it is registered again.
     boot_id_path = Path(
         os.environ.get("TOOLSTACK_SPS_BOOT_ID_PATH") or _DEFAULT_BOOT_ID_PATH
     )
@@ -269,10 +278,8 @@ def _cmd_vault_set(args) -> None:
         value = getpass.getpass(f"value for {args.tool}.{args.field}: ")
     else:
         value = sys.stdin.readline().rstrip("\n")
-    passphrase = os.environ.get("SP_VAULT_PASSPHRASE")
-    if not passphrase:
-        raise SystemExit("SP_VAULT_PASSPHRASE not set in env")
-    from .plugins.localfile import _Vault
+    from .plugins.localfile import _Vault, _vault_passphrase
+    passphrase = _vault_passphrase()
     _Vault(cfg.localfile.vault_file, passphrase).set(args.tool, args.field, value)
     print(f"set {args.tool}.{args.field}")
 
@@ -282,10 +289,8 @@ def _cmd_vault_get(args) -> None:
     cfg = cfgmod.load_config(args.config)
     if cfg.sp_plugin != "localfile" or cfg.localfile is None:
         raise SystemExit("sps vault-get requires SP_PLUGIN=localfile")
-    passphrase = os.environ.get("SP_VAULT_PASSPHRASE")
-    if not passphrase:
-        raise SystemExit("SP_VAULT_PASSPHRASE not set in env")
-    from .plugins.localfile import _Vault
+    from .plugins.localfile import _Vault, _vault_passphrase
+    passphrase = _vault_passphrase()
     backend = _Vault(cfg.localfile.vault_file, passphrase)
     print("set" if backend.has(args.tool, args.field) else "unset")
 

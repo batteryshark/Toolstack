@@ -116,10 +116,12 @@ class Defects(unittest.TestCase):
             handler.connection = mock.Mock()
             handler.wfile = mock.Mock()
             handler.ctx = SimpleNamespace(audit=mock.Mock(), boot_id="fake")
+            handler.server = mock.Mock()
             with mock.patch("sps.server.read_socket_json", side_effect=failure, return_value={"op": "ping"}), mock.patch.dict(server._HANDLER_BY_OP, {"ping": lambda *_: {"status": "ok", "message": "never-log"}}), mock.patch("sps.server.write_one_json", side_effect=BrokenPipeError("never-log")):
                 handler.handle()
             self.assertEqual(handler.connection.settimeout.call_args.args, (server.SOCKET_TIMEOUT,))
-            self.assertEqual(handler.ctx.audit.event.call_args.kwargs["outcome"], "ok" if failure is None else "Bad request")
+            handler.ctx.audit.event.assert_not_called()
+            handler.server._record_reject.assert_called_once_with("ping" if failure is None else "invalid")
         with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
             server.ThreadingTCPServer.handle_error(None, None, None)
             self.assertEqual(stderr.getvalue(), "")
@@ -130,7 +132,7 @@ class Defects(unittest.TestCase):
             audit = AuditLogger(path, max_bytes=4096)
             for _ in range(200):
                 audit.event("ping", tool_id="x" * 128)
-            self.assertEqual(set(p.name for p in Path(temp).iterdir()), {"audit", "audit.1"})
+            self.assertEqual(set(p.name for p in Path(temp).iterdir()), {"audit", *(f"audit.{i}" for i in range(1, 6))})
             for file in Path(temp).iterdir():
                 self.assertLessEqual(file.stat().st_size, 4096)
                 self.assertEqual(file.stat().st_mode & 0o777, 0o600)

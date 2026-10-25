@@ -56,7 +56,7 @@ class _FakePlugin:
 
 
 class _FakeAudit:
-    def event(self, action, *, tool_id="", secret_name="", outcome="ok"):
+    def event(self, action, *, tool_id="", secret_name="", outcome="ok", **metadata):
         pass
 
 
@@ -134,10 +134,10 @@ class Client(unittest.TestCase):
         # The FakePlugin accepts writes silently; the SPS returns ok.
         es.write_secret("echo", "api_key", "V-new")
 
-    def test_not_found_propagates(self):
+    def test_unregistered_tool_is_unauthorized(self):
         es = SPSClient("127.0.0.1", self.srv.port,
                        esecret="e" + "3" * 63, ca_file=self.ca)
-        with self.assertRaises(NotFound):
+        with self.assertRaises(AuthError):
             es.get_secrets("never-registered")
 
     def test_bad_ca_fails_closed(self):
