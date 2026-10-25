@@ -2,6 +2,7 @@ import base64
 import shutil
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from toolstack_forwarder.config import load_config
@@ -45,7 +46,8 @@ name = "login"
 risk = "write"
 verb = "POST"
 path = "/tenants/{tenant}/login"
-allowed_headers = ["Authorization"]
+headers = { Authorization = "Bearer {{secret:auth_token}}" }
+allowed_secrets = ["auth_token"]
 body_kind = "text"
 body_content_type = "application/json"
 
@@ -198,12 +200,11 @@ class RequestBuilder(unittest.TestCase):
         self.assertEqual(cm.exception.code, "header_not_allowed")
 
     def test_substitutes_secrets_in_headers_and_text_body(self):
+        self.cfg.operations["login"] = replace(self.cfg.operations["login"], body_template='{"token":"{{secret:auth_token}}"}')
         req = self.build(
             "login",
             {
                 "variables": {"tenant": "acme"},
-                "headers": {"Authorization": "Bearer {{secret:auth_token}}"},
-                "body": '{"token":"{{secret:auth_token}}"}',
             },
         )
         self.assertEqual(req.headers["Authorization"], "Bearer sekret")
@@ -218,11 +219,54 @@ class RequestBuilder(unittest.TestCase):
                 "login",
                 {
                     "variables": {"tenant": "acme"},
-                    "headers": {"Authorization": "Bearer {{secret:auth_token}}"},
                     "body": "{}",
                 },
             )
         self.assertEqual(cm.exception.code, "invalid_header")
+
+    def test_caller_placeholders_are_refused_even_when_malformed_or_binary(self):
+        for marker in ("{{secret:auth_token}}", "{{secret:other}}", "{{secret:"):
+            cases = [
+                ("get_user", {"variables": {"user_id": "u"}, "headers": {"X-Trace": marker}}),
+                ("login", {"variables": {"tenant": "a"}, "body": marker}),
+                ("upload", {"variables": {"file_id": "a"}, "body": base64.b64encode(marker.encode()).decode()}),
+            ]
+            for op, args in cases:
+                with self.subTest(op=op, marker=marker), self.assertRaises(RequestBuildError) as cm:
+                    self.build(op, args)
+                self.assertEqual(cm.exception.code, "caller_secret_reference")
+                self.assertIn("configure operator", cm.exception.detail)
+
+    def test_caller_cannot_override_operator_header_or_body(self):
+        for name in ("Authorization", "authorization", "AUTHORIZATION"):
+            with self.subTest(name=name), self.assertRaises(RequestBuildError):
+                self.build("login", {"variables": {"tenant": "a"}, "headers": {name: "replacement"}, "body": "{}"})
+        self.cfg.operations["login"] = replace(self.cfg.operations["login"], body_template="fixed")
+        with self.assertRaisesRegex(RequestBuildError, "operator-owned body"):
+            self.build("login", {"variables": {"tenant": "a"}, "body": "replacement"})
+
+    def test_runtime_allowlist_and_missing_secret_do_not_disclose_names(self):
+        op = self.cfg.operations["login"]
+        self.cfg.operations["login"] = replace(op, allowed_secrets=frozenset())
+        with self.assertRaises(RequestBuildError) as cm:
+            self.build("login", {"variables": {"tenant": "a"}, "body": "{}"})
+        self.assertEqual(cm.exception.code, "secret_not_allowed")
+        self.cfg.operations["login"] = op
+        self.secrets._t.clear()
+        with self.assertRaises(RequestBuildError) as cm:
+            self.build("login", {"variables": {"tenant": "a"}, "body": "{}"})
+        self.assertEqual(cm.exception.envelope(), {"error": "missing_secret", "detail": "configured secret is unavailable"})
+
+    def test_template_substitution_is_not_recursive_and_body_is_bounded(self):
+        self.secrets._t["auth_token"] = "{{secret:other}}"
+        self.secrets._t["other"] = "never-rendered"
+        with self.assertRaises(RequestBuildError):
+            self.build("login", {"variables": {"tenant": "a"}, "body": "{}"})
+        self.secrets._t["auth_token"] = "long-token"
+        self.cfg.operations["login"] = replace(self.cfg.operations["login"], body_template="{{secret:auth_token}}")
+        with self.assertRaises(RequestBuildError) as cm:
+            self.build("login", {"variables": {"tenant": "a"}}, max_body=3)
+        self.assertEqual(cm.exception.code, "body_too_large")
 
     def test_binary_body_is_base64_decoded_and_substitution_is_off(self):
         req = self.build("upload", {"variables": {"file_id": "f1"}, "body": base64.b64encode(b"\x00abc").decode()})

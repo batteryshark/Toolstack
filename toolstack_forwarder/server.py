@@ -73,11 +73,10 @@ def _handler(config: RestConfig, secrets: SecretClient, timeout: float, max_body
             # Secret-refresh ops are broker-injected for tools with [[secrets]] declared
             # (broker/registry.py). Handle them locally on the forwarder's SPS-backed
             # SecretClient -- no upstream call, no proxy needed. The broker treats these
-            # as risk="read" ops; we return only the refreshed name list (or length), never
-            # the value, so the secret never crosses the wire back to the broker.
+            # as risk="read" ops; return status only, without cache metadata.
             if op == "refresh":
                 secrets.refresh_all()
-                return self._reply(200, {"status": "ok", "refreshed": list(secrets.names())})
+                return self._reply(200, {"status": "ok"})
             if op == "refresh_one":
                 target = arguments.get("name") if isinstance(arguments, dict) else None
                 if not isinstance(target, str) or not target:
@@ -86,10 +85,10 @@ def _handler(config: RestConfig, secrets: SecretClient, timeout: float, max_body
                         "detail": "refresh_one: 'name' argument is required",
                     })
                 try:
-                    new_value = secrets.refresh(target)
-                except KeyError as exc:
-                    return self._reply(404, {"error": "unknown_secret", "detail": str(exc)})
-                return self._reply(200, {"status": "ok", "refreshed": [target], "len": len(new_value)})
+                    secrets.refresh(target)
+                except KeyError:
+                    return self._reply(404, {"error": "unknown_secret", "detail": "configured secret is unavailable"})
+                return self._reply(200, {"status": "ok"})
             try:
                 req = build_request(config, op, arguments, secrets, max_body)
             except RequestBuildError as exc:
