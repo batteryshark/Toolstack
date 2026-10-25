@@ -1,0 +1,60 @@
+[0/1] Planning build
+Building for debugging...
+[0/7] Write sources
+[2/7] Write swift-version--58304C5D6DBC2206.txt
+[4/9] Compiling ToolstackApp AppModel.swift
+[5/9] Emitting module ToolstackApp
+[6/11] Compiling ToolstackApp NativeSnapshots.swift
+[7/11] Compiling ToolstackApp ToolstackApp.swift
+[7/12] Write Objects.LinkFileList
+[8/12] Linking ToolstackApp
+[9/12] Applying ToolstackApp
+[11/14] Compiling ToolstackKitTests CorrectiveTests.swift
+[12/14] Emitting module ToolstackKitTests
+[13/15] Compiling ToolstackKitTests StalePublicationTests.swift
+/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-mac/macapp/Tests/ToolstackKitTests/StalePublicationTests.swift:56:47: error: missing argument for parameter #1 in call
+  4 |
+  5 | extension PendingTransport {
+  6 |     func respond(_ status: Int = 200, _ json: String) {
+    |          `- note: 'respond' declared here
+  7 |         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+  8 |         client?.urlProtocol(self, didLoad: Data(json.utf8))
+    :
+ 54 |             await fulfillment(of: [started], timeout: 2)
+ 55 |             try seedB(model)
+ 56 |             PendingTransport.pending?.respond(json)
+    |                                               `- error: missing argument for parameter #1 in call
+ 57 |             await task.value
+ 58 |             assertB(model)
+
+/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-mac/macapp/Tests/ToolstackKitTests/StalePublicationTests.swift:72:47: error: missing argument for parameter #1 in call
+  4 |
+  5 | extension PendingTransport {
+  6 |     func respond(_ status: Int = 200, _ json: String) {
+    |          `- note: 'respond' declared here
+  7 |         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+  8 |         client?.urlProtocol(self, didLoad: Data(json.utf8))
+    :
+ 70 |             await fulfillment(of: [started], timeout: 2)
+ 71 |             try seedB(model)
+ 72 |             PendingTransport.pending?.respond(#"{"name":"A","token":"FAKE-ONE-TIME-A"}"#)
+    |                                               `- error: missing argument for parameter #1 in call
+ 73 |             await task.value
+ 74 |             assertB(model)
+
+/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-mac/macapp/Tests/ToolstackKitTests/StalePublicationTests.swift:95:43: error: missing argument for parameter #1 in call
+  4 |
+  5 | extension PendingTransport {
+  6 |     func respond(_ status: Int = 200, _ json: String) {
+    |          `- note: 'respond' declared here
+  7 |         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+  8 |         client?.urlProtocol(self, didLoad: Data(json.utf8))
+    :
+ 93 |         await fulfillment(of: [started], timeout: 2)
+ 94 |         try seedB(model)
+ 95 |         PendingTransport.pending?.respond(#"{"name":"A","enabled":[],"policy":{"tools":{}}}"#)
+    |                                           `- error: missing argument for parameter #1 in call
+ 96 |         let result = await task.value
+ 97 |         XCTAssertNil(result)
+warning: '--build-system native' has been deprecated and will be removed in a future release; please report an issue at https://github.com/swiftlang/swift-package-manager/issues if you are unable to adopt the default build system.
+error: fatalError

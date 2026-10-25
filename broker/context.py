@@ -23,3 +23,4 @@ class BrokerContext:
     surface: object | None = None  # an ApprovalSurface (NodSurface / FakeSurface); None = no review
     approval_ttl: float = 3600.0  # broker-side approval timeout (seconds)
     rate_limiter: object | None = None  # a RateLimiter, or None to disable
+    catalog_observation_id: str | None = None

@@ -7,11 +7,8 @@ tools root (``<root>/*/toolyard.toml``) and an explicit list of tool
 directories (``tool_dirs``) that the panel's tool editor can add anywhere on
 the server.
 
-Phase 5: the runner mints an E_SECRET and registers the tool with SPS at
-boot, so secret VALUES no longer flow through the panel. The panel still
-shows "is this secret provisioned?" (via the SPS ``provisioned_fields``
-call) and supports operator provisioning via the SPS ``write_secret``
-op; never sees plaintext on the way.
+The runner registers tools with SPS at boot. Secret values never flow
+through this module; provisioning is host-side and inspection may be unknown.
 """
 
 from __future__ import annotations
@@ -25,9 +22,40 @@ from pathlib import Path
 from toolyard.cli import _load_state, _save_state
 from toolyard.config import discover
 from toolyard.config import load as load_tool
-from toolyard.runner import RunningTool, get_runner
+from toolyard.runner import RunningTool, RunnerStartCleanupError, get_runner
 
 from . import settings
+
+
+def state_lock():
+    """Use the runner's cross-process lock or fail closed until integrated."""
+    from toolyard import cli
+    lock = getattr(cli, "state_lock", None)
+    if lock is None:
+        raise RuntimeError("Runner state_lock API unavailable; integrate runner repair first")
+    return lock()
+
+
+class UnrecordedRuntimeError(RuntimeError):
+    def __init__(self, running):
+        super().__init__("Start could not be recorded and cleanup failed; operator recovery required")
+        self.running = running
+
+
+def _record_or_rollback(state, tool_id, running, runner):
+    state[tool_id] = asdict(running)
+    try:
+        _save_state(state)
+    except Exception:
+        try:
+            runner.stop(running)
+        except Exception:
+            raise UnrecordedRuntimeError(running) from None
+        # Private state may have published before channel-view publication
+        # failed. Clear the rolled-back intent as well, under the same lock.
+        del state[tool_id]
+        _save_state(state)
+        raise
 
 
 def _all_defs(tools_root: str, tool_dirs=()) -> dict:
@@ -50,24 +78,29 @@ def list_tools(tools_root: str, tool_dirs=()) -> list[dict]:
     is True for tools registered via ``tool_dirs`` (the panel can unregister those);
     tools discovered under the tools root are managed on the filesystem."""
     state = _load_state()
-    dir_set = {str(Path(p)) for p in (tool_dirs or ())}
+    dir_set = {str(Path(p).resolve()) for p in (tool_dirs or ())}
     tools = []
     for d in _all_defs(tools_root, tool_dirs).values():
         record = state.get(d.id)
         alive = False
         if record:
-            running = RunningTool(**record)
-            alive = get_runner(running.backend).is_alive(running)
+            try:
+                running = RunningTool(**record)
+                alive = get_runner(running.backend).is_alive(running)
+            except Exception:
+                alive = None  # inspection failure is not proof of death
         tools.append({
             "id": d.id, "type": d.type, "port": d.port, "path": str(d.path),
             "running": bool(record), "alive": alive,
+            "state": "unknown" if alive is None else "running" if alive else "crashed" if record else "stopped",
+            "health": "unknown" if alive or alive is None else "stopped",
             "backend": record["backend"] if record else None,
-            "removable": str(d.path) in dir_set,
+            "removable": str(Path(d.path).resolve()) in dir_set,
         })
     return tools
 
 
-def start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") -> None:
+def _start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") -> None:
     """Start the tool via the runner. Secrets are resolved by the tool at
     boot (Phase 5: SPS pull), so the panel hands the runner nothing but
     the tool definition."""
@@ -82,31 +115,59 @@ def start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") ->
         recorded_runner = get_runner(recorded.backend)
         if recorded_runner.is_alive(recorded):
             return  # genuinely already running
-        recorded_runner.stop(recorded)
+        try:
+            recorded_runner.stop(recorded)
+        except RunnerStartCleanupError as exc:
+            state[tool_id] = asdict(exc.running)
+            _save_state(state)
+            raise
         del state[tool_id]
         _save_state(state)
-    running = get_runner(backend).start(defs[tool_id])
-    state[tool_id] = asdict(running)
-    _save_state(state)
+    runner = get_runner(backend)
+    try:
+        running = runner.start(defs[tool_id])
+    except Exception as exc:
+        # RunnerStartCleanupError contract: a runtime may survive failed start.
+        running = getattr(exc, "running", None)
+        if isinstance(running, RunningTool):
+            _record_or_rollback(state, tool_id, running, runner)
+        raise
+    _record_or_rollback(state, tool_id, running, runner)
 
 
-def stop(tool_id: str) -> None:
+def _stop(tool_id: str) -> None:
     state = _load_state()
     record = state.get(tool_id)
     if not record:
         return
     running = RunningTool(**record)
-    get_runner(running.backend).stop(running)
+    try:
+        get_runner(running.backend).stop(running)
+    except RunnerStartCleanupError as exc:
+        state[tool_id] = asdict(exc.running)
+        _save_state(state)
+        raise
     del state[tool_id]
     _save_state(state)
 
 
 def restart(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") -> None:
-    stop(tool_id)
-    start(tool_id, tools_root, tool_dirs, backend)
+    with state_lock():
+        _stop(tool_id)
+        _start(tool_id, tools_root, tool_dirs, backend)
 
 
-def remove(tool_id: str, tools_root: str, tool_dirs=()) -> None:
+def start(tool_id: str, tools_root: str, tool_dirs, backend: str = "process") -> None:
+    with state_lock():
+        _start(tool_id, tools_root, tool_dirs, backend)
+
+
+def stop(tool_id: str) -> None:
+    with state_lock():
+        _stop(tool_id)
+
+
+def _remove(tool_id: str, tools_root: str, tool_dirs=()) -> None:
     """Stop a tool if running, then delete its managed folder under ``tools_root``.
 
     Only TSR-managed tools (those that live UNDER ``tools_root``, the copy-into-managed-dir
@@ -123,8 +184,13 @@ def remove(tool_id: str, tools_root: str, tool_dirs=()) -> None:
         raise ValueError(
             f"tool {tool_id!r} is not managed under the tools root; it was registered from an "
             "external directory; unregister it by removing that path from tool_dirs")
-    stop(tool_id)  # kill any running process + drop its state record before deleting the code
+    _stop(tool_id)  # caller holds the complete lifecycle lock
     try:
         shutil.rmtree(tool_path)
     except OSError as exc:  # stopped but couldn't delete -> a clear 400, not an opaque 500
         raise ValueError(f"stopped {tool_id!r} but could not delete its folder: {exc}") from exc
+
+
+def remove(tool_id: str, tools_root: str, tool_dirs=()) -> None:
+    with state_lock():
+        _remove(tool_id, tools_root, tool_dirs)

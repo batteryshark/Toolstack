@@ -1,0 +1,69 @@
+[0/1] Planning build
+Building for debugging...
+[0/9] Write sources
+[3/9] Write swift-version--58304C5D6DBC2206.txt
+[5/12] Compiling ToolstackKit ApiClient.swift
+[6/12] Compiling ToolstackKit CatalogObservation.swift
+[7/12] Emitting module ToolstackKit
+[8/13] Compiling ToolstackKit Models.swift
+[9/16] Compiling ToolstackApp AppModel.swift
+[10/16] Compiling ToolstackApp NativeSnapshots.swift
+[11/16] Emitting module ToolstackApp
+[12/17] Compiling ToolstackApp ToolstackApp.swift
+[12/17] Write Objects.LinkFileList
+[13/17] Linking ToolstackApp
+[14/17] Applying ToolstackApp
+[16/21] Compiling ToolstackKitTests ApiClientTests.swift
+[17/21] Compiling ToolstackKitTests CanonicalContractTests.swift
+[18/21] Compiling ToolstackKitTests CorrectiveTests.swift
+[19/21] Emitting module ToolstackKitTests
+[20/24] Compiling ToolstackKitTests NativeContractTests.swift
+[21/24] Compiling ToolstackKitTests PolicyDraftTests.swift
+[22/24] Compiling ToolstackKitTests StalePublicationTests.swift
+[22/24] Write Objects.LinkFileList
+[23/24] Linking ToolstackPackageTests
+Build complete! (5.25s)
+Test Suite 'Selected tests' started at 2026-10-24 10:38:46.467.
+Test Suite 'ToolstackPackageTests.xctest' started at 2026-10-24 10:38:46.468.
+Test Suite 'NativeContractTests' started at 2026-10-24 10:38:46.468.
+Test Case '-[ToolstackKitTests.NativeContractTests testAddStartRestartAreSeparateAndOnlyCatalogVerifies]' started.
+Test Case '-[ToolstackKitTests.NativeContractTests testAddStartRestartAreSeparateAndOnlyCatalogVerifies]' passed (0.006 seconds).
+Test Case '-[ToolstackKitTests.NativeContractTests testCatalogAuthenticatedStrictDecodeAndNoAnonymousRequest]' started.
+Test Case '-[ToolstackKitTests.NativeContractTests testCatalogAuthenticatedStrictDecodeAndNoAnonymousRequest]' passed (0.001 seconds).
+Test Case '-[ToolstackKitTests.NativeContractTests testCatalogNeedsPresentTargetAndFailuresInvalidate]' started.
+Test Case '-[ToolstackKitTests.NativeContractTests testCatalogNeedsPresentTargetAndFailuresInvalidate]' passed (0.001 seconds).
+Test Case '-[ToolstackKitTests.NativeContractTests testLateCatalogAndDeleteDoNotTouchNewIdentity]' started.
+/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-mac/macapp/Tests/ToolstackKitTests/NativeContractTests.swift:121: error: -[ToolstackKitTests.NativeContractTests testLateCatalogAndDeleteDoNotTouchNewIdentity] : Failed due to unwaited expectation 'catalog pending'.
+Test Case '-[ToolstackKitTests.NativeContractTests testLateCatalogAndDeleteDoNotTouchNewIdentity]' failed (0.536 seconds).
+Test Case '-[ToolstackKitTests.NativeContractTests testLegacyUnsupportedRemovalIsRejected]' started.
+Test Case '-[ToolstackKitTests.NativeContractTests testLegacyUnsupportedRemovalIsRejected]' passed (0.001 seconds).
+Test Case '-[ToolstackKitTests.NativeContractTests testNamedOwnershipConfirmationsAndReceipts]' started.
+Test Case '-[ToolstackKitTests.NativeContractTests testNamedOwnershipConfirmationsAndReceipts]' passed (0.001 seconds).
+Test Case '-[ToolstackKitTests.NativeContractTests testUnknownDeleteReceiptsAnd500NeverReplayBeforeComparison]' started.
+Test Case '-[ToolstackKitTests.NativeContractTests testUnknownDeleteReceiptsAnd500NeverReplayBeforeComparison]' passed (0.003 seconds).
+Test Suite 'NativeContractTests' failed at 2026-10-24 10:38:47.016.
+	 Executed 7 tests, with 1 failure (1 unexpected) in 0.548 (0.548) seconds
+Test Suite 'StalePublicationTests' started at 2026-10-24 10:38:47.016.
+Test Case '-[ToolstackKitTests.StalePublicationTests testDelayedReadsDoNotPublishIntoResetIdentity]' started.
+Test Case '-[ToolstackKitTests.StalePublicationTests testDelayedReadsDoNotPublishIntoResetIdentity]' passed (0.003 seconds).
+Test Case '-[ToolstackKitTests.StalePublicationTests testLateCreateAndRotateReceiptsNeverPublishTokenOrRefresh]' started.
+Test Case '-[ToolstackKitTests.StalePublicationTests testLateCreateAndRotateReceiptsNeverPublishTokenOrRefresh]' passed (0.001 seconds).
+Test Case '-[ToolstackKitTests.StalePublicationTests testLatePolicyReadReturnsNoConsumableValue]' started.
+Test Case '-[ToolstackKitTests.StalePublicationTests testLatePolicyReadReturnsNoConsumableValue]' passed (0.001 seconds).
+Test Case '-[ToolstackKitTests.StalePublicationTests testLatePolicyWriteCannotRepopulateDrafts]' started.
+Test Case '-[ToolstackKitTests.StalePublicationTests testLatePolicyWriteCannotRepopulateDrafts]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.StalePublicationTests testLateRestoreProofDoesNotReplaceBSession]' started.
+Test Case '-[ToolstackKitTests.StalePublicationTests testLateRestoreProofDoesNotReplaceBSession]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.StalePublicationTests testLateToolAndConfigAcknowledgementsDoNotPublishOrFollowUp]' started.
+Test Case '-[ToolstackKitTests.StalePublicationTests testLateToolAndConfigAcknowledgementsDoNotPublishOrFollowUp]' passed (0.002 seconds).
+Test Case '-[ToolstackKitTests.StalePublicationTests testLateUnauthorizedDoesNotSignOutB]' started.
+Test Case '-[ToolstackKitTests.StalePublicationTests testLateUnauthorizedDoesNotSignOutB]' passed (0.000 seconds).
+Test Suite 'StalePublicationTests' passed at 2026-10-24 warning: '--build-system native' has been deprecated and will be removed in a future release; please report an issue at https://github.com/swiftlang/swift-package-manager/issues if you are unable to adopt the default build system.
+10:38:47.024.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.008 (0.008) seconds
+Test Suite 'ToolstackPackageTests.xctest' failed at 2026-10-24 10:38:47.024.
+	 Executed 14 tests, with 1 failure (1 unexpected) in 0.555 (0.556) seconds
+Test Suite 'Selected tests' failed at 2026-10-24 10:38:47.024.
+	 Executed 14 tests, with 1 failure (1 unexpected) in 0.555 (0.557) seconds
+Note: Some test targets reported failures:
+  - ToolstackPackageTests (XCTest)

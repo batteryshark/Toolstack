@@ -1,0 +1,159 @@
+[
+  {
+    "case": "policy-1440",
+    "failures": [],
+    "assertions": 21,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "policy-1180",
+    "failures": [],
+    "assertions": 21,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "load-failure-1440",
+    "failures": [],
+    "assertions": 5,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "load-failure-1180",
+    "failures": [],
+    "assertions": 5,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "editor-1440",
+    "failures": [
+      "no button-button overlap"
+    ],
+    "assertions": 7,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "editor-1180",
+    "failures": [
+      "no button-button overlap"
+    ],
+    "assertions": 7,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "confirmation-1440",
+    "failures": [],
+    "assertions": 11,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "confirmation-1180",
+    "failures": [],
+    "assertions": 11,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "returned-unknown-1440",
+    "failures": [
+      "200 unknown stage cannot immediately retry without observation",
+      "returned unknown stage sends no duplicate mutation"
+    ],
+    "assertions": 6,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "returned-unknown-1180",
+    "failures": [
+      "200 unknown stage cannot immediately retry without observation",
+      "returned unknown stage sends no duplicate mutation"
+    ],
+    "assertions": 6,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "replacement-1440",
+    "failures": [],
+    "assertions": 8,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "replacement-1180",
+    "failures": [],
+    "assertions": 8,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "add-1440",
+    "failures": [],
+    "assertions": 5,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "add-1180",
+    "failures": [],
+    "assertions": 5,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "registered-1440",
+    "failures": [],
+    "assertions": 5,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "registered-1180",
+    "failures": [],
+    "assertions": 5,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "added-stopped-1440",
+    "failures": [],
+    "assertions": 5,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "added-stopped-1180",
+    "failures": [],
+    "assertions": 5,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "register-confirm-1440",
+    "failures": [],
+    "assertions": 5,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "register-confirm-1180",
+    "failures": [],
+    "assertions": 5,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "shell-startup-620",
+    "failures": [],
+    "assertions": 6,
+    "snapshot": "saved",
+    "window_visible": false
+  }
+]

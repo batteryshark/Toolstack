@@ -59,6 +59,10 @@ RestartSec=3
 # /toolstack/... itself). redeploy-toolstack parses these Environment= lines out of
 # this file, so the out-of-band CLI resolves the identical paths; keep them in sync.
 StateDirectory=toolstack
+StateDirectoryMode=0700
+UMask=0077
+LogsDirectory=toolstack
+LogsDirectoryMode=0700
 Environment=XDG_STATE_HOME=/var/lib
 Environment=XDG_CONFIG_HOME=/var/lib
 
@@ -82,17 +86,9 @@ LockPersonality=true
 # EDIT: point this at your install root (the same root as the Exec lines above).
 ReadWritePaths=/opt/toolstack
 
-# --- Docker tool runner (only when TOOLSTACK_RUNNER=docker) --------------------
-# The runner shells out to `docker build` / `docker run`, which needs two things the
-# rest of this unit otherwise denies:
-#   1. The docker socket. Grant the service the docker group (uncomment the line below,
-#      then `systemctl daemon-reload && systemctl restart toolstack-admin`). Without it
-#      every build/run is "permission denied ... unix:///var/run/docker.sock".
-#   2. A writable docker config. ProtectHome=true hides ~/.docker, so point DOCKER_CONFIG
-#      at the state dir (set unconditionally below; harmless for the process runner, it
-#      just stops the "Error loading config file: ~/.docker/config.json" warning).
-#SupplementaryGroups=docker
-Environment=DOCKER_CONFIG=/var/lib/toolstack/.docker
+# Trusted process mode only. Do not grant Docker group or sudo helper access.
+# Docker/Seatbelt+SPS and mutable Linux privileged helpers remain unsupported.
+Environment=TOOLSTACK_RUNNER=process
 
 [Install]
 WantedBy=multi-user.target

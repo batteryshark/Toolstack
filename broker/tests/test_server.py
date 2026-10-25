@@ -96,7 +96,11 @@ class ServerIntegration(unittest.TestCase):
     def test_health_ok(self):
         status, body, headers = self._req("GET", "/v1/health")
         self.assertEqual(status, 200)
-        self.assertEqual(body, {"status": "ok"})
+        self.assertEqual(body["status"], "ok")
+        self.assertEqual(set(body), {"status", "catalog_observation_id"})
+        self.assertRegex(body["catalog_observation_id"], r"^[0-9a-f]{32}$")
+        self.assertEqual(body["catalog_observation_id"],
+                         self.server.ctx.store.catalog_receipt()["observation_id"])
         self.assertIn("X-Correlation-Id", headers)
 
     def test_server_header_does_not_leak_version(self):

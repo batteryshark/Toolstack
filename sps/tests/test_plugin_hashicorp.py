@@ -11,8 +11,9 @@ class _StubResponse:
     def __init__(self, payload):
         self._b = json.dumps(payload).encode()
 
-    def read(self):
-        return self._b
+    def read(self, size=-1):
+        result, self._b = self._b[:size], self._b[size:]
+        return result
 
     def __enter__(self):
         return self
@@ -30,7 +31,7 @@ class RoundTrip(unittest.TestCase):
 
     def test_get_secret_kv_v2(self):
         secrets = {"data": {"data": {"API_KEY": "V"}}}
-        with mock.patch("urllib.request.urlopen", return_value=_StubResponse(secrets)):
+        with mock.patch("sps.transport.urlopen", return_value=_StubResponse(secrets)):
             plugin = HashicorpVaultPlugin(self.BLOCK)
             plugin.connect()
             self.assertEqual(plugin.get_secret("API_KEY", "echo"), "V")
@@ -39,15 +40,17 @@ class RoundTrip(unittest.TestCase):
         captured: list[tuple[str, str, bytes]] = []
         def fake_urlopen(req, timeout=None):
             captured.append((req.method, req.full_url, req.data))
+            if req.method == "GET":
+                return _StubResponse({"data": {"data": {"sibling": "preserve"}, "metadata": {"version": 7}}})
             return _StubResponse({})
-        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with mock.patch("sps.transport.urlopen", side_effect=fake_urlopen):
             plugin = HashicorpVaultPlugin(self.BLOCK)
             plugin.connect()
             plugin.write_secret("API_KEY", "echo", "V-new")
-        method, url, body = captured[0]
+        method, url, body = captured[1]
         self.assertEqual(method, "POST")
         self.assertIn("/v1/secret/data/echo", url)
-        self.assertEqual(json.loads(body.decode()), {"data": {"API_KEY": "V-new"}})
+        self.assertEqual(json.loads(body.decode()), {"data": {"API_KEY": "V-new", "sibling": "preserve"}, "options": {"cas": 7}})
 
     def test_requests_carry_x_vault_token(self):
         # urllib.request.Request normalizes header names via email-message style
@@ -58,7 +61,7 @@ class RoundTrip(unittest.TestCase):
         def fake_urlopen(req, timeout=None):
             captured.append(dict(req.headers))
             return _StubResponse(secrets)
-        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with mock.patch("sps.transport.urlopen", side_effect=fake_urlopen):
             plugin = HashicorpVaultPlugin(self.BLOCK)
             plugin.connect()
             plugin.get_secret("API_KEY", "echo")
@@ -68,7 +71,7 @@ class RoundTrip(unittest.TestCase):
 
     def test_missing_field_raises_keyerror(self):
         secrets = {"data": {"data": {}}}
-        with mock.patch("urllib.request.urlopen", return_value=_StubResponse(secrets)):
+        with mock.patch("sps.transport.urlopen", return_value=_StubResponse(secrets)):
             plugin = HashicorpVaultPlugin(self.BLOCK)
             plugin.connect()
             with self.assertRaises(KeyError):

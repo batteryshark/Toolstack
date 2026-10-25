@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from ..catalog_observation import target_verified
 
 from .assets import _TOOL_EDITOR_JS
 from .components import _alerts
@@ -24,17 +25,21 @@ def _secret_backend_note(sps: dict | None) -> str:
     return ""
 
 
-def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str:
-    def action(tool_id, act, label, disabled):
+def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None, catalog=None, broker_port=None, focused=False, mutation_outcome=None) -> str:
+    def action(tool_id, act, label, disabled, primary=False):
         d = " disabled" if disabled else ""
-        return (f"<form method='post' action='/toolyard/tools/{esc(tool_id)}/{act}' class='inline-form'>"
-                f"{_csrf_field(csrf)}<button type='submit'{d}>{esc(label)}</button></form>")
+        confirmation = (f" data-confirm='{esc('Restart ' + tool_id + '? Stops then starts trusted tool code; interrupts active calls. Requests are not replayed.')}'"
+                        if act == "restart" else "")
+        return (f"<form method='post' action='/toolyard/tools/{esc(tool_id)}/{act}' class='inline-form' data-mutation{confirmation}>"
+                f"{_csrf_field(csrf)}<button type='submit' class='{'primary' if primary else ''}'{d}>{esc(label)}</button></form>")
 
     rows = ""
     for t in tools:
-        if t["running"]:
-            state = ("running" if t["alive"] else "running?")
-            cls = "ok" if t["alive"] else "bad"
+        if t.get("alive") is None:
+            state, cls = "Unknown · observation unavailable", "muted"
+        elif t["running"]:
+            state = ("Alive" if t["alive"] else "Failed · process absent (running record)")
+            cls = "muted" if t["alive"] else "bad"
         else:
             state, cls = "stopped", "muted"
         running = t["running"]
@@ -52,36 +57,47 @@ def tools_view(*, user, csrf, tools, tools_root, banner=None, error=None) -> str
         # An external (tool_dirs) tool is unregistered (files left on disk); a managed tool under
         # the tools root is deleted. Show the action for both, with the matching verb + warning.
         if t.get("removable"):
-            confirm, label = "Unregister this tool? Its files stay on disk.", "Unregister"
+            confirm, label = f"Unregister {t['id']}? Its files stay on disk.", "Unregister"
         else:
-            confirm, label = "Remove this tool? This deletes its folder and cannot be undone.", "Remove"
+            confirm, label = f"Remove {t['id']}? This deletes its managed folder and cannot be undone.", "Remove"
         remove = (
             f"<form method='post' action='/tools/{esc(t['id'])}/remove' class='inline-form' "
-            f"onsubmit=\"return confirm('{confirm}')\">"
+            f"data-confirm='{esc(confirm)}'>"
             f"{_csrf_field(csrf)}<button type='submit'>{label}</button></form>"
         )
+        registered = target_verified(catalog, t['id'])
+        registration = "Catalog verified" if registered else "Registration unknown"
+        register = ""
+        if not registered and broker_port is not None:
+            question = f"Restart local broker 127.0.0.1:{broker_port} for {t['id']}? Reloads catalog; interrupts broker availability and active calls."
+            register = (f"<form method='post' action='/broker/restart' data-confirm='{esc(question)}' class='inline-form'>"
+                        f"{_csrf_field(csrf)}<input type='hidden' name='catalog_target' value='{esc(t['id'])}'>"
+                        f"<button type='submit' class='{'primary' if focused and alive else ''}'>Register with broker…</button></form>")
         rows += (
             "<tr>"
-            f"<td><strong>{esc(t['id'])}</strong></td>"
+            f"<td><a href='/tools?tool={esc(t['id'])}'><strong>{esc(t['id'])}</strong></a></td>"
             f"<td>{esc(t['port'])}</td>"
-            f"<td><span class='pill {cls}'>{esc(state)}</span></td>"
+            f"<td><span class='pill {cls}'>{esc(state)}</span><div class='muted'>{registration}</div></td>"
             f"<td><code>{esc(t.get('path', ''))}</code></td>"
             "<td class='actions'>"
             f"<a class='button' href='/tools/{esc(t['id'])}/edit'>Edit</a>"
-            f"{action(t['id'], 'start', 'Start', alive)}"
+            f"{action(t['id'], 'start', 'Start', alive, focused and not running)}"
             f"{action(t['id'], 'stop', 'Stop', not running)}"
-            f"{action(t['id'], 'restart', 'Restart', not running)}"
+            f"{action(t['id'], 'restart', 'Restart', False, focused and running and not alive)}"
+            f"{register}"
             f"{update}"
             f"{remove}"
             "</td></tr>"
         )
     rows = rows or "<tr><td colspan='5' class='muted'>No tools defined yet.</td></tr>"
+    refresh = f"/tools?tool={esc(tools[0]['id'])}" if focused and len(tools) == 1 else "/tools"
     body = (
-        _alerts(banner, error)
+        ("<div data-mutation-outcome='unknown' hidden></div>" if mutation_outcome == 'unknown' else '')
+        + _alerts(banner, error)
         + "<section><div class='row'><a class='button' href='/'>Back</a>"
         f"<h2>Tools</h2><span class='muted'>root: <code>{esc(tools_root)}</code></span>"
         "<a class='button' href='/tools/new'>Author a tool</a>"
-        "<a class='button' href='/tools/add'>Add from source</a></div>"
+        f"<a class='button{'' if focused else ' primary'}' href='/tools/add'>Add from source</a><a class='button' href='{refresh}'>Refresh state</a></div>"
         "<table><thead><tr><th>Tool</th><th>Port</th><th>State</th><th>Directory</th><th>Actions</th></tr></thead>"
         f"<tbody>{rows}</tbody></table>"
         "<p class='muted'>Starting a tool resolves its secrets and runs it. A newly added or "
@@ -100,16 +116,16 @@ def tool_add_view(*, user, csrf, source_value="", repo_value="", error=None) -> 
         "<section><div class='row'><a class='button' href='/tools'>Back</a>"
         "<h2>Add a tool from a source</h2></div>"
         "<p class='muted'>Copy a tool that already has a <code>toolyard.toml</code> into the tools "
-        "root, so the broker auto-discovers it. Its source is recorded so you can <strong>Update</strong> "
+        "root. Catalog registration requires a separate broker restart. Its source is recorded so you can <strong>Update</strong> "
         "(re-pull) it later. To hand-author a manifest instead, use "
         "<a href='/tools/new'>Author a tool</a>.</p>"
 
         "<h3>From a local folder</h3>"
-        f"<form method='post' action='/tools/add-source'>{_csrf_field(csrf)}"
+        f"<form method='post' action='/tools/add-source' data-mutation>{_csrf_field(csrf)}"
         "<input type='hidden' name='kind' value='path'>"
         "<label class='field'>Folder path <span class='muted'>(absolute, on the server)</span>"
         f"<input name='source' value='{esc(source_value)}' placeholder='/srv/tools/weather' required></label>"
-        "<div class='actions'><button type='submit'>Add from folder</button></div></form>"
+        "<div class='actions'><button type='submit' class='primary'>Add from folder</button></div></form>"
 
         "<h3>From a Git repository</h3>"
         f"<form method='post' action='/tools/add-source'>{_csrf_field(csrf)}"
@@ -198,7 +214,7 @@ def tool_editor_view(*, user, csrf, mode, tool, dir_value="", backend=None, erro
         "<input type='hidden' name='tool_json' id='tool_json'>"
         "<div class='actions'><button type='submit'>Save tool</button>"
         "<a class='button' href='/tools'>Cancel</a></div></form>"
-        "<p class='muted'>Saving writes <code>toolyard.toml</code> to the directory and registers it. "
+        "<p class='muted'>Saving writes <code>toolyard.toml</code> to the directory. "
         "Restart the broker (dashboard) to pick it up, then grant a caller access in its policy.</p>"
         "</section>"
         f"<script>window.TOOL_INITIAL = {initial};</script>"

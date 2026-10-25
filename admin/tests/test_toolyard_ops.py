@@ -3,6 +3,7 @@ state, and fail cleanly on an unknown tool. Actually starting tools is covered b
 toolyard's own runner tests, so this stays light (no process is spawned)."""
 
 import os
+from contextlib import nullcontext
 import shutil
 import tempfile
 import unittest
@@ -18,6 +19,9 @@ from toolyard.runner import RunningTool
 
 class ToolyardOps(unittest.TestCase):
     def setUp(self):
+        patcher = mock.patch("admin.toolyard_ops.state_lock", side_effect=nullcontext)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmp = tempfile.mkdtemp(prefix="admin-ty-")
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self._prev = os.environ.get("XDG_STATE_HOME")

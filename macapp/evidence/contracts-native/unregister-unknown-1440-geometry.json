@@ -1,0 +1,118 @@
+[
+  {
+    "class" : "NSHostingView<ModifiedContent<ModifiedContent<ModifiedContent<ModifiedContent<ModifiedContent<AnyView, _EnvironmentKeyWritingModifier<Optional<AppModel>>>, _EnvironmentKeyWritingModifier<ColorScheme>>, _EnvironmentKeyWritingModifier<ControlActiveState>>, _FrameLayout>, _BackgroundStyleModifier<Color>>>",
+    "frame" : "{{0, 0}, {1440, 900}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{168, 8}, {56, 40}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{232, 8}, {56, 40}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{296, 8}, {56, 40}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{1351, 16}, {77, 24}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{1275, 72}, {149, 24}}"
+  },
+  {
+    "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<SystemSegmentedControl>>",
+    "frame" : "{{580, 127}, {280, 24}}"
+  },
+  {
+    "class" : "SwiftUISegmentedControl",
+    "frame" : "{{580, 127}, {280, 24}}"
+  },
+  {
+    "class" : "_NSCoreHostingView<AppKitSegmentedControl>",
+    "frame" : "{{580, 127}, {280, 24}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{1326, 174}, {98, 24}}"
+  },
+  {
+    "class" : "AppKitPlatformViewHost<OutlineListRepresentable<SelectionManagerBox<Never>>>",
+    "frame" : "{{0, 207}, {1440, 693}}"
+  },
+  {
+    "class" : "ListCoreScrollView",
+    "frame" : "{{0, 207}, {1440, 693}}"
+  },
+  {
+    "class" : "_NSScrollViewContentBackgroundView",
+    "frame" : "{{0, 207}, {1440, 693}}"
+  },
+  {
+    "class" : "NSVisualEffectView",
+    "frame" : "{{0, 207}, {1440, 693}}"
+  },
+  {
+    "class" : "ListCoreClipView",
+    "frame" : "{{0, 207}, {1440, 693}}"
+  },
+  {
+    "class" : "SwiftUIOutlineListView",
+    "frame" : "{{0, 207}, {1440, 693}}"
+  },
+  {
+    "class" : "ListTableRowView",
+    "frame" : "{{0, 217}, {1440, 40}}"
+  },
+  {
+    "class" : "_NSTableRowSeparatorDrawingView",
+    "frame" : "{{0, 217}, {1440, 40}}"
+  },
+  {
+    "class" : "ListTableCellView",
+    "frame" : "{{25, 217}, {1399, 40}}"
+  },
+  {
+    "class" : "CellHostingView<ModifiedContent<_ViewList_View, CellContentModifier>>",
+    "frame" : "{{25, 217}, {1399, 40}}"
+  },
+  {
+    "class" : "SwiftUIAppKitButton",
+    "frame" : "{{1312, 221}, {32, 32}}"
+  },
+  {
+    "class" : "ContentViewHost",
+    "frame" : "{{1312, 221}, {32, 32}}"
+  },
+  {
+    "class" : "SwiftUIAppKitButton",
+    "frame" : "{{1352, 221}, {32, 32}}"
+  },
+  {
+    "class" : "ContentViewHost",
+    "frame" : "{{1352, 221}, {32, 32}}"
+  },
+  {
+    "class" : "SwiftUIAppKitButton",
+    "frame" : "{{1392, 221}, {32, 32}}"
+  },
+  {
+    "class" : "ContentViewHost",
+    "frame" : "{{1392, 221}, {32, 32}}"
+  },
+  {
+    "class" : "NSButton",
+    "frame" : "{{12, 217}, {13, 40}}"
+  },
+  {
+    "class" : "NSButtonImageView",
+    "frame" : "{{12, 230}, {13, 13}}"
+  },
+  {
+    "class" : "NSScroller",
+    "frame" : "{{-17, 207}, {17, 0}}"
+  }
+]

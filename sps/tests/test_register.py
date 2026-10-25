@@ -63,7 +63,7 @@ class Register(unittest.TestCase):
         resp = handle_register(ctx, _reg_msg())
         self.assertEqual(resp["status"], "ok")
         self.assertEqual(store.get("echo").esecret, "e" + "1" * 63)  # type: ignore[union-attr]
-        self.assertIn(("register", "echo", ""), audit.events)
+        self.assertEqual(audit.events, [])  # transport owns outcome auditing
 
     def test_register_requires_sp_auth(self):
         ctx = _ctx()
@@ -122,7 +122,7 @@ class Register(unittest.TestCase):
         handle_register(ctx, _reg_msg(esecret="a" * 64))
         handle_register(ctx, _reg_msg(esecret="b" * 64))
         self.assertEqual(store.get("echo").esecret, "b" * 64)  # type: ignore[union-attr]
-        self.assertEqual(sum(1 for e in audit.events if e[0] == "register"), 2)
+        self.assertEqual(audit.events, [])
 
 
 class Unregister(unittest.TestCase):
@@ -134,4 +134,4 @@ class Unregister(unittest.TestCase):
         resp = handle_unregister(ctx, {"op": "unregister", "spsecret": "sp-1", "toolid": "echo"})
         self.assertEqual(resp["status"], "ok")
         self.assertIsNone(store.get("echo"))
-        self.assertIn(("unregister", "echo", ""), audit.events)
+        self.assertEqual(audit.events, [])

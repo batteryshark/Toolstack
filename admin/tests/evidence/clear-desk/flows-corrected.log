@@ -1,0 +1,9 @@
+/Users/batteryshark/.cache/uv/archive-v0/glcQ6zq55NJq8otq/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_add_start_register_are_separate_named_decisions (admin.tests.test_app.AdminApp.test_add_start_register_are_separate_named_decisions) ... ok
+test_failed_recovery_retains_named_target_without_replay (admin.tests.test_app.AdminApp.test_failed_recovery_retains_named_target_without_replay) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.126s
+
+OK

@@ -1,181 +1,97 @@
-# Deploying Toolstack
+# Deployment (trusted host only)
 
-This directory holds the operator-facing deployment artifacts for a real (homelab /
-single-host) install via **systemd**. It deploys the **admin web app**, which in turn
-supervises the **broker**; the toolyard and tools run as the admin app starts them.
+See [runtime matrix](../docs/runtime-matrix.md). Source templates are not evidence
+of a deployed, hardened installation. No privileged mutable Python helper is supported.
+Release use requires a dedicated Toolstack VM containing only Toolstack and trusted
+tools under its account. Agents must remain outside the host with broker-only access.
+Same-machine/account agents are local/dev only and do not isolate secrets.
 
-> **On a laptop?** For a self-contained, no-server install, use the one-box Docker setup
-> instead: [`docker/`](docker/); `docker compose up` brings up the whole stack with an
-> encrypted local vault. See [docker/README.md](docker/README.md).
+## Native Linux recipe
 
-| File | What it is |
-|---|---|
-| [`toolstack-admin.service`](toolstack-admin.service) | systemd unit **template** for the admin panel (+ the broker it supervises). Ships with placeholders; copy and edit, don't symlink. |
-| [`toolstack-admin.env.example`](toolstack-admin.env.example) | example `EnvironmentFile`: the site config (admin / toolyard runner). Copy, fill in, `chmod 600`. |
-| [`redeploy-toolstack`](redeploy-toolstack) | one command to pull + refresh the venv + restart the service + restart registered tools. |
+Python 3.11+ and OpenSSL are required. Review `install.sh` before executing as root:
+it creates an account, changes checkout ownership, installs into a dedicated venv,
+sets a password interactively and enables services. These templates have **not** been installed or run in the reported validation.
+Only trusted process tools may run under the shared service account. Do not add
+sudoers permissions for `toolyard.netguard`, Docker group membership, or remove
+`NoNewPrivileges=true` to work around unsupported backends.
 
-The broker, toolyard, and client are stdlib-only Python (3.11+). The **admin app is the
-one component with runtime dependencies** (FastAPI + uvicorn), so it runs from its own
-virtualenv. See [admin/README.md](../admin/README.md) for what the panel does.
+`uv.lock` is authoritative. `admin/requirements-lock.txt` is its complete deployment
+export, used as requirements AND constraints by install, redeploy and Docker builds.
+The vault dependency is `cryptography>=50.0.2,<51`, locked to **50.0.2**.
+Use the current lock and minimum fixed line, not the obsolete 45.x / `<46` range;
+see [dependency evidence and limits](../docs/security-contracts.md#dependency-and-validation-evidence).
+Regenerate using the command in `admin/requirements.txt`. Install is non-editable;
+admin runs from the checkout under systemd, while the installed wheel must also work
+without that checkout. Redeploy updates both; stop workloads first for upgrades.
 
-## Prerequisites
+## SPS bootstrap (offline)
 
-- **Python 3.11+** (the broker/toolyard use `tomllib`).
-- A **service account**: a dedicated `toolstack` user + group (`sudo useradd --system --user-group --shell /usr/sbin/nologin toolstack`), or point the unit's `User=` / `Group=` at an account you already have.
-- An **admin virtualenv** with the package + panel deps: `python3 -m venv admin/.venv && admin/.venv/bin/pip install -e '.[vault]' -r admin/requirements.txt` (run from the checkout root). Installing the package puts `brokerctl` / `toolstack` / `toolyard` in `admin/.venv/bin` alongside the admin. (`deploy/install.sh` and `redeploy-toolstack` do this for you.)
-- A **secret backend** (SPS) — phase 5: a separate SPS service holds tool
-  secrets; tools pull them at boot over TLS/TCP. Configure via
-  [`sps.env.example`](sps.env.example) (Infisical / Hashicorp Vault /
-  local encrypted file). The runner + tooltalk path is one line each.
-- For production tool isolation: **Docker** (`TOOLSTACK_RUNNER=docker`); the `process` runner is dev-only. The docker runner needs a little extra setup, see "Docker tool runner" below.
-- For human approvals: a reachable **[nod](https://github.com/batteryshark/nod)** instance and an issuer token, configured from the dashboard, not this env file (see "Broker config" below).
+`sps.env` is TOML despite its suffix; never source it or load it as a systemd
+EnvironmentFile. `/etc/toolstack/sps-runtime.env` is a separate, mode-0600 systemd
+file for `SP_VAULT_PASSPHRASE` (use a fake value in development). The installer
+creates `/etc/toolstack`; unprivileged users must not try to create it themselves.
 
-## Install
+After install, before enabling SPS for the first time, as root:
 
-**The quick way:** from the checkout, `sudo deploy/install.sh` does everything below in one
-shot, creating the service user, building the venv, prompting for the admin password, and
-installing + enabling the unit. Override the account with `TOOLSTACK_USER=<name>`. The manual
-steps follow for when you want to do it by hand.
-
-1. **Lay down the code** at your install root (the examples assume `/opt/toolstack`, owned by a `toolstack` user, change to taste) and build the admin venv (above).
-2. **Create the state dir and set the admin password** (the panel fails closed; it refuses to start without one). The service keeps everything it writes under `/var/lib/toolstack` (the unit's `StateDirectory` owns it); create it now so the password lands where the service will read it:
-   ```bash
-   sudo install -d -o toolstack -g toolstack -m700 /var/lib/toolstack
-   sudo -u toolstack env XDG_CONFIG_HOME=/var/lib XDG_STATE_HOME=/var/lib \
-       admin/.venv/bin/python -m admin set-password
-   ```
-   The `XDG_*` values match the unit (see its "State location" block); every manual `admin` / `brokerctl` command needs them so it resolves the same paths as the running service.
-3. **Site config**: copy and fill in the env file, then lock it down (it can hold an Infisical host / paths):
-   ```bash
-   sudo install -D -m600 deploy/toolstack-admin.env.example /etc/toolstack/admin.env
-   sudoedit /etc/toolstack/admin.env
-   ```
-4. **Install the unit**: copy the template and edit every line marked `EDIT:` (the service account and the install root, which repeats in `WorkingDirectory` + the three `Exec` lines):
-   ```bash
-   sudo cp deploy/toolstack-admin.service /etc/systemd/system/toolstack-admin.service
-   sudoedit /etc/systemd/system/toolstack-admin.service
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now toolstack-admin
-   ```
-5. **Reach the panel** over a tunnel that terminates TLS (Tailscale Serve, SSH, etc.); it binds `127.0.0.1` only and has no TLS of its own. Never bind it to a public interface.
-
-The broker's own run-config (its port, DB path, the nod URL/token/channel, approval TTL,
-rate limit) is **not** in the env file; the admin app stores it in `broker.toml` and you
-edit it from the dashboard's **Config** page. (`admin/broker_config.py` is the source of truth.)
-
-## Docker tool runner
-
-With `TOOLSTACK_RUNNER=docker`, the service shells out to `docker build` / `docker run`, which
-needs two things the unit's sandbox otherwise denies:
-
-1. **Access to the docker socket.** Grant the service the `docker` group, or every build is
-   `permission denied ... unix:///var/run/docker.sock`. Uncomment `SupplementaryGroups=docker`
-   in the unit (or `sudo usermod -aG docker toolstack`), then **reload and restart** so the new
-   group takes effect:
-   ```bash
-   sudo systemctl daemon-reload && sudo systemctl restart toolstack-admin
-   ```
-   The restart matters: a group change doesn't reach the already-running service until it
-   re-execs.
-2. **A writable docker config.** `ProtectHome=true` hides `~/.docker`, so the unit sets
-   `DOCKER_CONFIG=/var/lib/toolstack/.docker` (under the state dir). Nothing to do; this just
-   silences the `Error loading config file: ~/.docker/config.json` warning.
-
-Each tool you run under docker must carry a `Dockerfile` or an `image=` in its `toolyard.toml`
-(a process `command` alone won't build); the bundled samples do.
-
-## Supervision model (why `ExecStartPost`, and why it's not an orphan bug)
-
-`ExecStart` runs the **admin panel**, the long-lived, systemd-tracked process. The
-**broker is not a child of it**. It is supervised out of band by a state file (PID + port
-under the admin XDG state dir), exactly like the toolyard's `ProcessRunner`: it runs in its
-own process group, started and stopped through `admin.supervisor`. `ExecStartPost`
-auto-starts it on boot (idempotent: it no-ops if a healthy broker is already recorded) and
-`ExecStopPost` tears it down; init reaps it. You can also start/stop/restart it from the
-dashboard.
-
-**Trade-off:** because systemd doesn't track the broker, a broker *crash* won't trigger a
-systemd restart on its own; the dashboard surfaces broker health, and the unit's
-`Restart=on-failure` only covers the panel. If you'd rather systemd own the broker directly,
-run `python -m broker.server` as its own unit (with the same `EnvironmentFile`) and drop the
-`ExecStartPost`/`ExecStopPost` lines.
-
-## Redeploying
-
-From anywhere in the checkout:
-
-```bash
-deploy/redeploy-toolstack [--pull] [--skip-venv] [--skip-service] [--skip-tools]
+```sh
+umask 077
+/opt/toolstack/admin/.venv/bin/python /opt/toolstack/deploy/bootstrap-sps.py
+chown toolstack:toolstack /etc/toolstack/sps.env /etc/toolstack/sps.key
+chown toolstack:toolstack /etc/toolstack/sps.crt /etc/toolstack/sps-ca.crt
 ```
 
-It optionally fast-forwards git, refreshes the admin venv, restarts the service (admin +
-broker), and restarts every tool in the saved run-config. It loads the same site env as the
-unit (`TOOLSTACK_ENV_FILE`, default `/etc/toolstack/admin.env`) so the tool restarts use the
-deployment's runner / secret backend.
+Adjust account and install root to match the installer. Bootstrap creates only TLS
+material/config, not a vault. Vault lives in `/var/lib/toolstack/sps.vault.json`,
+audit in `/var/log/toolstack/sps.audit`; `/etc` remains read-only in the services.
+Provision `sps init-vault` and `sps vault-set` as the service user with the venv,
+explicit `--config /etc/toolstack/sps.env`, and the same passphrase as the SPS
+runtime file. Keep SPS **stopped during all direct provisioning**. Never put real
+values on command lines, in git, or in shell history. Restrict runtime-file ownership
+to root and mode 0600; systemd reads it before dropping privileges.
 
-Two safety steps wrap the restart: it **snapshots the broker DB** first (an online SQLite
-backup under `.../broker/backups/`, newest 7 kept) and then **health-gates** the broker
-(`/v1/health`) and panel (`/login`). If the stack doesn't come back up it stops there
-rather than restarting tools against a down broker. Run it as the `toolstack` user (it
-reads the broker's state and DB directly); `sudo` is used only for `systemctl`.
+Set `TOOLSTACK_SPS_ENV=/etc/toolstack/sps.env` in admin.env if required by the
+resolved runner configuration (see SPS docs); use verified TLS and explicit CA path.
+Verify the runner's resolved SPS configuration and CA path before deployment.
+Start SPS, then admin; check journal and health before launching trusted tools.
+Private umask/directories do not isolate processes sharing the same uid.
 
-## Verify
+## Updates, backup and restore
 
-```bash
-systemctl status toolstack-admin           # the panel is active (running)
-curl -s 127.0.0.1:8765/v1/health           # the broker -> {"status":"ok"}
-curl -s 127.0.0.1:8780/login -o /dev/null -w '%{http_code}\n'   # the panel -> 200
-```
-Then open the dashboard: the broker card shows healthy, and the audit view fills as
-requests flow.
+`redeploy-toolstack` snapshots SQLite with the SQLite backup API before restarting
+services (seven snapshots retained). These contain sensitive arguments/results;
+directories are private and copies need equivalent protection. A SQLite snapshot
+alone is NOT a complete installation backup. Back up config, TLS, encrypted vault,
+its separately protected passphrase, tool manifests and application version as a
+consistent offline set after stopping tools/admin/SPS. Do not copy a live SQLite
+file without its WAL; use the backup API or stop all writers first.
 
-## First run: provision an agent (headless)
+Broker schema 3 includes caller-scoped receipts, manual retention and offline recovery.
+Use explicit private paths (examples below are placeholders), with the installed
+version's Python environment. See the [complete maintenance contract](../docs/security-contracts.md#manual-retention-and-offline-recovery):
 
-The dashboard can do all of this, but a fresh box can be bootstrapped entirely from the
-CLI. `brokerctl` is the operator tool; run it as the service user with the same `XDG_*`
-paths as the unit so it opens the broker's DB (define a small helper to avoid repeating it):
-
-```bash
-ctl() { sudo -u toolstack env XDG_CONFIG_HOME=/var/lib XDG_STATE_HOME=/var/lib \
-    admin/.venv/bin/brokerctl "$@"; }
-
-ctl create-caller --name my-agent --allow echo_api.echo   # the agent identity + an initial grant
-ctl set-policy   --name my-agent --review some_tool.write # (optional) route an op through approval
-ctl issue-token  --name my-agent                          # prints the bearer token; copy it once
+```sh
+python3 -m broker.brokerctl prune-payloads --db /private/state/broker.db
+python3 -m broker.brokerctl backup --db /private/state/broker.db --destination /private/backups/snapshot.db
 ```
 
-Give the token to the agent as its `Authorization: Bearer ...`. Tighten or widen access later
-with `set-policy` (`--allow` / `--review` / `--deny`), and rotate with `revoke-token` /
-`issue-token`. (`ctl` uses the broker's default DB path; if you
-changed `db_path` in `broker.toml`, pass `--db <path>`.)
+Pruning is manual: terminal payloads must be **strictly older than seven days**.
+Caller/key/digest tombstones remain; active work is not pruned. WAL and backups can
+retain bytes, so this is not secure erasure. Backup uses SQLite's backup API,
+including committed WAL, and publishes only to a **NEW destination**.
 
-## Backups
+**Stop ALL broker/admin/CLI writers** before either offline command:
 
-Everything persistent lives under the state dir (`/var/lib/toolstack`). Two things are worth
-backing up off-box:
+```sh
+python3 -m broker.brokerctl reconcile-offline --db /private/state/broker.db --confirm-offline
+python3 -m broker.brokerctl restore-new --snapshot /private/backups/snapshot.db --destination /private/recovery/new.db --confirm-offline
+```
 
-- **Broker SQLite** (`/var/lib/toolstack/broker/broker.sqlite3`): callers, tokens, policies,
-  request history, audit log. Take a *consistent* copy while the broker runs with SQLite's
-  online backup (`redeploy-toolstack` does this automatically before each restart):
-  ```bash
-  sudo -u toolstack sqlite3 /var/lib/toolstack/broker/broker.sqlite3 \
-      ".backup '/var/lib/toolstack/broker/backups/manual-$(date +%F).sqlite3'"
-  ```
-- **Config + secrets**: `broker.toml` (run-config; holds the nod issuer token) and, with the
-  encrypted-vault backend, `vault.json` (both under `/var/lib/toolstack/admin/` and
-  `/var/lib/toolstack/`). The vault is useless without its passphrase; store that separately.
-
-Restore is a file copy back into place with the service stopped. There is no DB-migration
-framework; restore into the same (or a forward-compatible) version.
-
-## Upgrading from an earlier install (state location)
-
-This template pins all state under `/var/lib/toolstack` (`StateDirectory` + `XDG_*_HOME=/var/lib`).
-Earlier templates relied on the service user's `$HOME` (`~/.local/state/toolstack/...`, or an
-even older `.../tsr` path). Admin and broker both read `db_path` from `broker.toml`, so an
-upgrade isn't data loss; it just points at a different SQLite file than the old `$HOME` one.
-To keep your history, stop the service, move the old DB to
-`/var/lib/toolstack/broker/broker.sqlite3` (and the old `broker.toml` / `vault.json` under
-`/var/lib/toolstack/`), then start it. Or update `db_path` on the dashboard **Config** page to
-point at wherever the old DB lives. No DB-migration framework; assume a fresh DB across a
-major upgrade if you don't migrate.
+Confirmation asserts offline operation; it does not detect or stop writers.
+Reconcile marks received/executing work unknown without replay. Restore cancels
+pending approvals, marks received/executing work unknown, revokes **ALL tokens**,
+clears **ALL policies**, and rotates the installation UUID. Source DB and backup
+are never overwritten; restore neither switches the running DB nor replays effects.
+Post-snapshot keys/effects are unknown to a stale backup: reconcile external history
+before restoring authority or replaying queues. Reissuing tokens alone restores no
+grants. Broker recovery does not restore SPS/provider state; test the complete
+offline backup set with fake data before operational use.

@@ -1,0 +1,3716 @@
+{
+  "activation_policy": {
+    "after": 2,
+    "before": 2,
+    "request_returned": false,
+    "required": 2
+  },
+  "error": null,
+  "persistent_store": false,
+  "pid": 36756,
+  "results": [
+    {
+      "case": "policy-1440",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1344.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 209,
+            "y": 110.140625
+          },
+          {
+            "height": 38,
+            "label": "Save policy",
+            "tag": "BUTTON",
+            "width": 93.234375,
+            "x": 435.328125,
+            "y": 110.140625
+          },
+          {
+            "height": 38,
+            "label": "AllowReviewDeny",
+            "tag": "SELECT",
+            "width": 87,
+            "x": 807.5625,
+            "y": 284.78125
+          }
+        ],
+        "results": [
+          {
+            "name": "rejected save retains editable draft",
+            "ok": true
+          },
+          {
+            "name": "rejection visible",
+            "ok": true
+          },
+          {
+            "name": "unknown save blocks retry and retains draft",
+            "ok": true
+          },
+          {
+            "name": "comparison retains differing draft",
+            "ok": true
+          },
+          {
+            "name": "saved effect shown alongside draft",
+            "ok": true
+          },
+          {
+            "name": "dirty navigation opens dialog",
+            "ok": true
+          },
+          {
+            "name": "safe Stay receives focus",
+            "ok": true
+          },
+          {
+            "name": "Stay retains draft",
+            "ok": true
+          },
+          {
+            "name": "policy control focusable",
+            "ok": true
+          },
+          {
+            "name": "acknowledged save receipt",
+            "ok": true
+          },
+          {
+            "name": "500 after effect is unknown; duplicate submit sends one write",
+            "ok": true
+          },
+          {
+            "name": "comparison never replays mutation",
+            "ok": true
+          },
+          {
+            "name": "failed comparison locks Save",
+            "ok": true
+          },
+          {
+            "name": "mismatched comparison scope locks Save",
+            "ok": true
+          },
+          {
+            "name": "fresh successful comparison unlocks explicit save",
+            "ok": true
+          },
+          {
+            "name": "signout defaults to Stay",
+            "ok": true
+          },
+          {
+            "name": "signout Stay retains draft without submitting",
+            "ok": true
+          },
+          {
+            "name": "signout Discard submits exactly once without capture loop",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "select target at least 38px: op__notes-demo__read_note",
+            "ok": true
+          },
+          {
+            "name": "policy effect names caller/tool/operation",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Save policy",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "policy-1180",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1084.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 79,
+            "y": 110.140625
+          },
+          {
+            "height": 38,
+            "label": "Save policy",
+            "tag": "BUTTON",
+            "width": 93.234375,
+            "x": 305.328125,
+            "y": 110.140625
+          },
+          {
+            "height": 38,
+            "label": "AllowReviewDeny",
+            "tag": "SELECT",
+            "width": 87,
+            "x": 677.5625,
+            "y": 284.78125
+          }
+        ],
+        "results": [
+          {
+            "name": "rejected save retains editable draft",
+            "ok": true
+          },
+          {
+            "name": "rejection visible",
+            "ok": true
+          },
+          {
+            "name": "unknown save blocks retry and retains draft",
+            "ok": true
+          },
+          {
+            "name": "comparison retains differing draft",
+            "ok": true
+          },
+          {
+            "name": "saved effect shown alongside draft",
+            "ok": true
+          },
+          {
+            "name": "dirty navigation opens dialog",
+            "ok": true
+          },
+          {
+            "name": "safe Stay receives focus",
+            "ok": true
+          },
+          {
+            "name": "Stay retains draft",
+            "ok": true
+          },
+          {
+            "name": "policy control focusable",
+            "ok": true
+          },
+          {
+            "name": "acknowledged save receipt",
+            "ok": true
+          },
+          {
+            "name": "500 after effect is unknown; duplicate submit sends one write",
+            "ok": true
+          },
+          {
+            "name": "comparison never replays mutation",
+            "ok": true
+          },
+          {
+            "name": "failed comparison locks Save",
+            "ok": true
+          },
+          {
+            "name": "mismatched comparison scope locks Save",
+            "ok": true
+          },
+          {
+            "name": "fresh successful comparison unlocks explicit save",
+            "ok": true
+          },
+          {
+            "name": "signout defaults to Stay",
+            "ok": true
+          },
+          {
+            "name": "signout Stay retains draft without submitting",
+            "ok": true
+          },
+          {
+            "name": "signout Discard submits exactly once without capture loop",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "select target at least 38px: op__notes-demo__read_note",
+            "ok": true
+          },
+          {
+            "name": "policy effect names caller/tool/operation",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Save policy",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1180
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "load-failure-1440",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1344.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 209,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Save policy",
+            "tag": "BUTTON",
+            "width": 93.234375,
+            "x": 435.328125,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Retry load",
+            "tag": "A",
+            "width": 85.609375,
+            "x": 421.953125,
+            "y": 255.296875
+          }
+        ],
+        "results": [
+          {
+            "name": "failed load locks Save",
+            "ok": true
+          },
+          {
+            "name": "failed load offers Retry",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Save policy",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Retry load",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "load-failure-1180",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1084.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 79,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Save policy",
+            "tag": "BUTTON",
+            "width": 93.234375,
+            "x": 305.328125,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Retry load",
+            "tag": "A",
+            "width": 85.609375,
+            "x": 291.953125,
+            "y": 255.296875
+          }
+        ],
+        "results": [
+          {
+            "name": "failed load locks Save",
+            "ok": true
+          },
+          {
+            "name": "failed load offers Retry",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Save policy",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Retry load",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1180
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "editor-1440",
+      "direct_children": [],
+      "dom": {
+        "below": [
+          {
+            "height": 38,
+            "label": "",
+            "tag": "INPUT",
+            "width": 195.359375,
+            "x": 213.5,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "readwritedestructive",
+            "tag": "SELECT",
+            "width": 114,
+            "x": 418.859375,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "",
+            "tag": "INPUT",
+            "width": 195.359375,
+            "x": 542.859375,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "duplicate op",
+            "tag": "BUTTON",
+            "width": 99.8125,
+            "x": 748.21875,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "remove op",
+            "tag": "BUTTON",
+            "width": 88.03125,
+            "x": 858.03125,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "add argument",
+            "tag": "BUTTON",
+            "width": 110.046875,
+            "x": 213.5,
+            "y": 1055.921875
+          },
+          {
+            "height": 38,
+            "label": "Add operation",
+            "tag": "BUTTON",
+            "width": 111.0625,
+            "x": 200.5,
+            "y": 1177.21875
+          },
+          {
+            "height": 38,
+            "label": "Add secret",
+            "tag": "BUTTON",
+            "width": 90.03125,
+            "x": 200.5,
+            "y": 1282.90625
+          },
+          {
+            "height": 38,
+            "label": "Save tool",
+            "tag": "BUTTON",
+            "width": 79.34375,
+            "x": 200.5,
+            "y": 1320.90625
+          },
+          {
+            "height": 38,
+            "label": "Cancel",
+            "tag": "A",
+            "width": 64.390625,
+            "x": 289.84375,
+            "y": 1320.90625
+          }
+        ],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1327.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 200.5,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "f_id",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 200.5,
+            "y": 218.03125
+          },
+          {
+            "height": 38,
+            "label": "apimcprest",
+            "tag": "SELECT",
+            "width": 520,
+            "x": 200.5,
+            "y": 340.921875
+          },
+          {
+            "height": 38,
+            "label": "f_command",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 200.5,
+            "y": 540.109375
+          },
+          {
+            "height": 38,
+            "label": "f_image",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 200.5,
+            "y": 642.703125
+          },
+          {
+            "height": 38,
+            "label": "f_port",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 200.5,
+            "y": 755.734375
+          },
+          {
+            "height": 38,
+            "label": "Expand all",
+            "tag": "BUTTON",
+            "width": 69.828125,
+            "x": 286.875,
+            "y": 808.875
+          },
+          {
+            "height": 38,
+            "label": "Collapse all",
+            "tag": "BUTTON",
+            "width": 76.90625,
+            "x": 366.703125,
+            "y": 808.875
+          },
+          {
+            "height": 38,
+            "label": "",
+            "tag": "INPUT",
+            "width": 195.359375,
+            "x": 213.5,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "readwritedestructive",
+            "tag": "SELECT",
+            "width": 114,
+            "x": 418.859375,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "",
+            "tag": "INPUT",
+            "width": 195.359375,
+            "x": 542.859375,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "duplicate op",
+            "tag": "BUTTON",
+            "width": 99.8125,
+            "x": 748.21875,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "remove op",
+            "tag": "BUTTON",
+            "width": 88.03125,
+            "x": 858.03125,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "add argument",
+            "tag": "BUTTON",
+            "width": 110.046875,
+            "x": 213.5,
+            "y": 1055.921875
+          },
+          {
+            "height": 38,
+            "label": "Add operation",
+            "tag": "BUTTON",
+            "width": 111.0625,
+            "x": 200.5,
+            "y": 1177.21875
+          },
+          {
+            "height": 38,
+            "label": "Add secret",
+            "tag": "BUTTON",
+            "width": 90.03125,
+            "x": 200.5,
+            "y": 1282.90625
+          },
+          {
+            "height": 38,
+            "label": "Save tool",
+            "tag": "BUTTON",
+            "width": 79.34375,
+            "x": 200.5,
+            "y": 1320.90625
+          },
+          {
+            "height": 38,
+            "label": "Cancel",
+            "tag": "A",
+            "width": 64.390625,
+            "x": 289.84375,
+            "y": 1320.90625
+          }
+        ],
+        "results": [
+          {
+            "name": "absent approval_fields remains absent through serialization",
+            "ok": true
+          },
+          {
+            "name": "empty approval_fields remains empty through serialization",
+            "ok": true
+          },
+          {
+            "name": "explicit approval_fields retained",
+            "ok": true
+          },
+          {
+            "name": "duplicate preserves explicit empty approval_fields",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "select target at least 38px: ",
+            "ok": true
+          },
+          {
+            "name": "select target at least 38px: op-risk",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Expand all",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Collapse all",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: duplicate op",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: remove op",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: add argument",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add operation",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add secret",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Save tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Cancel",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "editor-1180",
+      "direct_children": [],
+      "dom": {
+        "below": [
+          {
+            "height": 38,
+            "label": "",
+            "tag": "INPUT",
+            "width": 195.359375,
+            "x": 83.5,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "readwritedestructive",
+            "tag": "SELECT",
+            "width": 114,
+            "x": 288.859375,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "",
+            "tag": "INPUT",
+            "width": 195.359375,
+            "x": 412.859375,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "duplicate op",
+            "tag": "BUTTON",
+            "width": 99.8125,
+            "x": 618.21875,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "remove op",
+            "tag": "BUTTON",
+            "width": 88.03125,
+            "x": 728.03125,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "add argument",
+            "tag": "BUTTON",
+            "width": 110.046875,
+            "x": 83.5,
+            "y": 1055.921875
+          },
+          {
+            "height": 38,
+            "label": "Add operation",
+            "tag": "BUTTON",
+            "width": 111.0625,
+            "x": 70.5,
+            "y": 1177.21875
+          },
+          {
+            "height": 38,
+            "label": "Add secret",
+            "tag": "BUTTON",
+            "width": 90.03125,
+            "x": 70.5,
+            "y": 1282.90625
+          },
+          {
+            "height": 38,
+            "label": "Save tool",
+            "tag": "BUTTON",
+            "width": 79.34375,
+            "x": 70.5,
+            "y": 1320.90625
+          },
+          {
+            "height": 38,
+            "label": "Cancel",
+            "tag": "A",
+            "width": 64.390625,
+            "x": 159.84375,
+            "y": 1320.90625
+          }
+        ],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1067.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 70.5,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "f_id",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 70.5,
+            "y": 218.03125
+          },
+          {
+            "height": 38,
+            "label": "apimcprest",
+            "tag": "SELECT",
+            "width": 520,
+            "x": 70.5,
+            "y": 340.921875
+          },
+          {
+            "height": 38,
+            "label": "f_command",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 70.5,
+            "y": 540.109375
+          },
+          {
+            "height": 38,
+            "label": "f_image",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 70.5,
+            "y": 642.703125
+          },
+          {
+            "height": 38,
+            "label": "f_port",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 70.5,
+            "y": 755.734375
+          },
+          {
+            "height": 38,
+            "label": "Expand all",
+            "tag": "BUTTON",
+            "width": 69.828125,
+            "x": 156.875,
+            "y": 808.875
+          },
+          {
+            "height": 38,
+            "label": "Collapse all",
+            "tag": "BUTTON",
+            "width": 76.90625,
+            "x": 236.703125,
+            "y": 808.875
+          },
+          {
+            "height": 38,
+            "label": "",
+            "tag": "INPUT",
+            "width": 195.359375,
+            "x": 83.5,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "readwritedestructive",
+            "tag": "SELECT",
+            "width": 114,
+            "x": 288.859375,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "",
+            "tag": "INPUT",
+            "width": 195.359375,
+            "x": 412.859375,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "duplicate op",
+            "tag": "BUTTON",
+            "width": 99.8125,
+            "x": 618.21875,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "remove op",
+            "tag": "BUTTON",
+            "width": 88.03125,
+            "x": 728.03125,
+            "y": 1017.921875
+          },
+          {
+            "height": 38,
+            "label": "add argument",
+            "tag": "BUTTON",
+            "width": 110.046875,
+            "x": 83.5,
+            "y": 1055.921875
+          },
+          {
+            "height": 38,
+            "label": "Add operation",
+            "tag": "BUTTON",
+            "width": 111.0625,
+            "x": 70.5,
+            "y": 1177.21875
+          },
+          {
+            "height": 38,
+            "label": "Add secret",
+            "tag": "BUTTON",
+            "width": 90.03125,
+            "x": 70.5,
+            "y": 1282.90625
+          },
+          {
+            "height": 38,
+            "label": "Save tool",
+            "tag": "BUTTON",
+            "width": 79.34375,
+            "x": 70.5,
+            "y": 1320.90625
+          },
+          {
+            "height": 38,
+            "label": "Cancel",
+            "tag": "A",
+            "width": 64.390625,
+            "x": 159.84375,
+            "y": 1320.90625
+          }
+        ],
+        "results": [
+          {
+            "name": "absent approval_fields remains absent through serialization",
+            "ok": true
+          },
+          {
+            "name": "empty approval_fields remains empty through serialization",
+            "ok": true
+          },
+          {
+            "name": "explicit approval_fields retained",
+            "ok": true
+          },
+          {
+            "name": "duplicate preserves explicit empty approval_fields",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "select target at least 38px: ",
+            "ok": true
+          },
+          {
+            "name": "select target at least 38px: op-risk",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Expand all",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Collapse all",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: duplicate op",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: remove op",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: add argument",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add operation",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add secret",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Save tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Cancel",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1180
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "confirmation-1440",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1344.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 209,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 417.984375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 530.890625,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 668.109375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 547.5625,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 602.453125,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 664,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 547.5625,
+            "y": 237.296875
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 547.5625,
+            "y": 363.890625
+          },
+          {
+            "height": 38,
+            "label": "Register with broker\u2026",
+            "tag": "BUTTON",
+            "width": 159.8125,
+            "x": 547.5625,
+            "y": 411.890625
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 717.375,
+            "y": 411.890625
+          }
+        ],
+        "results": [
+          {
+            "name": "confirmation defaults to Cancel",
+            "ok": true
+          },
+          {
+            "name": "confirmation names target",
+            "ok": true
+          },
+          {
+            "name": "Cancel has no effect",
+            "ok": true
+          },
+          {
+            "name": "synthetic Escape-equivalent close has no effect",
+            "ok": true
+          },
+          {
+            "name": "accepted confirmation plus duplicate submits sends one POST",
+            "ok": true
+          },
+          {
+            "name": "unknown outcome cannot replay POST",
+            "ok": true
+          },
+          {
+            "name": "unknown mutation visible",
+            "ok": true
+          },
+          {
+            "name": "unknown refresh retains target",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Register with broker\u2026",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "confirmation-1180",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1084.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 79,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 287.984375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 400.890625,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 538.109375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 417.5625,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 472.453125,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 534,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 417.5625,
+            "y": 237.296875
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 417.5625,
+            "y": 363.890625
+          },
+          {
+            "height": 38,
+            "label": "Register with broker\u2026",
+            "tag": "BUTTON",
+            "width": 159.8125,
+            "x": 417.5625,
+            "y": 411.890625
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 587.375,
+            "y": 411.890625
+          }
+        ],
+        "results": [
+          {
+            "name": "confirmation defaults to Cancel",
+            "ok": true
+          },
+          {
+            "name": "confirmation names target",
+            "ok": true
+          },
+          {
+            "name": "Cancel has no effect",
+            "ok": true
+          },
+          {
+            "name": "synthetic Escape-equivalent close has no effect",
+            "ok": true
+          },
+          {
+            "name": "accepted confirmation plus duplicate submits sends one POST",
+            "ok": true
+          },
+          {
+            "name": "unknown outcome cannot replay POST",
+            "ok": true
+          },
+          {
+            "name": "unknown mutation visible",
+            "ok": true
+          },
+          {
+            "name": "unknown refresh retains target",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Register with broker\u2026",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1180
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "returned-unknown-1440",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1344.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 209,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 417.984375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 530.890625,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 668.109375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 547.5625,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 547.5625,
+            "y": 237.296875
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 547.5625,
+            "y": 363.890625
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 547.5625,
+            "y": 411.890625
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 607.6875,
+            "y": 411.890625
+          },
+          {
+            "height": 38,
+            "label": "Register with broker\u2026",
+            "tag": "BUTTON",
+            "width": 159.8125,
+            "x": 684.203125,
+            "y": 411.890625
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 854.015625,
+            "y": 411.890625
+          }
+        ],
+        "results": [
+          {
+            "name": "returned unknown stage remains visible",
+            "ok": true
+          },
+          {
+            "name": "200 unknown stage cannot immediately retry without observation",
+            "ok": true
+          },
+          {
+            "name": "returned unknown stage sends no duplicate mutation",
+            "ok": true
+          },
+          {
+            "name": "unknown target cannot bypass gate via another lifecycle form",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Register with broker\u2026",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "returned-unknown-1180",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1084.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 79,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 287.984375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 400.890625,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 538.109375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 417.5625,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 417.5625,
+            "y": 237.296875
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 417.5625,
+            "y": 363.890625
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 417.5625,
+            "y": 411.890625
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 477.6875,
+            "y": 411.890625
+          },
+          {
+            "height": 38,
+            "label": "Register with broker\u2026",
+            "tag": "BUTTON",
+            "width": 159.8125,
+            "x": 554.203125,
+            "y": 411.890625
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 724.015625,
+            "y": 411.890625
+          }
+        ],
+        "results": [
+          {
+            "name": "returned unknown stage remains visible",
+            "ok": true
+          },
+          {
+            "name": "200 unknown stage cannot immediately retry without observation",
+            "ok": true
+          },
+          {
+            "name": "returned unknown stage sends no duplicate mutation",
+            "ok": true
+          },
+          {
+            "name": "unknown target cannot bypass gate via another lifecycle form",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Register with broker\u2026",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1180
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "replacement-1440",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1344.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 209,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 417.984375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 530.890625,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 668.109375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 743.59375,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 798.484375,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 860.03125,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 920.15625,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Register with broker\u2026",
+            "tag": "BUTTON",
+            "width": 159.8125,
+            "x": 996.671875,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 743.59375,
+            "y": 237.296875
+          }
+        ],
+        "results": [
+          {
+            "name": "replacement keeps focused recovery form",
+            "ok": true
+          },
+          {
+            "name": "document.write replacement initializes production scripts",
+            "ok": true
+          },
+          {
+            "name": "replacement dialog has safe focus",
+            "ok": true
+          },
+          {
+            "name": "opening replacement confirmation does not send effect",
+            "ok": true
+          },
+          {
+            "name": "replacement preserves navigation target",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Register with broker\u2026",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "replacement-1180",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1084.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 79,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 287.984375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 400.890625,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 538.109375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 613.59375,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 668.484375,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 730.03125,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 790.15625,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Register with broker\u2026",
+            "tag": "BUTTON",
+            "width": 159.8125,
+            "x": 866.671875,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 613.59375,
+            "y": 237.296875
+          }
+        ],
+        "results": [
+          {
+            "name": "replacement keeps focused recovery form",
+            "ok": true
+          },
+          {
+            "name": "document.write replacement initializes production scripts",
+            "ok": true
+          },
+          {
+            "name": "replacement dialog has safe focus",
+            "ok": true
+          },
+          {
+            "name": "opening replacement confirmation does not send effect",
+            "ok": true
+          },
+          {
+            "name": "replacement preserves navigation target",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Register with broker\u2026",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1180
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "add-1440",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1344.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 209,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "source",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 209,
+            "y": 294.921875
+          },
+          {
+            "height": 38,
+            "label": "Add from folder",
+            "tag": "BUTTON",
+            "width": 121,
+            "x": 209,
+            "y": 344.921875
+          },
+          {
+            "height": 38,
+            "label": "repo",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 209,
+            "y": 453.515625
+          },
+          {
+            "height": 38,
+            "label": "subdir",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 209,
+            "y": 556.109375
+          },
+          {
+            "height": 38,
+            "label": "ref",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 209,
+            "y": 658.703125
+          },
+          {
+            "height": 38,
+            "label": "Clone and add",
+            "tag": "BUTTON",
+            "width": 113.34375,
+            "x": 209,
+            "y": 708.703125
+          }
+        ],
+        "results": [
+          {
+            "name": "local host source remains editable",
+            "ok": true
+          },
+          {
+            "name": "source action remains functional",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from folder",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Clone and add",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "add-1180",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1084.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 79,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "source",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 79,
+            "y": 294.921875
+          },
+          {
+            "height": 38,
+            "label": "Add from folder",
+            "tag": "BUTTON",
+            "width": 121,
+            "x": 79,
+            "y": 344.921875
+          },
+          {
+            "height": 38,
+            "label": "repo",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 79,
+            "y": 453.515625
+          },
+          {
+            "height": 38,
+            "label": "subdir",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 79,
+            "y": 556.109375
+          },
+          {
+            "height": 38,
+            "label": "ref",
+            "tag": "INPUT",
+            "width": 520,
+            "x": 79,
+            "y": 658.703125
+          },
+          {
+            "height": 38,
+            "label": "Clone and add",
+            "tag": "BUTTON",
+            "width": 113.34375,
+            "x": 79,
+            "y": 708.703125
+          }
+        ],
+        "results": [
+          {
+            "name": "local host source remains editable",
+            "ok": true
+          },
+          {
+            "name": "source action remains functional",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from folder",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Clone and add",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1180
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "registered-1440",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1344.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 209,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 417.984375,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 530.890625,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 668.109375,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 760.125,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 815.015625,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 876.5625,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 936.6875,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 1013.203125,
+            "y": 251.59375
+          }
+        ],
+        "results": [
+          {
+            "name": "registration receipt names success",
+            "ok": true
+          },
+          {
+            "name": "verified catalog does not offer redundant registration",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "registered-1180",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1084.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 79,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 287.984375,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 400.890625,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 538.109375,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 630.125,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 685.015625,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 746.5625,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 806.6875,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 883.203125,
+            "y": 251.59375
+          }
+        ],
+        "results": [
+          {
+            "name": "registration receipt names success",
+            "ok": true
+          },
+          {
+            "name": "verified catalog does not offer redundant registration",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1180
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "added-stopped-1440",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1344.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 209,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 417.984375,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 530.890625,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 668.109375,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 680.75,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 735.640625,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 797.1875,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 857.3125,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Register with broker\u2026",
+            "tag": "BUTTON",
+            "width": 159.8125,
+            "x": 933.828125,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 1103.640625,
+            "y": 251.59375
+          }
+        ],
+        "results": [
+          {
+            "name": "added tool can be explicitly started",
+            "ok": true
+          },
+          {
+            "name": "copy does not imply catalog registration",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Register with broker\u2026",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "added-stopped-1180",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1084.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 79,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 287.984375,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 400.890625,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 538.109375,
+            "y": 167.296875
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 550.75,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 605.640625,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 667.1875,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 727.3125,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Register with broker\u2026",
+            "tag": "BUTTON",
+            "width": 159.8125,
+            "x": 803.828125,
+            "y": 251.59375
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 973.640625,
+            "y": 251.59375
+          }
+        ],
+        "results": [
+          {
+            "name": "added tool can be explicitly started",
+            "ok": true
+          },
+          {
+            "name": "copy does not imply catalog registration",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Register with broker\u2026",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1180
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "register-confirm-1440",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1344.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 209,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 417.984375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 530.890625,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 668.109375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 680.75,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 735.640625,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 797.1875,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 857.3125,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Register with broker\u2026",
+            "tag": "BUTTON",
+            "width": 159.8125,
+            "x": 933.828125,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 1103.640625,
+            "y": 189.296875
+          },
+          {
+            "height": 156.59375,
+            "label": "Restart local broker 127.0.0.1:8765 for notes-demo? Reloads catalog; interrupts broker availability ",
+            "tag": "DIALOG",
+            "width": 520,
+            "x": 460,
+            "y": 371.703125
+          },
+          {
+            "height": 38,
+            "label": "Cancel",
+            "tag": "BUTTON",
+            "width": 64.390625,
+            "x": 485,
+            "y": 465.296875
+          },
+          {
+            "height": 38,
+            "label": "Restart local broker 127.0.0.1:8765 for notes-demo",
+            "tag": "BUTTON",
+            "width": 345.84375,
+            "x": 549.390625,
+            "y": 465.296875
+          }
+        ],
+        "results": [
+          {
+            "name": "registration confirmation names broker and target",
+            "ok": true
+          },
+          {
+            "name": "registration warns of interruption",
+            "ok": true
+          },
+          {
+            "name": "registration defaults to Cancel",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Register with broker\u2026",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Cancel",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart local broker 127.0.0.1:8765 for notes-demo",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1440
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "register-confirm-1180",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Sign out",
+            "tag": "BUTTON",
+            "width": 73.34375,
+            "x": 1084.65625,
+            "y": 14
+          },
+          {
+            "height": 38,
+            "label": "Back",
+            "tag": "A",
+            "width": 51.765625,
+            "x": 79,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Author a tool",
+            "tag": "A",
+            "width": 102.90625,
+            "x": 287.984375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Add from source",
+            "tag": "A",
+            "width": 127.21875,
+            "x": 400.890625,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Refresh state",
+            "tag": "A",
+            "width": 105.734375,
+            "x": 538.109375,
+            "y": 105
+          },
+          {
+            "height": 38,
+            "label": "Edit",
+            "tag": "A",
+            "width": 44.890625,
+            "x": 550.75,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Start",
+            "tag": "BUTTON",
+            "width": 51.546875,
+            "x": 605.640625,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Stop",
+            "tag": "BUTTON",
+            "width": 50.125,
+            "x": 667.1875,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Restart",
+            "tag": "BUTTON",
+            "width": 66.515625,
+            "x": 727.3125,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Register with broker\u2026",
+            "tag": "BUTTON",
+            "width": 159.8125,
+            "x": 803.828125,
+            "y": 189.296875
+          },
+          {
+            "height": 38,
+            "label": "Remove",
+            "tag": "BUTTON",
+            "width": 71.53125,
+            "x": 973.640625,
+            "y": 189.296875
+          },
+          {
+            "height": 156.59375,
+            "label": "Restart local broker 127.0.0.1:8765 for notes-demo? Reloads catalog; interrupts broker availability ",
+            "tag": "DIALOG",
+            "width": 520,
+            "x": 330,
+            "y": 371.703125
+          },
+          {
+            "height": 38,
+            "label": "Cancel",
+            "tag": "BUTTON",
+            "width": 64.390625,
+            "x": 355,
+            "y": 465.296875
+          },
+          {
+            "height": 38,
+            "label": "Restart local broker 127.0.0.1:8765 for notes-demo",
+            "tag": "BUTTON",
+            "width": 345.84375,
+            "x": 419.390625,
+            "y": 465.296875
+          }
+        ],
+        "results": [
+          {
+            "name": "registration confirmation names broker and target",
+            "ok": true
+          },
+          {
+            "name": "registration warns of interruption",
+            "ok": true
+          },
+          {
+            "name": "registration defaults to Cancel",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Sign out",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Back",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Author a tool",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Add from source",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Refresh state",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Edit",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Start",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Stop",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Register with broker\u2026",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Remove",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Cancel",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Restart local broker 127.0.0.1:8765 for notes-demo",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 900,
+          "width": 1180
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    },
+    {
+      "case": "shell-startup-620",
+      "direct_children": [],
+      "dom": {
+        "below": [],
+        "collisions": [],
+        "horizontal": [],
+        "rectangles": [
+          {
+            "height": 38,
+            "label": "Close",
+            "tag": "BUTTON",
+            "width": 67.53125,
+            "x": 28,
+            "y": 191.734375
+          },
+          {
+            "height": 38,
+            "label": "Retrying\u2026",
+            "tag": "BUTTON",
+            "width": 90.796875,
+            "x": 99.3125,
+            "y": 191.734375
+          }
+        ],
+        "results": [
+          {
+            "name": "shell observed cause",
+            "ok": true
+          },
+          {
+            "name": "shell Retry available",
+            "ok": true
+          },
+          {
+            "name": "shell Retry button latches synthetic duplicate clicks",
+            "ok": true
+          },
+          {
+            "name": "no horizontal document overflow",
+            "ok": true
+          },
+          {
+            "name": "visible controls fit horizontal viewport",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Close",
+            "ok": true
+          },
+          {
+            "name": "button target at least 38px: Retrying\u2026",
+            "ok": true
+          },
+          {
+            "name": "no button-button overlap",
+            "ok": true
+          }
+        ],
+        "synthetic": true,
+        "viewport": {
+          "height": 360,
+          "width": 620
+        }
+      },
+      "snapshot": "saved",
+      "window_visible": false
+    }
+  ],
+  "started": "2026-10-24T15:17:01Z"
+}

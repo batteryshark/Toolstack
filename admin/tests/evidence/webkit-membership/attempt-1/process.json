@@ -1,0 +1,10 @@
+{
+  "pid": 31125,
+  "start_epoch": 1792854105.9374669,
+  "start_identity": "31125 31093 Sat Oct 24 11:01:45 2026     /private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/clear-desk-wk-membership/runner /Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/evidence/webkit-membership/attempt-1/fixtures.json /Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/evidence/webkit-membership/attempt-1\n",
+  "exit_code": 0,
+  "elapsed_seconds": 9.111610174179077,
+  "watchdog": false,
+  "after_identity": "",
+  "child_limit": "Only direct children observable by parent identity; launchd-managed WebKit XPC services are not claimed owned or signalled."
+}

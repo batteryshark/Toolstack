@@ -24,6 +24,12 @@ public struct Caller: Codable, Sendable, Identifiable, Equatable {
     public let name: String
     public let revokedAt: Double?   // null when active (extra columns are ignored)
     public var isActive: Bool { revokedAt == nil }
+
+    /// Resolve the table's primary action from fresh rows, never a stale selection.
+    public static func policyTarget(in callers: [Caller], selection: Set<Int>) -> Caller? {
+        guard selection.count == 1, let id = selection.first else { return nil }
+        return callers.first { $0.id == id && $0.isActive }
+    }
 }
 
 public struct CallersResponse: Codable, Sendable {
@@ -83,10 +89,21 @@ public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
     public let port: Int?
     public let running: Bool
     public let ops: [OpInfo]
+    public let alive: Bool?
+    public let state: String?
+    public let health: String?
+    /// true = external tool_dirs entry; false = managed root; nil = unknown.
+    public let removable: Bool?
+    public let path: String?
+    public var observedStatus: String {
+        if alive == true { return "Alive" }
+        if alive == false { return running ? "Failed" : "Stopped" }
+        return "Unknown"
+    }
     public let secrets: [SecretDecl]
     public let source: ToolSource?   // nil for hand-authored tools (no sidecar) → no Update
 
-    enum CodingKeys: String, CodingKey { case id, type, description, port, running, ops, secrets, source }
+    enum CodingKeys: String, CodingKey { case id, type, description, port, running, ops, secrets, source, alive, state, health, removable, path }
 
     // Tolerate an admin that doesn't report `description` / `ops` / `running` / `secrets` / `source`
     // (e.g. an older version, or a different deployment) rather than failing the whole response.
@@ -97,6 +114,11 @@ public struct ToolInfo: Codable, Sendable, Identifiable, Equatable {
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         port = try c.decodeIfPresent(Int.self, forKey: .port)
         running = try c.decodeIfPresent(Bool.self, forKey: .running) ?? false
+        alive = try c.decodeIfPresent(Bool.self, forKey: .alive)
+        state = try c.decodeIfPresent(String.self, forKey: .state)
+        health = try c.decodeIfPresent(String.self, forKey: .health)
+        removable = try c.decodeIfPresent(Bool.self, forKey: .removable)
+        path = try c.decodeIfPresent(String.self, forKey: .path)
         ops = try c.decodeIfPresent([OpInfo].self, forKey: .ops) ?? []
         secrets = try c.decodeIfPresent([SecretDecl].self, forKey: .secrets) ?? []
         source = try c.decodeIfPresent(ToolSource.self, forKey: .source)
@@ -122,13 +144,15 @@ public struct CreatedTool: Codable, Sendable {
 /// Result of removing a managed tool (`DELETE /api/tools/{id}`).
 public struct RemovedTool: Codable, Sendable {
     public let removed: String
+    public let deleted: Bool?
 }
 
 /// The active secret backend (deployment-wide). `path` (file/vault) or
 /// `host`/`environment`/`defaultVault`/`identityConfigured` (Infisical) are present
 /// depending on `name`.
 public struct SecretBackend: Codable, Sendable {
-    public let name: String   // "file" | "vault" | "infisical"
+    public let plugin: String
+    public var name: String { plugin }
     public let path: String?
     public let host: String?
     public let environment: String?
@@ -282,12 +306,9 @@ public struct SecretStatus: Codable, Sendable, Equatable {
     public let backend: String
     public let settable: Bool
     public let fields: [String]
-    public let provisioned: [String]
-}
-
-public struct SetSecretResult: Codable, Sendable {
-    public let field: String
-    public let set: Bool
+    public let provisioned: [String]?
+    public let status: String?
+    public var availability: String { provisioned == nil ? "Unknown" : "Observed" }
 }
 
 /// What went wrong talking to the admin API. `unauthorized` is special-cased so the UI can

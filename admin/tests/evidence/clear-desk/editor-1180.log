@@ -1,0 +1,13 @@
+[19476:43027740:1024/095547.501136:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670
+[19476:43027740:1024/095547.501438:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670
+[19476:43027740:1024/095547.501481:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670
+[19476:43027740:1024/095547.501543:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670
+[19476:43027740:1024/095547.501608:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670
+[19476:43027740:1024/095547.501666:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670
+Trying to load the allocator multiple times. This is *not* supported.
+67295 bytes written to file /Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/evidence/clear-desk/editor-1180.png
+[19470:43027691:1024/095547.628608:ERROR:base/process/process_mac.cc:45] task_policy_set TASK_CATEGORY_POLICY: (os/kern) invalid argument (4)
+[19470:43027691:1024/095547.628619:ERROR:base/process/process_mac.cc:90] task_policy_set TASK_SUPPRESSION_POLICY: (os/kern) invalid argument (4)
+Teardown watchdog expired; recording dump and terminating.
+[1024/095557.648760:WARNING:third_party/crashpad/crashpad/util/process/process_memory_mac.cc:94] mach_vm_read(0x16bbc4000, 0x8000): (os/kern) invalid address (1)
+[1024/095557.846678:WARNING:third_party/crashpad/crashpad/util/numeric/in_range_cast.h:38] value -143893734 out of range

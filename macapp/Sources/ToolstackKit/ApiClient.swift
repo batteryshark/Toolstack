@@ -48,6 +48,11 @@ public actor ApiClient {
         try await send("GET", "/api/broker")
     }
 
+    public func catalogObservation() async throws -> CatalogObservation {
+        guard let token, !token.isEmpty else { throw ApiError.unauthorized }
+        return try await send("GET", "/api/catalog")
+    }
+
     /// `action` is "start", "stop", or "restart". Returns the resulting status.
     public func brokerAction(_ action: String) async throws -> BrokerStatus {
         try await send("POST", "/api/broker/\(action)", body: [:])
@@ -102,14 +107,9 @@ public actor ApiClient {
         try await send("GET", "/api/audit", query: [URLQueryItem(name: "limit", value: String(limit))])
     }
 
-    @discardableResult
-    public func clearAudit() async throws -> Bool {
-        let result: OkResult = try await send("DELETE", "/api/audit")
-        return result.ok
-    }
-
     public func listTools() async throws -> [ToolInfo] {
         let response: ToolsResponse = try await send("GET", "/api/tools")
+        if let error = response.error { throw ApiError.decoding("Tool listing unavailable: \(error)") }
         return response.tools
     }
 
@@ -167,25 +167,21 @@ public actor ApiClient {
         try await send("POST", "/api/tools/\(id)/update", body: [:])
     }
 
-    /// Remove a TSR-managed tool (stops it, deletes its folder under the tools root). Returns the
-    /// removed id. Throws `.http(400)` for a tool registered from an external dir (not deletable).
+    /// Compatibility id-only result. Use removeToolReceipt to distinguish managed deletion,
+    /// external unregistration (files retained), and legacy unknown filesystem outcomes.
     @discardableResult
     public func deleteTool(id: String) async throws -> String {
-        let result: RemovedTool = try await send("DELETE", "/api/tools/\(id)")
+        let result = try await removeToolReceipt(id: id)
         return result.removed
+    }
+
+    public func removeToolReceipt(id: String) async throws -> RemovedTool {
+        try await send("DELETE", "/api/tools/\(id)")
     }
 
     /// Set/unset status of a tool's declared secret fields (vault only; never the values).
     public func secretStatus(toolId: String) async throws -> SecretStatus {
         try await send("GET", "/api/tools/\(toolId)/secrets")
-    }
-
-    /// Provision a secret VALUE into the local vault (write-only). Returns whether it was set.
-    @discardableResult
-    public func setSecretValue(toolId: String, field: String, value: String) async throws -> Bool {
-        let result: SetSecretResult = try await send("POST", "/api/tools/\(toolId)/secrets",
-                                                     body: ["field": field, "value": value])
-        return result.set
     }
 
     public func policy(for caller: String) async throws -> PolicyResponse {

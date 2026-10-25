@@ -36,7 +36,7 @@ class Audit(unittest.TestCase):
         with open(f.name) as fp:
             line = fp.read().strip()
         rec = json.loads(line)
-        self.assertEqual(rec, {"ts": rec["ts"], "action": "startup"})
+        self.assertEqual(rec, {"ts": rec["ts"], "action": "startup", "outcome": "ok"})
         self.assertNotIn("tool_id", rec)
         self.assertNotIn("secret_name", rec)
 
@@ -75,4 +75,4 @@ class Audit(unittest.TestCase):
         # extra fields; verify the produced line has nothing else.
         with open(f.name) as fp:
             rec = json.loads(fp.read().strip())
-        self.assertEqual(set(rec.keys()), {"ts", "action"})
+        self.assertEqual(set(rec.keys()), {"ts", "action", "outcome"})

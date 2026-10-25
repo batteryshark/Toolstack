@@ -1,0 +1,15 @@
+{
+  "recorded_log_pids": [
+    19361,
+    19367,
+    19383,
+    19387,
+    19419,
+    19424,
+    19470,
+    19476
+  ],
+  "ps_returncode": 1,
+  "remaining_matches": "",
+  "limit": "Only PIDs recorded by retained renderer logs; unrecorded descendants cannot be established from existing evidence. No processes killed or browsers launched."
+}

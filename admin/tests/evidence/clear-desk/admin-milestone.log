@@ -1,0 +1,546 @@
+/Users/batteryshark/.cache/uv/archive-v0/glcQ6zq55NJq8otq/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_completion_failure_explains_that_save_already_happened (admin.tests.test_admin_controls.AuditFailure.test_completion_failure_explains_that_save_already_happened) ... ok
+test_failed_intent_audit_prevents_config_write (admin.tests.test_admin_controls.AuditFailure.test_failed_intent_audit_prevents_config_write) ... ok
+test_failed_persistence_rolls_back_new_start (admin.tests.test_admin_controls.Lifecycle.test_failed_persistence_rolls_back_new_start) ... ok
+test_failed_rollback_retains_explicit_runtime_reference (admin.tests.test_admin_controls.Lifecycle.test_failed_rollback_retains_explicit_runtime_reference) ... ok
+test_missing_runner_lock_fails_closed (admin.tests.test_admin_controls.Lifecycle.test_missing_runner_lock_fails_closed) ... ok
+test_restart_uses_one_complete_nonreentrant_lock (admin.tests.test_admin_controls.Lifecycle.test_restart_uses_one_complete_nonreentrant_lock) ... ok
+test_runner_cleanup_failure_record_is_preserved (admin.tests.test_admin_controls.Lifecycle.test_runner_cleanup_failure_record_is_preserved) ... ok
+test_recorded_state_is_not_health_evidence (admin.tests.test_admin_controls.NativeLiveness.test_recorded_state_is_not_health_evidence) ... ok
+test_invalid_verify_disables_readiness_not_verification (admin.tests.test_admin_controls.Readiness.test_invalid_verify_disables_readiness_not_verification) ... SPS link: cannot load /fake/unused: TOOLSTACK_SPS_VERIFY: expected a strict boolean
+ok
+test_strict_boolean (admin.tests.test_admin_controls.Readiness.test_strict_boolean) ... ok
+test_cancelled_caller_keeps_slot_until_work_finishes (admin.tests.test_admin_controls.WorkerAdmission.test_cancelled_caller_keeps_slot_until_work_finishes) ... ok
+test_work_is_off_loop_and_result_propagates (admin.tests.test_admin_controls.WorkerAdmission.test_work_is_off_loop_and_result_propagates) ... ok
+test_add_tool_bad_repo_url_400 (admin.tests.test_api.JsonApi.test_add_tool_bad_repo_url_400) ... ok
+test_add_tool_duplicate_id_400 (admin.tests.test_api.JsonApi.test_add_tool_duplicate_id_400) ... ok
+test_add_tool_from_folder (admin.tests.test_api.JsonApi.test_add_tool_from_folder) ... ok
+test_add_tool_from_github (admin.tests.test_api.JsonApi.test_add_tool_from_github) ... ok
+test_add_tool_manifest_must_be_object_400 (admin.tests.test_api.JsonApi.test_add_tool_manifest_must_be_object_400) ... ok
+test_add_tool_needs_auth (admin.tests.test_api.JsonApi.test_add_tool_needs_auth) ... ok
+test_add_tool_no_manifest_422 (admin.tests.test_api.JsonApi.test_add_tool_no_manifest_422) ... ok
+test_add_tool_requires_source_or_repo (admin.tests.test_api.JsonApi.test_add_tool_requires_source_or_repo) ... ok
+test_add_tool_with_manifest_authors_code_only_folder (admin.tests.test_api.JsonApi.test_add_tool_with_manifest_authors_code_only_folder) ... ok
+test_audit_returns_events (admin.tests.test_api.JsonApi.test_audit_returns_events) ... ok
+test_broker_start_calls_supervisor_and_audits (admin.tests.test_api.JsonApi.test_broker_start_calls_supervisor_and_audits) ... ok
+test_broker_start_failure_is_502 (admin.tests.test_api.JsonApi.test_broker_start_failure_is_502) ... ok
+test_broker_status_when_stopped (admin.tests.test_api.JsonApi.test_broker_status_when_stopped) ... ok
+test_catalog_requires_admin_and_legacy_observation_is_unknown (admin.tests.test_api.JsonApi.test_catalog_requires_admin_and_legacy_observation_is_unknown) ... ok
+test_clear_audit_removes_events (admin.tests.test_api.JsonApi.test_clear_audit_removes_events) ... ok
+test_config_audit_contains_field_names_not_values (admin.tests.test_api.JsonApi.test_config_audit_contains_field_names_not_values) ... ok
+test_config_round_trip_write_only_token_and_validation (admin.tests.test_api.JsonApi.test_config_round_trip_write_only_token_and_validation) ... ok
+test_create_and_list_callers (admin.tests.test_api.JsonApi.test_create_and_list_callers) ... ok
+test_create_duplicate_is_409 (admin.tests.test_api.JsonApi.test_create_duplicate_is_409) ... ok
+test_create_rejects_bad_allow_type (admin.tests.test_api.JsonApi.test_create_rejects_bad_allow_type) ... ok
+test_create_requires_name (admin.tests.test_api.JsonApi.test_create_requires_name) ... ok
+test_edit_tool_description_only_keeps_secrets (admin.tests.test_api.JsonApi.test_edit_tool_description_only_keeps_secrets) ... ok
+test_edit_tool_ignores_entrypoint_and_ops_in_body (admin.tests.test_api.JsonApi.test_edit_tool_ignores_entrypoint_and_ops_in_body) ... ok
+test_edit_tool_invalid_secret_400 (admin.tests.test_api.JsonApi.test_edit_tool_invalid_secret_400) ... ok
+test_edit_tool_needs_auth (admin.tests.test_api.JsonApi.test_edit_tool_needs_auth) ... ok
+test_edit_tool_unknown_404 (admin.tests.test_api.JsonApi.test_edit_tool_unknown_404) ... ok
+test_edit_tool_updates_description_and_secrets (admin.tests.test_api.JsonApi.test_edit_tool_updates_description_and_secrets) ... ok
+test_external_delete_unregisters_only_matching_source (admin.tests.test_api.JsonApi.test_external_delete_unregisters_only_matching_source) ... ok
+test_login_bad_password_401 (admin.tests.test_api.JsonApi.test_login_bad_password_401) ... ok
+test_login_issues_a_token (admin.tests.test_api.JsonApi.test_login_issues_a_token) ... ok
+test_login_requires_json_object (admin.tests.test_api.JsonApi.test_login_requires_json_object) ... ok
+test_missing_session_generation_fails_closed (admin.tests.test_api.JsonApi.test_missing_session_generation_fails_closed) ... ok
+test_native_backend_and_unknown_contract_fixture (admin.tests.test_api.JsonApi.test_native_backend_and_unknown_contract_fixture) ... ok
+test_obsolete_native_provisioning_has_no_success_path (admin.tests.test_api.JsonApi.test_obsolete_native_provisioning_has_no_success_path) ... ok
+test_operator_routes_need_auth (admin.tests.test_api.JsonApi.test_operator_routes_need_auth) ... ok
+test_parse_openapi_accepts_object_spec (admin.tests.test_api.JsonApi.test_parse_openapi_accepts_object_spec) ... ok
+test_parse_openapi_rejects_bad_spec (admin.tests.test_api.JsonApi.test_parse_openapi_rejects_bad_spec) ... ok
+test_policy_missing_caller_404 (admin.tests.test_api.JsonApi.test_policy_missing_caller_404) ... ok
+test_policy_round_trip (admin.tests.test_api.JsonApi.test_policy_round_trip) ... ok
+test_protected_route_needs_a_token (admin.tests.test_api.JsonApi.test_protected_route_needs_a_token) ... ok
+test_reset_invalidates_live_bearer_without_restart (admin.tests.test_api.JsonApi.test_reset_invalidates_live_bearer_without_restart) ... ok
+test_revoke_caller_and_missing_404 (admin.tests.test_api.JsonApi.test_revoke_caller_and_missing_404) ... ok
+test_revoke_token_empty_prefix_400 (admin.tests.test_api.JsonApi.test_revoke_token_empty_prefix_400) ... ok
+test_rotate_token_returns_new (admin.tests.test_api.JsonApi.test_rotate_token_returns_new) ... ok
+test_secret_endpoints_need_auth (admin.tests.test_api.JsonApi.test_secret_endpoints_need_auth) ... ok
+test_set_enabled_tools (admin.tests.test_api.JsonApi.test_set_enabled_tools) ... ok
+test_tool_action_needs_auth (admin.tests.test_api.JsonApi.test_tool_action_needs_auth) ... ok
+test_tool_action_unknown_400 (admin.tests.test_api.JsonApi.test_tool_action_unknown_400) ... ok
+test_tool_action_unknown_tool_404 (admin.tests.test_api.JsonApi.test_tool_action_unknown_tool_404) ... ok
+test_tool_source_in_listing_and_update (admin.tests.test_api.JsonApi.test_tool_source_in_listing_and_update) ... ok
+test_tool_start_stop_restart (admin.tests.test_api.JsonApi.test_tool_start_stop_restart) ... ok
+test_unknown_broker_action_400 (admin.tests.test_api.JsonApi.test_unknown_broker_action_400) ... ok
+test_update_needs_auth (admin.tests.test_api.JsonApi.test_update_needs_auth) ... ok
+test_update_non_tsr_tool_400 (admin.tests.test_api.JsonApi.test_update_non_tsr_tool_400) ... ok
+test_update_unknown_tool_404 (admin.tests.test_api.JsonApi.test_update_unknown_tool_404) ... ok
+test_activity_views_are_filterable (admin.tests.test_app.AdminApp.test_activity_views_are_filterable) ... ok
+test_add_from_folder_without_manifest_guides_to_author (admin.tests.test_app.AdminApp.test_add_from_folder_without_manifest_guides_to_author) ... ok
+test_add_from_source_page_renders (admin.tests.test_app.AdminApp.test_add_from_source_page_renders) ... ok
+test_add_tool_from_folder_then_update (admin.tests.test_app.AdminApp.test_add_tool_from_folder_then_update) ... ok
+test_add_tool_rejects_invalid_definition (admin.tests.test_app.AdminApp.test_add_tool_rejects_invalid_definition) ... ok
+test_add_tool_rejects_missing_directory (admin.tests.test_app.AdminApp.test_add_tool_rejects_missing_directory) ... ok
+test_add_tool_writes_toml_and_registers (admin.tests.test_app.AdminApp.test_add_tool_writes_toml_and_registers) ... ok
+test_bad_password_rejected (admin.tests.test_app.AdminApp.test_bad_password_rejected) ... ok
+test_bad_tool_degrades_to_banner_not_500 (admin.tests.test_app.AdminApp.test_bad_tool_degrades_to_banner_not_500) ... FAIL
+test_broker_action_requires_csrf (admin.tests.test_app.AdminApp.test_broker_action_requires_csrf) ... ok
+test_clear_audit_route_removes_events (admin.tests.test_app.AdminApp.test_clear_audit_route_removes_events) ... ok
+test_create_app_skips_reconcile_when_sps_configured_but_unavailable (admin.tests.test_app.AdminApp.test_create_app_skips_reconcile_when_sps_configured_but_unavailable) ... SPS is configured at /etc/toolstack/sps.env but no usable link was built; skipping tool reconciliation
+ok
+test_create_app_starts_reconciler_when_sps_unconfigured (admin.tests.test_app.AdminApp.test_create_app_starts_reconciler_when_sps_unconfigured) ... ok
+test_create_app_starts_watchdog_when_sps_linked (admin.tests.test_app.AdminApp.test_create_app_starts_watchdog_when_sps_linked) ... /Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/server.py:92: DeprecationWarning:
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+
+  @app.on_event("shutdown")
+/Users/batteryshark/.cache/uv/archive-v0/glcQ6zq55NJq8otq/lib/python3.11/site-packages/fastapi/applications.py:4601: DeprecationWarning:
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+
+  return self.router.on_event(event_type)  # ty: ignore[deprecated]
+ok
+test_create_caller_and_set_policy (admin.tests.test_app.AdminApp.test_create_caller_and_set_policy) ... ok
+test_csrf_required_for_mutations (admin.tests.test_app.AdminApp.test_csrf_required_for_mutations) ... ok
+test_edit_tool_rewrites_toml (admin.tests.test_app.AdminApp.test_edit_tool_rewrites_toml) ... ok
+test_login_throttled_and_failures_audited (admin.tests.test_app.AdminApp.test_login_throttled_and_failures_audited) ... ok
+test_parse_openapi_accepts_yaml (admin.tests.test_app.AdminApp.test_parse_openapi_accepts_yaml) ... ok
+test_parse_openapi_rejects_bad_json (admin.tests.test_app.AdminApp.test_parse_openapi_rejects_bad_json) ... ok
+test_parse_openapi_returns_forwarder_ops (admin.tests.test_app.AdminApp.test_parse_openapi_returns_forwarder_ops) ... ok
+test_password_reset_invalidates_cookie_and_csrf_without_restart (admin.tests.test_app.AdminApp.test_password_reset_invalidates_cookie_and_csrf_without_restart) ... ok
+test_policy_after_effect_failure_is_unknown_and_read_does_not_replay (admin.tests.test_app.AdminApp.test_policy_after_effect_failure_is_unknown_and_read_does_not_replay) ... ok
+test_policy_failed_load_disables_save (admin.tests.test_app.AdminApp.test_policy_failed_load_disables_save) ... ok
+test_remove_root_tool_deletes_its_folder (admin.tests.test_app.AdminApp.test_remove_root_tool_deletes_its_folder) ... FAIL
+test_remove_tool_unregisters_but_keeps_files (admin.tests.test_app.AdminApp.test_remove_tool_unregisters_but_keeps_files) ... ok
+test_requires_login (admin.tests.test_app.AdminApp.test_requires_login) ... ok
+test_revoke_token_via_panel (admin.tests.test_app.AdminApp.test_revoke_token_via_panel) ... ok
+test_tool_editor_requires_login (admin.tests.test_app.AdminApp.test_tool_editor_requires_login) ... ok
+test_tools_page_lists_defined_tools (admin.tests.test_app.AdminApp.test_tools_page_lists_defined_tools) ... ok
+test_toolyard_action_requires_csrf (admin.tests.test_app.AdminApp.test_toolyard_action_requires_csrf) ... ok
+test_web_edits_preserve_unrendered_authority (admin.tests.test_app.AdminApp.test_web_edits_preserve_unrendered_authority) ... ok
+test_existing_editor_preserves_presence_nonvisually (admin.tests.test_approval_fields.ApprovalFields.test_existing_editor_preserves_presence_nonvisually) ... ok
+test_invalid_raw_values_refused_without_publication (admin.tests.test_approval_fields.ApprovalFields.test_invalid_raw_values_refused_without_publication) ... ok
+test_roundtrip_registry_all_transports (admin.tests.test_approval_fields.ApprovalFields.test_roundtrip_registry_all_transports) ... ok
+test_shared_validator_is_imported (admin.tests.test_approval_fields.ApprovalFields.test_shared_validator_is_imported) ... ok
+test_missing_inputs_rejected (admin.tests.test_auth.Csrf.test_missing_inputs_rejected) ... ok
+test_token_bound_to_session (admin.tests.test_auth.Csrf.test_token_bound_to_session) ... ok
+test_token_verifies (admin.tests.test_auth.Csrf.test_token_verifies) ... ok
+test_hash_is_salted (admin.tests.test_auth.Password.test_hash_is_salted) ... ok
+test_hash_verify_roundtrip (admin.tests.test_auth.Password.test_hash_verify_roundtrip) ... ok
+test_verify_rejects_garbage (admin.tests.test_auth.Password.test_verify_rejects_garbage) ... ok
+test_expired_rejected (admin.tests.test_auth.Session.test_expired_rejected) ... ok
+test_none_rejected (admin.tests.test_auth.Session.test_none_rejected) ... ok
+test_roundtrip (admin.tests.test_auth.Session.test_roundtrip) ... ok
+test_tampered_rejected (admin.tests.test_auth.Session.test_tampered_rejected) ... ok
+test_wrong_secret_rejected (admin.tests.test_auth.Session.test_wrong_secret_rejected) ... ok
+test_html_and_json_share_preserving_merge (admin.tests.test_bounded_repairs.ConfigMerge.test_html_and_json_share_preserving_merge) ... ok
+test_invalid_input_is_not_silently_saved (admin.tests.test_bounded_repairs.ConfigMerge.test_invalid_input_is_not_silently_saved) ... ok
+test_secret_inspection_is_unknown (admin.tests.test_bounded_repairs.ConfigMerge.test_secret_inspection_is_unknown) ... ok
+test_atomic_write_private_file (admin.tests.test_bounded_repairs.ManifestSafety.test_atomic_write_private_file) ... ok
+test_failed_atomic_replace_preserves_original (admin.tests.test_bounded_repairs.ManifestSafety.test_failed_atomic_replace_preserves_original) ... ok
+test_hardlinked_manifest_rejected (admin.tests.test_bounded_repairs.ManifestSafety.test_hardlinked_manifest_rejected) ... ok
+test_linked_directory_rejected (admin.tests.test_bounded_repairs.ManifestSafety.test_linked_directory_rejected) ... ok
+test_linked_manifest_rejected_on_ingestion_and_write (admin.tests.test_bounded_repairs.ManifestSafety.test_linked_manifest_rejected_on_ingestion_and_write) ... ok
+test_adapter_uses_detailed_runner_contract (admin.tests.test_bounded_repairs.Recovery.test_adapter_uses_detailed_runner_contract) ... ok
+test_same_boot_retries_until_explicit_completion (admin.tests.test_bounded_repairs.Recovery.test_same_boot_retries_until_explicit_completion) ... SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1187, in _execute_mock_call
+    raise result
+OSError: fake failure
+SPS recovery incomplete or unconfirmed; retrying this boot
+SPS recovery incomplete or unconfirmed; retrying this boot
+ok
+test_defaults_to_loopback (admin.tests.test_broker_config.AdminHost.test_defaults_to_loopback) ... ok
+test_nonloopback_allowed_with_optin (admin.tests.test_broker_config.AdminHost.test_nonloopback_allowed_with_optin) ... ok
+test_nonloopback_fails_closed (admin.tests.test_broker_config.AdminHost.test_nonloopback_fails_closed) ... ok
+test_config_file_is_private (admin.tests.test_broker_config.BrokerConfig.test_config_file_is_private) ... ok
+test_defaults_when_no_file (admin.tests.test_broker_config.BrokerConfig.test_defaults_when_no_file) ... ok
+test_empty_tool_dirs_omitted_from_env (admin.tests.test_broker_config.BrokerConfig.test_empty_tool_dirs_omitted_from_env) ... ok
+test_masked_hides_token (admin.tests.test_broker_config.BrokerConfig.test_masked_hides_token) ... ok
+test_save_escapes_quotes_and_backslashes (admin.tests.test_broker_config.BrokerConfig.test_save_escapes_quotes_and_backslashes) ... ok
+test_save_load_roundtrip (admin.tests.test_broker_config.BrokerConfig.test_save_load_roundtrip) ... broker config: nod_url is invalid (nod_url must use https (plain http is allowed only for loopback))
+ok
+test_to_env_includes_nod_when_set (admin.tests.test_broker_config.BrokerConfig.test_to_env_includes_nod_when_set) ... ok
+test_to_env_omits_empty_optionals (admin.tests.test_broker_config.BrokerConfig.test_to_env_omits_empty_optionals) ... ok
+test_tool_dirs_roundtrip_and_env (admin.tests.test_broker_config.BrokerConfig.test_tool_dirs_roundtrip_and_env) ... ok
+test_allows_https_loopback_http_and_empty (admin.tests.test_broker_config.ValidateNodUrl.test_allows_https_loopback_http_and_empty) ... ok
+test_rejects_metadata_and_link_local (admin.tests.test_broker_config.ValidateNodUrl.test_rejects_metadata_and_link_local) ... ok
+test_rejects_non_http_scheme (admin.tests.test_broker_config.ValidateNodUrl.test_rejects_non_http_scheme) ... ok
+test_rejects_plain_http_to_remote (admin.tests.test_broker_config.ValidateNodUrl.test_rejects_plain_http_to_remote) ... ok
+test_actual_load_edit_reload_and_failed_reload (admin.tests.test_catalog_observation.CatalogObservation.test_actual_load_edit_reload_and_failed_reload) ... {"at": 1792851724.720236, "component": "registry", "correlation_id": "169bd4aec77b4c309efb75c6b5855ddd", "details": {"ops_after": 1, "ops_before": 1, "tools_after": 1, "tools_before": 1}, "event_id": 1, "event_type": "reloaded", "outcome": "ok", "request_id": null}
+ok
+test_health_only_exposes_random_identity (admin.tests.test_catalog_observation.CatalogObservation.test_health_only_exposes_random_identity) ... ok
+test_missing_mismatched_receipt_and_sources (admin.tests.test_catalog_observation.CatalogObservation.test_missing_mismatched_receipt_and_sources) ... ok
+test_previous_process_receipt_cannot_certify_new_load (admin.tests.test_catalog_observation.CatalogObservation.test_previous_process_receipt_cannot_certify_new_load) ... {"at": 1792851726.266926, "component": "registry", "correlation_id": "e236681107144f99b3a811590b57c222", "details": {"ops_after": 1, "ops_before": 1, "tools_after": 1, "tools_before": 1}, "event_id": 1, "event_type": "reloaded", "outcome": "ok", "request_id": null}
+ok
+test_secret_block_content_does_not_enter_private_fingerprint (admin.tests.test_catalog_observation.CatalogObservation.test_secret_block_content_does_not_enter_private_fingerprint) ... ok
+test_global_cap_throttles_a_fresh_ip (admin.tests.test_loginguard.LoginGuardTests.test_global_cap_throttles_a_fresh_ip) ... ok
+test_lock_expires_after_the_window (admin.tests.test_loginguard.LoginGuardTests.test_lock_expires_after_the_window) ... ok
+test_locks_after_max_per_ip (admin.tests.test_loginguard.LoginGuardTests.test_locks_after_max_per_ip) ... ok
+test_other_ip_unaffected_by_a_peers_failures (admin.tests.test_loginguard.LoginGuardTests.test_other_ip_unaffected_by_a_peers_failures) ... ok
+test_success_clears_the_lock (admin.tests.test_loginguard.LoginGuardTests.test_success_clears_the_lock) ... ok
+test_explicit_denial_preserves_unrendered_grants (admin.tests.test_policy_edits.PolicyEdits.test_explicit_denial_preserves_unrendered_grants) ... ok
+test_failed_read_is_not_an_empty_policy (admin.tests.test_policy_edits.PolicyEdits.test_failed_read_is_not_an_empty_policy) ... ok
+test_invalid_effect_does_not_silently_remove_grants (admin.tests.test_policy_edits.PolicyEdits.test_invalid_effect_does_not_silently_remove_grants) ... ok
+test_unavailable_enabled_tools_survive_explicit_visible_disable (admin.tests.test_policy_edits.PolicyEdits.test_unavailable_enabled_tools_survive_explicit_visible_disable) ... ok
+test_gate_exception_is_contained (admin.tests.test_reconciler.ReconcileTests.test_gate_exception_is_contained) ... reconcile pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/reconciler.py", line 38, in reconcile_running_tools
+    if link is not None and not link.wait_until_up(wait_timeout):
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+RuntimeError: boom
+ok
+test_no_start_when_sps_not_up (admin.tests.test_reconciler.ReconcileTests.test_no_start_when_sps_not_up) ... reconcile: SPS not up after 1s; not starting tools
+ok
+test_none_link_starts_dead_tools (admin.tests.test_reconciler.ReconcileTests.test_none_link_starts_dead_tools) ... ok
+test_restart_failure_preserves_record (admin.tests.test_reconciler.ReconcileTests.test_restart_failure_preserves_record) ... reconcile: failed to restart echo; restoring intent
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/reconciler.py", line 60, in reconcile_running_tools
+    toolyard_ops.start(tool_id, config.tools_root, config.tool_dirs,
+  File "/Users/batteryshark/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/lib/python3.11/unittest/mock.py", line 1189, in _execute_mock_call
+    result = effect(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_reconciler.py", line 107, in fake_start
+    raise RuntimeError("boom")
+RuntimeError: boom
+ok
+test_skips_alive_tools (admin.tests.test_reconciler.ReconcileTests.test_skips_alive_tools) ... ok
+test_unknown_tool_is_logged_not_raised (admin.tests.test_reconciler.ReconcileTests.test_unknown_tool_is_logged_not_raised) ... reconcile: ghost in state but not discoverable; leaving record
+ok
+test_waits_for_sps_then_starts_dead_tools (admin.tests.test_reconciler.ReconcileTests.test_waits_for_sps_then_starts_dead_tools) ... ok
+test_boot_id_raises_when_ping_lacks_boot_id (admin.tests.test_sps_link.SPSLinkTests.test_boot_id_raises_when_ping_lacks_boot_id) ... ok
+test_boot_id_returns_ping_value (admin.tests.test_sps_link.SPSLinkTests.test_boot_id_returns_ping_value) ... ok
+test_constructor_accepts_positional_args (admin.tests.test_sps_link.SPSLinkTests.test_constructor_accepts_positional_args) ... ok
+test_from_env_bad_port_returns_none (admin.tests.test_sps_link.SPSLinkTests.test_from_env_bad_port_returns_none) ... SPS link: cannot load /private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/clear-desk-web-tmp/spslink-gj1uo1q9/sps.env: invalid literal for int() with base 10: 'not-a-port'
+ok
+test_from_env_missing_plugin_block_key_returns_none (admin.tests.test_sps_link.SPSLinkTests.test_from_env_missing_plugin_block_key_returns_none) ... SPS link: cannot load /private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/clear-desk-web-tmp/spslink-kknyymrc/sps.env: 'VAULT_FILE'
+ok
+test_from_env_parses_config (admin.tests.test_sps_link.SPSLinkTests.test_from_env_parses_config) ... ok
+test_from_env_returns_none_when_file_missing (admin.tests.test_sps_link.SPSLinkTests.test_from_env_returns_none_when_file_missing) ... ok
+test_from_env_returns_none_when_skip_set (admin.tests.test_sps_link.SPSLinkTests.test_from_env_returns_none_when_skip_set) ... ok
+test_wait_until_up_propagates_unexpected_error (admin.tests.test_sps_link.SPSLinkTests.test_wait_until_up_propagates_unexpected_error) ... ok
+test_wait_until_up_retries_then_succeeds (admin.tests.test_sps_link.SPSLinkTests.test_wait_until_up_retries_then_succeeds) ... ok
+test_wait_until_up_times_out (admin.tests.test_sps_link.SPSLinkTests.test_wait_until_up_times_out) ... SPS not reachable after 0s: refused
+ok
+test_empty_probe_value_is_treated_as_not_up (admin.tests.test_sps_watchdog.SPSWatchdogTests.test_empty_probe_value_is_treated_as_not_up)
+An empty-string boot_id (SPS up but not yet reporting an id) must be ... ok
+test_first_seen_boot_id_triggers_re_register (admin.tests.test_sps_watchdog.SPSWatchdogTests.test_first_seen_boot_id_triggers_re_register) ... ok
+test_new_boot_id_triggers_another_re_register (admin.tests.test_sps_watchdog.SPSWatchdogTests.test_new_boot_id_triggers_another_re_register) ... ok
+test_probe_error_is_swallowed (admin.tests.test_sps_watchdog.SPSWatchdogTests.test_probe_error_is_swallowed) ... ok
+test_probe_returns_none_is_noop (admin.tests.test_sps_watchdog.SPSWatchdogTests.test_probe_returns_none_is_noop)
+When SPS hasn't reported a boot_id yet (or is down), the watchdog ... ok
+test_re_register_failure_does_not_kill_loop (admin.tests.test_sps_watchdog.SPSWatchdogTests.test_re_register_failure_does_not_kill_loop)
+A re_register exception must be caught and logged; the loop keeps ... SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+SPS re-registration pass failed
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 120, in _re_register_all
+    count = _pass()
+            ^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/sps_watchdog.py", line 107, in _pass
+    return self._re_register(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_sps_watchdog.py", line 125, in failing
+    raise RuntimeError("sps unreachable")
+RuntimeError: sps unreachable
+ok
+test_re_register_runs_under_the_lock (admin.tests.test_sps_watchdog.SPSWatchdogTests.test_re_register_runs_under_the_lock)
+When a lock is provided, the re-register pass must run while it is ... ok
+test_same_boot_id_is_noop (admin.tests.test_sps_watchdog.SPSWatchdogTests.test_same_boot_id_is_noop) ... ok
+test_thread_loop_detects_changes (admin.tests.test_sps_watchdog.SPSWatchdogTests.test_thread_loop_detects_changes)
+End-to-end: spin the watchdog's loop, change the probed boot_id, ... ok
+test_non_broker_pid_is_rejected (admin.tests.test_supervisor.IsBrokerIdentity.test_non_broker_pid_is_rejected) ... ok
+test_nonexistent_pid_is_rejected (admin.tests.test_supervisor.IsBrokerIdentity.test_nonexistent_pid_is_rejected) ... ok
+test_restart_replaces_process (admin.tests.test_supervisor.Supervisor.test_restart_replaces_process) ... ok
+test_start_becomes_healthy_then_stop (admin.tests.test_supervisor.Supervisor.test_start_becomes_healthy_then_stop) ... ok
+test_status_is_stopped_before_start (admin.tests.test_supervisor.Supervisor.test_status_is_stopped_before_start) ... ok
+test_every_bundled_tool_is_docker_startable (admin.tests.test_tool_authoring.BundledSampleTools.test_every_bundled_tool_is_docker_startable) ... ok
+test_docker_build_tool_requires_a_dockerfile (admin.tests.test_tool_authoring.ReadWrite.test_docker_build_tool_requires_a_dockerfile) ... ok
+test_docker_runner_rejects_command_only_tool (admin.tests.test_tool_authoring.ReadWrite.test_docker_runner_rejects_command_only_tool) ... ok
+test_read_write_destructive_risks_are_valid (admin.tests.test_tool_authoring.ReadWrite.test_read_write_destructive_risks_are_valid) ... ok
+test_write_invalid_raises (admin.tests.test_tool_authoring.ReadWrite.test_write_invalid_raises) ... ok
+test_write_missing_dir_raises (admin.tests.test_tool_authoring.ReadWrite.test_write_missing_dir_raises) ... ok
+test_write_then_read_roundtrip (admin.tests.test_tool_authoring.ReadWrite.test_write_then_read_roundtrip) ... ok
+test_written_file_is_consumable_by_broker_and_toolyard (admin.tests.test_tool_authoring.ReadWrite.test_written_file_is_consumable_by_broker_and_toolyard) ... ok
+test_allows_query_text_in_rest_path (admin.tests.test_tool_authoring.RestAuthoring.test_allows_query_text_in_rest_path) ... ok
+test_normalize_defaults_forwarder_without_broker_channel (admin.tests.test_tool_authoring.RestAuthoring.test_normalize_defaults_forwarder_without_broker_channel) ... ok
+test_redaction_flags_round_trip_with_explicit_writeback_choices (admin.tests.test_tool_authoring.RestAuthoring.test_redaction_flags_round_trip_with_explicit_writeback_choices) ... ok
+test_rejects_bad_rest_path_and_header (admin.tests.test_tool_authoring.RestAuthoring.test_rejects_bad_rest_path_and_header) ... ok
+test_rejects_rest_without_base_url (admin.tests.test_tool_authoring.RestAuthoring.test_rejects_rest_without_base_url) ... ok
+test_rejects_secret_update_to_non_writable_secret (admin.tests.test_tool_authoring.RestAuthoring.test_rejects_secret_update_to_non_writable_secret) ... ok
+test_rest_docker_runner_needs_no_tool_dockerfile (admin.tests.test_tool_authoring.RestAuthoring.test_rest_docker_runner_needs_no_tool_dockerfile) ... ok
+test_to_toml_writes_forwarder_contract_shape (admin.tests.test_tool_authoring.RestAuthoring.test_to_toml_writes_forwarder_contract_shape) ... ok
+test_writeback_requires_explicit_visibility_choices (admin.tests.test_tool_authoring.RestAuthoring.test_writeback_requires_explicit_visibility_choices) ... ok
+test_written_rest_tool_is_consumable_by_stack (admin.tests.test_tool_authoring.RestAuthoring.test_written_rest_tool_is_consumable_by_stack) ... ok
+test_blank_item_is_omitted (admin.tests.test_tool_authoring.Serialize.test_blank_item_is_omitted) ... ok
+test_blank_tool_description_omitted (admin.tests.test_tool_authoring.Serialize.test_blank_tool_description_omitted) ... ok
+test_docker_image_entrypoint (admin.tests.test_tool_authoring.Serialize.test_docker_image_entrypoint) ... ok
+test_escapes_quotes_in_description (admin.tests.test_tool_authoring.Serialize.test_escapes_quotes_in_description) ... ok
+test_infisical_item_round_trip (admin.tests.test_tool_authoring.Serialize.test_infisical_item_round_trip) ... ok
+test_multiline_description_escaped_not_broken (admin.tests.test_tool_authoring.Serialize.test_multiline_description_escaped_not_broken) ... ok
+test_to_toml_parses_back (admin.tests.test_tool_authoring.Serialize.test_to_toml_parses_back) ... ok
+test_tool_description_round_trips (admin.tests.test_tool_authoring.Serialize.test_tool_description_round_trips) ... ok
+test_vault_is_not_serialized_from_editor_input (admin.tests.test_tool_authoring.Serialize.test_vault_is_not_serialized_from_editor_input) ... ok
+test_bad_id_with_dot (admin.tests.test_tool_authoring.Validate.test_bad_id_with_dot) ... ok
+test_bad_port (admin.tests.test_tool_authoring.Validate.test_bad_port) ... ok
+test_bad_risk (admin.tests.test_tool_authoring.Validate.test_bad_risk) ... ok
+test_duplicate_operation (admin.tests.test_tool_authoring.Validate.test_duplicate_operation) ... ok
+test_empty_command_and_image_is_valid_for_docker_build (admin.tests.test_tool_authoring.Validate.test_empty_command_and_image_is_valid_for_docker_build) ... ok
+test_mcp_type_is_valid (admin.tests.test_tool_authoring.Validate.test_mcp_type_is_valid) ... ok
+test_no_operations (admin.tests.test_tool_authoring.Validate.test_no_operations) ... ok
+test_overlong_id_rejected (admin.tests.test_tool_authoring.Validate.test_overlong_id_rejected) ... ok
+test_rest_type_is_valid_with_rest_fields (admin.tests.test_tool_authoring.Validate.test_rest_type_is_valid_with_rest_fields) ... ok
+test_unknown_type_rejected (admin.tests.test_tool_authoring.Validate.test_unknown_type_rejected) ... ok
+test_valid (admin.tests.test_tool_authoring.Validate.test_valid) ... ok
+test_external_unregister_retains_files_and_other_sources (admin.tests.test_tool_removal.ToolRemoval.test_external_unregister_retains_files_and_other_sources) ... ok
+test_unknown_ownership_refuses_before_effect (admin.tests.test_tool_removal.ToolRemoval.test_unknown_ownership_refuses_before_effect) ... ok
+test_clone_argv_is_injection_safe (admin.tests.test_tool_sources.AddFromGithub.test_clone_argv_is_injection_safe) ... ok
+test_clone_failure_is_clean_valueerror (admin.tests.test_tool_sources.AddFromGithub.test_clone_failure_is_clean_valueerror) ... ok
+test_clones_root_and_records_github_source (admin.tests.test_tool_sources.AddFromGithub.test_clones_root_and_records_github_source) ... ok
+test_clones_subdir (admin.tests.test_tool_sources.AddFromGithub.test_clones_subdir) ... ok
+test_missing_git_errors (admin.tests.test_tool_sources.AddFromGithub.test_missing_git_errors) ... ok
+test_private_repo_gets_friendly_message (admin.tests.test_tool_sources.AddFromGithub.test_private_repo_gets_friendly_message) ... ok
+test_rejects_dangerous_or_nongit_urls (admin.tests.test_tool_sources.AddFromGithub.test_rejects_dangerous_or_nongit_urls) ... ok
+test_rejects_subdir_traversal (admin.tests.test_tool_sources.AddFromGithub.test_rejects_subdir_traversal) ... ok
+test_bad_source_raises (admin.tests.test_tool_sources.AddFromPath.test_bad_source_raises) ... ok
+test_copies_into_tools_root_with_code_and_records_source (admin.tests.test_tool_sources.AddFromPath.test_copies_into_tools_root_with_code_and_records_source) ... ok
+test_duplicate_id_rejected (admin.tests.test_tool_sources.AddFromPath.test_duplicate_id_rejected) ... ok
+test_existing_destination_not_clobbered (admin.tests.test_tool_sources.AddFromPath.test_existing_destination_not_clobbered) ... ok
+test_invalid_manifest_rejected_at_add_time (admin.tests.test_tool_sources.AddFromPath.test_invalid_manifest_rejected_at_add_time) ... ok
+test_no_manifest_raises_NoManifest (admin.tests.test_tool_sources.AddFromPath.test_no_manifest_raises_NoManifest) ... ok
+test_read_source_none_when_absent (admin.tests.test_tool_sources.AddFromPath.test_read_source_none_when_absent) ... ok
+test_rejects_id_path_traversal (admin.tests.test_tool_sources.AddFromPath.test_rejects_id_path_traversal) ... ok
+test_rejects_overlong_id (admin.tests.test_tool_sources.AddFromPath.test_rejects_overlong_id) ... ok
+test_rejects_source_inside_tools_root (admin.tests.test_tool_sources.AddFromPath.test_rejects_source_inside_tools_root) ... ok
+test_symlink_copied_verbatim_not_dereferenced (admin.tests.test_tool_sources.AddFromPath.test_symlink_copied_verbatim_not_dereferenced) ... ok
+test_vcs_and_build_cruft_not_copied (admin.tests.test_tool_sources.AddFromPath.test_vcs_and_build_cruft_not_copied) ... ok
+test_bad_source_rejected (admin.tests.test_tool_sources.AddWithManifest.test_bad_source_rejected) ... ok
+test_copies_code_and_writes_manifest_no_sidecar (admin.tests.test_tool_sources.AddWithManifest.test_copies_code_and_writes_manifest_no_sidecar) ... ok
+test_id_clash_rejected (admin.tests.test_tool_sources.AddWithManifest.test_id_clash_rejected) ... ok
+test_invalid_manifest_rejected (admin.tests.test_tool_sources.AddWithManifest.test_invalid_manifest_rejected) ... ok
+test_traversal_id_rejected_nothing_written (admin.tests.test_tool_sources.AddWithManifest.test_traversal_id_rejected_nothing_written) ... ok
+test_github_update_reclones (admin.tests.test_tool_sources.Update.test_github_update_reclones) ... ok
+test_path_update_pulls_new_code_but_keeps_operator_edits (admin.tests.test_tool_sources.Update.test_path_update_pulls_new_code_but_keeps_operator_edits) ... ok
+test_successful_update_leaves_tools_root_clean (admin.tests.test_tool_sources.Update.test_successful_update_leaves_tools_root_clean) ... ok
+test_swap_failure_restores_original_no_orphan (admin.tests.test_tool_sources.Update.test_swap_failure_restores_original_no_orphan) ... ok
+test_update_id_change_rejected_original_intact (admin.tests.test_tool_sources.Update.test_update_id_change_rejected_original_intact) ... ok
+test_update_source_gone_leaves_original_intact (admin.tests.test_tool_sources.Update.test_update_source_gone_leaves_original_intact) ... ok
+test_update_without_sidecar_is_rejected (admin.tests.test_tool_sources.Update.test_update_without_sidecar_is_rejected) ... ok
+test_dead_record_leaves_start_button_enabled (admin.tests.test_toolyard_ops.ToolyardOps.test_dead_record_leaves_start_button_enabled) ... ok
+test_list_tools_includes_explicit_tool_dirs (admin.tests.test_toolyard_ops.ToolyardOps.test_list_tools_includes_explicit_tool_dirs) ... ok
+test_list_tools_reports_defined_not_running (admin.tests.test_toolyard_ops.ToolyardOps.test_list_tools_reports_defined_not_running) ... ok
+test_removable_flag_marks_only_tool_dirs (admin.tests.test_toolyard_ops.ToolyardOps.test_removable_flag_marks_only_tool_dirs) ... ok
+test_remove_deletes_a_managed_tool_dir (admin.tests.test_toolyard_ops.ToolyardOps.test_remove_deletes_a_managed_tool_dir) ... ok
+test_remove_refuses_external_tool_dir (admin.tests.test_toolyard_ops.ToolyardOps.test_remove_refuses_external_tool_dir) ... ok
+test_remove_unknown_tool_raises (admin.tests.test_toolyard_ops.ToolyardOps.test_remove_unknown_tool_raises) ... ok
+test_start_keeps_live_record (admin.tests.test_toolyard_ops.ToolyardOps.test_start_keeps_live_record) ... ok
+test_start_replaces_dead_record (admin.tests.test_toolyard_ops.ToolyardOps.test_start_replaces_dead_record) ... ok
+test_start_unknown_tool_raises (admin.tests.test_toolyard_ops.ToolyardOps.test_start_unknown_tool_raises) ... ok
+test_stop_unknown_tool_is_noop (admin.tests.test_toolyard_ops.ToolyardOps.test_stop_unknown_tool_is_noop) ... ok
+
+======================================================================
+FAIL: test_bad_tool_degrades_to_banner_not_500 (admin.tests.test_app.AdminApp.test_bad_tool_degrades_to_banner_not_500)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_app.py", line 345, in test_bad_tool_degrades_to_banner_not_500
+    self.assertIn("Could not read tools", r.text)
+AssertionError: 'Could not read tools' not found in '<!doctype html><html lang=\'en\'><head><meta charset=\'utf-8\'><meta name=\'viewport\' content=\'width=device-width, initial-scale=1\'><title>Dashboard · Toolstack Admin</title><style>\n:root{color-scheme:light;--bg:#f6f7f9;--ink:#18202a;--muted:#697483;--line:#d9dee7;--panel:#fff;--accent:#0d6efd;}\n*{box-sizing:border-box;}\nbody{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;}\nheader{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;background:#172033;color:#fff;}\nheader h1{font-size:18px;margin:0;font-weight:650;}\nmain{max-width:1100px;margin:0 auto;padding:22px;}\nsection{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px;}\nh2{font-size:16px;margin:0 0 12px;}\nh3{font-size:14px;margin:16px 0 8px;color:var(--muted);}\nbutton,input,select{font:inherit;min-height:38px;border-radius:6px;border:1px solid var(--line);padding:6px 9px;background:#fff;}\nbutton{background:#f3f5f8;cursor:pointer;}\nbutton.primary,a.button.primary,#policy-form button[type=submit],#tool-form button[type=submit],.login button[type=submit]{background:var(--accent);border-color:var(--accent);color:#fff;}\nbutton:disabled{opacity:.5;cursor:not-allowed;}\na.button{display:inline-flex;align-items:center;min-height:38px;border-radius:6px;border:1px solid var(--line);padding:6px 9px;background:#f3f5f8;color:var(--ink);text-decoration:none;}\ntable{width:100%;border-collapse:collapse;}\ntd,th{border-top:1px solid var(--line);padding:8px;text-align:left;vertical-align:middle;}\ncode{background:#eef1f5;padding:2px 5px;border-radius:5px;overflow-wrap:anywhere;}\npre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:auto;max-height:240px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;}\n.toolbar,.inline-form,header form,.actions,.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}\n.banner{background:#e9f8ef;border:1px solid #a9dfbc;padding:12px;border-radius:8px;margin-bottom:16px;}\n.error{background:#fff0f0;border:1px solid #efb3b3;padding:12px;border-radius:8px;color:#8c1f1f;margin-bottom:16px;}\n.muted{color:var(--muted);}\n.login{max-width:380px;margin:60px auto;display:grid;gap:12px;}\n.login label{display:grid;gap:6px;}\n.field{display:grid;gap:6px;margin-bottom:12px;max-width:520px;}\n.pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;}\n.pill.ok{background:#e9f8ef;color:#1c7a3f;}\n.pill.bad{background:#ffe8e8;color:#8c1f1f;}\n.pill.muted{background:#eef1f5;color:#697483;}\n.risk{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;background:#eef1f5;color:#333;}\n.risk.read{background:#e8f5ff;color:#185d8f;}\n.risk.write{background:#fff6df;color:#7a5100;}\n.risk.destructive{background:#ffe8e8;color:#8c1f1f;}\n.card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}\n.argrow,.headerrow,.rulerow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}\n.argrow input,.headerrow input{min-width:120px;}\n.rulerow input,.rulerow select{min-width:130px;}\n.rest-sub{display:grid;gap:6px;margin-top:8px;}\ndetails.opcard-acc>summary,details.sub-acc>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:2px 0;}\ndetails.opcard-acc>summary::-webkit-details-marker,details.sub-acc>summary::-webkit-details-marker{display:none;}\ndetails.opcard-acc>summary::before,details.sub-acc>summary::before{content:\'\\25B8\';color:var(--muted);transition:transform .1s ease;}\ndetails[open].opcard-acc>summary::before,details[open].sub-acc>summary::before{transform:rotate(90deg);}\ndetails.opcard-acc>summary{font-weight:600;}\n.op-title.muted{font-weight:400;}\n.op-sub,.acc-count{color:var(--muted);font-weight:400;font-size:12px;}\n.sub-acc{border-top:1px dashed var(--line);padding-top:6px;}\n.linkish{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:2px 6px;font:inherit;font-size:12px;text-decoration:underline;}\n.linkish:hover{color:var(--ink);}\n.sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}\n.sechead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 2px;}\n.secrow input{min-width:0;width:100%;}\n.colcenter{justify-self:center;text-align:center;}\n.brand{display:flex;align-items:center;gap:18px;}\nnav.appnav{display:flex;gap:4px;align-items:center;}\nnav.appnav a{color:#c7d0dc;text-decoration:none;padding:6px 12px;border-radius:6px;font-weight:550;}\nnav.appnav a:hover{background:rgba(255,255,255,.08);color:#fff;}\nnav.appnav a.active{background:rgba(255,255,255,.16);color:#fff;}\n.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;}\n.tab-button{background:transparent;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 16px;color:var(--muted);cursor:pointer;font-weight:550;}\n.tab-button:hover{color:var(--ink);}\n.tab-button.active{background:var(--panel);border-color:var(--line);color:var(--ink);margin-bottom:-1px;}\n.tab-panel.hidden{display:none;}\n.filterbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}\n.filterbar input[type=search]{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}\n.filterbar select{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}\n.audit-latest{background:#fff9df;}\n:focus-visible{outline:3px solid #0d6efd;outline-offset:3px;}\ndialog{max-width:min(520px,90vw);border:1px solid var(--line);border-radius:8px;padding:24px;color:var(--ink);}\ndialog::backdrop{background:#17203366;}\n@media(max-width:1000px){main{padding:14px;}section{overflow-x:auto;}header{flex-wrap:wrap;gap:12px;}}\n</style><script>\ndocument.addEventListener(\'DOMContentLoaded\',function(){\n  document.querySelectorAll(\'form[data-confirm]\').forEach(form=>{\n    let accepted=false;\n    form.addEventListener(\'submit\',e=>{\n      if(accepted)return;e.preventDefault();\n      const dialog=document.createElement(\'dialog\'), message=document.createElement(\'p\');\n      message.textContent=form.dataset.confirm;dialog.append(message);\n      const cancel=document.createElement(\'button\'), proceed=document.createElement(\'button\');\n      cancel.textContent=\'Cancel\';cancel.autofocus=true;\n      proceed.textContent=form.dataset.confirm.split(\'?\')[0];\n      dialog.append(cancel,proceed);document.body.append(dialog);\n      cancel.onclick=()=>dialog.close();\n      proceed.onclick=()=>{accepted=true;dialog.close();form.requestSubmit();};\n      dialog.addEventListener(\'close\',()=>dialog.remove());dialog.showModal();cancel.focus();\n    });\n  });\n  document.querySelectorAll(\'form[data-confirm],form[data-mutation]\').forEach(form=>{\n    let inFlight=false, uncertain=false;\n    form.addEventListener(\'submit\',async e=>{\n      if(e.defaultPrevented)return;\n      e.preventDefault();if(inFlight||uncertain)return;\n      inFlight=true;\n      const body=new URLSearchParams(new FormData(form));\n      const buttons=Array.from(form.querySelectorAll(\'button\'));\n      buttons.forEach(b=>b.disabled=true);\n      const status=document.createElement(\'p\');status.setAttribute(\'role\',\'status\');\n      status.textContent=\'Applying requested change…\';form.append(status);\n      const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),30000);\n      try{\n        const response=await fetch(form.action,{method:\'POST\',body,signal:controller.signal});\n        if(!response.ok||new URL(response.url).pathname===\'/login\')throw Error(\'No acknowledgement\');\n        const html=await response.text();\n        if(!html.includes(\'<main>\'))throw Error(\'No acknowledgement\');\n        document.open();document.write(html);document.close();\n      }catch(error){\n        uncertain=true;status.textContent=\'Outcome unknown. Target and inputs retained. Refresh state before deciding on another action; nothing was replayed.\';\n        const refresh=document.createElement(\'a\');refresh.className=\'button\';refresh.href=\'/tools\';refresh.textContent=\'Refresh state\';status.after(refresh);\n      }finally{clearTimeout(timer);inFlight=false;}\n    });\n  });\n});\ndocument.addEventListener(\'DOMContentLoaded\', function(){\n  const form=document.getElementById(\'policy-form\');\n  if(!form || form.dataset.loaded!==\'true\') return;\n  const save=form.querySelector(\'button[type=submit]\'), target=form.dataset.target;\n  const status=document.createElement(\'p\');status.setAttribute(\'role\',\'status\');\n  form.querySelector(\'section\').append(status);\n  const compare=document.createElement(\'button\');compare.type=\'button\';compare.textContent=\'Reload to compare\';compare.hidden=true;\n  status.after(compare);\n  const fields=()=>Array.from(form.querySelectorAll(\'select[name^="op__"]\'));\n  const snapshot=()=>JSON.stringify(fields().map(s=>[s.name,s.value]));\n  let baseline=snapshot(), unknown=false, busy=false;\n  async function request(url,options){\n    const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),15000);\n    try{return await fetch(url,{...options,signal:controller.signal});}finally{clearTimeout(timer);}\n  }\n  const dirty=()=>snapshot()!==baseline;\n  function state(text){status.textContent=text+\' · \'+target;}\n  form.addEventListener(\'change\',()=>state(unknown?\'Save outcome unknown · Reload to compare before retrying\':(dirty()?\'Unsaved changes\':\'No unsaved changes\')));\n  function resume(){if(dirty()&&!busy&&!unknown&&!status.textContent.includes(\'rejected\'))state(\'Resume policy draft\');}\n  document.addEventListener(\'visibilitychange\',()=>{if(!document.hidden)resume();});\n  window.addEventListener(\'pageshow\',resume);\n  window.addEventListener(\'beforeunload\',e=>{if(dirty()||busy||unknown){e.preventDefault();e.returnValue=\'\';}});\n  document.addEventListener(\'click\',e=>{\n    const link=e.target.closest(\'a[href]\');if(!link||(!dirty()&&!unknown&&!busy))return;\n    e.preventDefault();\n    const d=document.createElement(\'dialog\'), title=document.createElement(\'h2\');\n    title.textContent=\'Leave policy draft · \'+target+\'?\';d.append(title);\n    const stay=document.createElement(\'button\');stay.textContent=\'Stay\';stay.autofocus=true;\n    const discard=document.createElement(\'button\');discard.textContent=\'Discard draft\';\n    discard.disabled=busy;\n    d.append(stay,discard);document.body.append(d);\n    stay.onclick=()=>d.close();discard.onclick=()=>{baseline=snapshot();unknown=false;location.href=link.href;};\n    d.addEventListener(\'close\',()=>d.remove());d.showModal();stay.focus();\n  });\n  form.addEventListener(\'submit\',async e=>{\n    e.preventDefault();if(busy||unknown)return;\n    busy=true;save.disabled=true;state(\'Saving\');\n    const body=new URLSearchParams(new FormData(form));\n    fields().forEach(s=>s.disabled=true);\n    try{\n      const response=await request(form.action,{method:\'POST\',headers:{Accept:\'application/json\'},body});\n      const result=await response.json();\n      if(response.ok && result.outcome===\'saved\' && result.target===target){baseline=snapshot();form.querySelectorAll(\'.saved-effect\').forEach(n=>n.remove());state(\'Policy saved\');}\n      else if((response.status===400||response.status===403)&&result.outcome===\'rejected\'){compare.hidden=false;state(\'Save rejected · Draft retained. \'+(result.error||\'Review and retry save.\'));}\n      else throw new Error(\'No receipt\');\n    }catch(error){unknown=true;compare.hidden=false;state(\'Save outcome unknown · Draft retained. Reload to compare before retrying\');}\n    finally{busy=false;fields().forEach(s=>s.disabled=false);save.disabled=unknown;}\n  });\n  compare.onclick=async()=>{\n    compare.disabled=true;state(\'Loading saved policy for comparison\');\n    try{\n      const response=await request(form.action,{cache:\'no-store\'});\n      const doc=new DOMParser().parseFromString(await response.text(),\'text/html\');\n      const loaded=doc.querySelector(\'#policy-form[data-loaded="true"]\');\n      if(!response.ok||!loaded||loaded.dataset.target!==target)throw new Error(\'Load failed\');\n      const saved=Array.from(loaded.querySelectorAll(\'select[name^="op__"]\'));\n      if(saved.length!==fields().length||fields().some(s=>!saved.some(v=>v.name===s.name)))throw new Error(\'Scope changed\');\n      const matches=fields().every(s=>saved.some(v=>v.name===s.name&&v.value===s.value));\n      baseline=JSON.stringify(fields().map(s=>[s.name,saved.find(v=>v.name===s.name).value]));\n      form.querySelector(\'[name=_csrf]\').value=loaded.querySelector(\'[name=_csrf]\').value;\n      unknown=false;save.disabled=false;compare.hidden=true;\n      if(matches){baseline=snapshot();state(\'Saved policy matches draft\');}\n      else{state(\'Saved policy differs · Draft retained. Review before saving\');\n        fields().forEach(s=>{let note=s.parentElement.querySelector(\'.saved-effect\');if(!note){note=document.createElement(\'small\');note.className=\'saved-effect\';s.after(note);}note.textContent=\' Saved: \'+saved.find(v=>v.name===s.name).value;});}\n    }catch(error){state(\'Comparison unavailable · Draft retained. Retry load\');}\n    finally{compare.disabled=false;}\n  };\n});\nfunction setAll(effect){document.querySelectorAll(\'select[name^="op__"]\').forEach(function(s){s.value=effect;});}\nfunction setTool(tool,effect){document.querySelectorAll(\'select[name^="op__\'+tool+\'__"]\').forEach(function(s){s.value=effect;});}\nfunction showTab(name){\n  document.querySelectorAll(\'[data-tab-panel]\').forEach(function(p){\n    p.classList.toggle(\'hidden\', p.getAttribute(\'data-tab-panel\')!==name);});\n  document.querySelectorAll(\'.tab-button\').forEach(function(b){\n    b.classList.toggle(\'active\', b.getAttribute(\'data-tab\')===name);});\n}\ndocument.addEventListener(\'DOMContentLoaded\', function(){\n  var tabs = document.querySelectorAll(\'.tab-button\');\n  if(!tabs.length) return;\n  tabs.forEach(function(b){b.addEventListener(\'click\', function(){\n    var n=b.getAttribute(\'data-tab\'); showTab(n); history.replaceState(null,\'\',\'#\'+n);});});\n  var want=(location.hash||\'\').replace(\'#\',\'\');\n  if(!want || !document.querySelector(\'[data-tab-panel="\'+want+\'"]\'))\n    want=tabs[0].getAttribute(\'data-tab\');\n  showTab(want);\n});\n\n// Client-side row filter for the Requests + Audit tables: a text box (matches the row text:\n// caller, tool.op, event, details) AND an optional outcome/status dropdown (matches data-key).\nfunction filterTable(tableId){\n  var box = document.querySelector(\'[data-filter-for="\'+tableId+\'"]\');\n  var sel = document.querySelector(\'[data-filter-sel="\'+tableId+\'"]\');\n  var q = (box ? box.value : \'\').toLowerCase();\n  var key = sel ? sel.value : \'\';\n  document.querySelectorAll(\'#\'+tableId+\' tbody tr[data-row]\').forEach(function(tr){\n    var textOk = tr.textContent.toLowerCase().indexOf(q) >= 0;\n    var keyOk = !key || tr.getAttribute(\'data-key\') === key;\n    tr.style.display = (textOk && keyOk) ? \'\' : \'none\';\n  });\n}\ndocument.addEventListener(\'DOMContentLoaded\', function(){\n  document.querySelectorAll(\'[data-filter-for]\').forEach(function(el){\n    el.addEventListener(\'input\', function(){filterTable(el.getAttribute(\'data-filter-for\'));});});\n  document.querySelectorAll(\'[data-filter-sel]\').forEach(function(el){\n    el.addEventListener(\'change\', function(){filterTable(el.getAttribute(\'data-filter-sel\'));});});\n});\n</script></head><body><header><div class=\'brand\'><h1>Toolstack Admin</h1><nav class=\'appnav\'><a href=\'/\' class="active">Dashboard</a><a href=\'/tools\'>Tools</a><a href=\'/config\'>Config</a></nav></div><form method=\'post\' action=\'/logout\'><input type="hidden" name="_csrf" value="b9332b6f2381062899d4f4ece7e59becfde033233e7b196bc68eccbfbaac523a"><span class=\'muted\'>admin</span> <button>Sign out</button></form></header><main><div class=\'error\'>/private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/clear-desk-web-tmp/admin-app-gfbn7nye/tools/broken/toolyard.toml: tool &#x27;broken&#x27; needs an [entrypoint] port (integer 1-65535) for a &#x27;api&#x27; tool; got None</div><nav class=\'tabs\'><button class=\'tab-button active\' type=\'button\' data-tab=\'broker\'>Broker</button><button class=\'tab-button\' type=\'button\' data-tab=\'callers\'>Callers</button><button class=\'tab-button\' type=\'button\' data-tab=\'tokens\'>Tokens</button><button class=\'tab-button\' type=\'button\' data-tab=\'requests\'>Requests</button><button class=\'tab-button\' type=\'button\' data-tab=\'audit\'>Audit</button></nav><div class=\'tab-panel\' data-tab-panel=\'broker\'><section><h2>Broker</h2><p><span class=\'pill muted\'>stopped</span></p><div class=\'actions\'><form method=\'post\' action=\'/broker/start\' class=\'inline-form\'><input type="hidden" name="_csrf" value="b9332b6f2381062899d4f4ece7e59becfde033233e7b196bc68eccbfbaac523a"><button type=\'submit\'>Start</button></form><form method=\'post\' action=\'/broker/stop\' class=\'inline-form\'><input type="hidden" name="_csrf" value="b9332b6f2381062899d4f4ece7e59becfde033233e7b196bc68eccbfbaac523a"><button type=\'submit\' disabled>Stop</button></form><form method=\'post\' action=\'/broker/restart\' class=\'inline-form\' data-confirm=\'Restart local broker 127.0.0.1:None? Reloads the configured tool catalog and interrupts broker availability and active calls.\'><input type="hidden" name="_csrf" value="b9332b6f2381062899d4f4ece7e59becfde033233e7b196bc68eccbfbaac523a"><button type=\'submit\' disabled>Restart</button></form></div><details><summary>Broker log</summary><pre>No broker log yet.</pre></details><h3>Run config</h3><table><tr><td>port</td><td><code>8765</code></td></tr><tr><td>db_path</td><td><code>/private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/clear-desk-web-tmp/admin-app-gfbn7nye/broker.sqlite3</code></td></tr><tr><td>tools_root</td><td><code>/private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/clear-desk-web-tmp/admin-app-gfbn7nye/tools</code></td></tr><tr><td>nod_url</td><td><code></code></td></tr><tr><td>nod_token</td><td><code>not set</code></td></tr><tr><td>nod_channel</td><td><code></code></td></tr><tr><td>approval_ttl</td><td><code>3600</code></td></tr><tr><td>rate_limit</td><td><code>120</code></td></tr><tr><td>tool_dirs</td><td><code>[]</code></td></tr></table><p class=\'actions\'><a class=\'button\' href=\'/config\'>Edit config</a><a class=\'button\' href=\'/tools\'>Manage tools</a></p></section></div><div class=\'tab-panel hidden\' data-tab-panel=\'callers\'><section><h2>Callers</h2><form method=\'post\' action=\'/callers\' class=\'toolbar\'><input type="hidden" name="_csrf" value="b9332b6f2381062899d4f4ece7e59becfde033233e7b196bc68eccbfbaac523a"><input name=\'name\' placeholder=\'caller name\' required><button type=\'submit\'>Create caller</button></form><table><thead><tr><th>Name</th><th>Status</th><th>Actions</th></tr></thead><tbody><tr><td colspan=\'3\' class=\'muted\'>No callers yet.</td></tr></tbody></table></section></div><div class=\'tab-panel hidden\' data-tab-panel=\'tokens\'><section><h2>Active tokens</h2><p class=\'muted\'>Only active tokens are listed. Revoked and rotated tokens appear in the Audit log.</p><table><thead><tr><th>Hash prefix</th><th>Caller</th><th></th></tr></thead><tbody><tr><td colspan=\'3\' class=\'muted\'>No active tokens.</td></tr></tbody></table></section></div><div class=\'tab-panel hidden\' data-tab-panel=\'requests\'><section><h2>Recent requests</h2><div class=\'filterbar\'><input type=\'search\' data-filter-for=\'requests-table\' placeholder=\'Filter by caller / tool...\'><select data-filter-sel=\'requests-table\'><option value=\'\'>All statuses</option></select></div><table id=\'requests-table\'><thead><tr><th>#</th><th>Caller</th><th>Operation</th><th>Status</th></tr></thead><tbody><tr><td colspan=\'4\' class=\'muted\'>No requests yet.</td></tr></tbody></table></section></div><div class=\'tab-panel hidden\' data-tab-panel=\'audit\'><section><div class=\'toolbar\'><h2>Audit</h2><form method=\'post\' action=\'/audit/clear\' class=\'inline-form\' data-confirm=\'Clear the local broker audit log? Deletes retained audit history; this cannot be undone.\'><input type="hidden" name="_csrf" value="b9332b6f2381062899d4f4ece7e59becfde033233e7b196bc68eccbfbaac523a"><button type=\'submit\'>Clear audit</button></form></div><div class=\'filterbar\'><input type=\'search\' data-filter-for=\'audit-table\' placeholder=\'Filter by caller / tool / event...\'><select data-filter-sel=\'audit-table\'><option value=\'\'>All outcomes</option></select></div><table id=\'audit-table\'><thead><tr><th>Time</th><th>Event</th><th>Outcome</th><th>Req</th><th>Details</th></tr></thead><tbody><tr><td colspan=\'5\' class=\'muted\'>No audit events yet.</td></tr></tbody></table></section></div></main></body></html>'
+
+======================================================================
+FAIL: test_remove_root_tool_deletes_its_folder (admin.tests.test_app.AdminApp.test_remove_root_tool_deletes_its_folder)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/test_app.py", line 476, in test_remove_root_tool_deletes_its_folder
+    self.assertIn("Removed tool", r.text)
+AssertionError: 'Removed tool' not found in '<!doctype html><html lang=\'en\'><head><meta charset=\'utf-8\'><meta name=\'viewport\' content=\'width=device-width, initial-scale=1\'><title>Dashboard · Toolstack Admin</title><style>\n:root{color-scheme:light;--bg:#f6f7f9;--ink:#18202a;--muted:#697483;--line:#d9dee7;--panel:#fff;--accent:#0d6efd;}\n*{box-sizing:border-box;}\nbody{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;}\nheader{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;background:#172033;color:#fff;}\nheader h1{font-size:18px;margin:0;font-weight:650;}\nmain{max-width:1100px;margin:0 auto;padding:22px;}\nsection{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px;}\nh2{font-size:16px;margin:0 0 12px;}\nh3{font-size:14px;margin:16px 0 8px;color:var(--muted);}\nbutton,input,select{font:inherit;min-height:38px;border-radius:6px;border:1px solid var(--line);padding:6px 9px;background:#fff;}\nbutton{background:#f3f5f8;cursor:pointer;}\nbutton.primary,a.button.primary,#policy-form button[type=submit],#tool-form button[type=submit],.login button[type=submit]{background:var(--accent);border-color:var(--accent);color:#fff;}\nbutton:disabled{opacity:.5;cursor:not-allowed;}\na.button{display:inline-flex;align-items:center;min-height:38px;border-radius:6px;border:1px solid var(--line);padding:6px 9px;background:#f3f5f8;color:var(--ink);text-decoration:none;}\ntable{width:100%;border-collapse:collapse;}\ntd,th{border-top:1px solid var(--line);padding:8px;text-align:left;vertical-align:middle;}\ncode{background:#eef1f5;padding:2px 5px;border-radius:5px;overflow-wrap:anywhere;}\npre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:auto;max-height:240px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;}\n.toolbar,.inline-form,header form,.actions,.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}\n.banner{background:#e9f8ef;border:1px solid #a9dfbc;padding:12px;border-radius:8px;margin-bottom:16px;}\n.error{background:#fff0f0;border:1px solid #efb3b3;padding:12px;border-radius:8px;color:#8c1f1f;margin-bottom:16px;}\n.muted{color:var(--muted);}\n.login{max-width:380px;margin:60px auto;display:grid;gap:12px;}\n.login label{display:grid;gap:6px;}\n.field{display:grid;gap:6px;margin-bottom:12px;max-width:520px;}\n.pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;}\n.pill.ok{background:#e9f8ef;color:#1c7a3f;}\n.pill.bad{background:#ffe8e8;color:#8c1f1f;}\n.pill.muted{background:#eef1f5;color:#697483;}\n.risk{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;background:#eef1f5;color:#333;}\n.risk.read{background:#e8f5ff;color:#185d8f;}\n.risk.write{background:#fff6df;color:#7a5100;}\n.risk.destructive{background:#ffe8e8;color:#8c1f1f;}\n.card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}\n.argrow,.headerrow,.rulerow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}\n.argrow input,.headerrow input{min-width:120px;}\n.rulerow input,.rulerow select{min-width:130px;}\n.rest-sub{display:grid;gap:6px;margin-top:8px;}\ndetails.opcard-acc>summary,details.sub-acc>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:2px 0;}\ndetails.opcard-acc>summary::-webkit-details-marker,details.sub-acc>summary::-webkit-details-marker{display:none;}\ndetails.opcard-acc>summary::before,details.sub-acc>summary::before{content:\'\\25B8\';color:var(--muted);transition:transform .1s ease;}\ndetails[open].opcard-acc>summary::before,details[open].sub-acc>summary::before{transform:rotate(90deg);}\ndetails.opcard-acc>summary{font-weight:600;}\n.op-title.muted{font-weight:400;}\n.op-sub,.acc-count{color:var(--muted);font-weight:400;font-size:12px;}\n.sub-acc{border-top:1px dashed var(--line);padding-top:6px;}\n.linkish{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:2px 6px;font:inherit;font-size:12px;text-decoration:underline;}\n.linkish:hover{color:var(--ink);}\n.sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}\n.sechead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 2px;}\n.secrow input{min-width:0;width:100%;}\n.colcenter{justify-self:center;text-align:center;}\n.brand{display:flex;align-items:center;gap:18px;}\nnav.appnav{display:flex;gap:4px;align-items:center;}\nnav.appnav a{color:#c7d0dc;text-decoration:none;padding:6px 12px;border-radius:6px;font-weight:550;}\nnav.appnav a:hover{background:rgba(255,255,255,.08);color:#fff;}\nnav.appnav a.active{background:rgba(255,255,255,.16);color:#fff;}\n.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;}\n.tab-button{background:transparent;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 16px;color:var(--muted);cursor:pointer;font-weight:550;}\n.tab-button:hover{color:var(--ink);}\n.tab-button.active{background:var(--panel);border-color:var(--line);color:var(--ink);margin-bottom:-1px;}\n.tab-panel.hidden{display:none;}\n.filterbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}\n.filterbar input[type=search]{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}\n.filterbar select{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}\n.audit-latest{background:#fff9df;}\n:focus-visible{outline:3px solid #0d6efd;outline-offset:3px;}\ndialog{max-width:min(520px,90vw);border:1px solid var(--line);border-radius:8px;padding:24px;color:var(--ink);}\ndialog::backdrop{background:#17203366;}\n@media(max-width:1000px){main{padding:14px;}section{overflow-x:auto;}header{flex-wrap:wrap;gap:12px;}}\n</style><script>\ndocument.addEventListener(\'DOMContentLoaded\',function(){\n  document.querySelectorAll(\'form[data-confirm]\').forEach(form=>{\n    let accepted=false;\n    form.addEventListener(\'submit\',e=>{\n      if(accepted)return;e.preventDefault();\n      const dialog=document.createElement(\'dialog\'), message=document.createElement(\'p\');\n      message.textContent=form.dataset.confirm;dialog.append(message);\n      const cancel=document.createElement(\'button\'), proceed=document.createElement(\'button\');\n      cancel.textContent=\'Cancel\';cancel.autofocus=true;\n      proceed.textContent=form.dataset.confirm.split(\'?\')[0];\n      dialog.append(cancel,proceed);document.body.append(dialog);\n      cancel.onclick=()=>dialog.close();\n      proceed.onclick=()=>{accepted=true;dialog.close();form.requestSubmit();};\n      dialog.addEventListener(\'close\',()=>dialog.remove());dialog.showModal();cancel.focus();\n    });\n  });\n  document.querySelectorAll(\'form[data-confirm],form[data-mutation]\').forEach(form=>{\n    let inFlight=false, uncertain=false;\n    form.addEventListener(\'submit\',async e=>{\n      if(e.defaultPrevented)return;\n      e.preventDefault();if(inFlight||uncertain)return;\n      inFlight=true;\n      const body=new URLSearchParams(new FormData(form));\n      const buttons=Array.from(form.querySelectorAll(\'button\'));\n      buttons.forEach(b=>b.disabled=true);\n      const status=document.createElement(\'p\');status.setAttribute(\'role\',\'status\');\n      status.textContent=\'Applying requested change…\';form.append(status);\n      const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),30000);\n      try{\n        const response=await fetch(form.action,{method:\'POST\',body,signal:controller.signal});\n        if(!response.ok||new URL(response.url).pathname===\'/login\')throw Error(\'No acknowledgement\');\n        const html=await response.text();\n        if(!html.includes(\'<main>\'))throw Error(\'No acknowledgement\');\n        document.open();document.write(html);document.close();\n      }catch(error){\n        uncertain=true;status.textContent=\'Outcome unknown. Target and inputs retained. Refresh state before deciding on another action; nothing was replayed.\';\n        const refresh=document.createElement(\'a\');refresh.className=\'button\';refresh.href=\'/tools\';refresh.textContent=\'Refresh state\';status.after(refresh);\n      }finally{clearTimeout(timer);inFlight=false;}\n    });\n  });\n});\ndocument.addEventListener(\'DOMContentLoaded\', function(){\n  const form=document.getElementById(\'policy-form\');\n  if(!form || form.dataset.loaded!==\'true\') return;\n  const save=form.querySelector(\'button[type=submit]\'), target=form.dataset.target;\n  const status=document.createElement(\'p\');status.setAttribute(\'role\',\'status\');\n  form.querySelector(\'section\').append(status);\n  const compare=document.createElement(\'button\');compare.type=\'button\';compare.textContent=\'Reload to compare\';compare.hidden=true;\n  status.after(compare);\n  const fields=()=>Array.from(form.querySelectorAll(\'select[name^="op__"]\'));\n  const snapshot=()=>JSON.stringify(fields().map(s=>[s.name,s.value]));\n  let baseline=snapshot(), unknown=false, busy=false;\n  async function request(url,options){\n    const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),15000);\n    try{return await fetch(url,{...options,signal:controller.signal});}finally{clearTimeout(timer);}\n  }\n  const dirty=()=>snapshot()!==baseline;\n  function state(text){status.textContent=text+\' · \'+target;}\n  form.addEventListener(\'change\',()=>state(unknown?\'Save outcome unknown · Reload to compare before retrying\':(dirty()?\'Unsaved changes\':\'No unsaved changes\')));\n  function resume(){if(dirty()&&!busy&&!unknown&&!status.textContent.includes(\'rejected\'))state(\'Resume policy draft\');}\n  document.addEventListener(\'visibilitychange\',()=>{if(!document.hidden)resume();});\n  window.addEventListener(\'pageshow\',resume);\n  window.addEventListener(\'beforeunload\',e=>{if(dirty()||busy||unknown){e.preventDefault();e.returnValue=\'\';}});\n  document.addEventListener(\'click\',e=>{\n    const link=e.target.closest(\'a[href]\');if(!link||(!dirty()&&!unknown&&!busy))return;\n    e.preventDefault();\n    const d=document.createElement(\'dialog\'), title=document.createElement(\'h2\');\n    title.textContent=\'Leave policy draft · \'+target+\'?\';d.append(title);\n    const stay=document.createElement(\'button\');stay.textContent=\'Stay\';stay.autofocus=true;\n    const discard=document.createElement(\'button\');discard.textContent=\'Discard draft\';\n    discard.disabled=busy;\n    d.append(stay,discard);document.body.append(d);\n    stay.onclick=()=>d.close();discard.onclick=()=>{baseline=snapshot();unknown=false;location.href=link.href;};\n    d.addEventListener(\'close\',()=>d.remove());d.showModal();stay.focus();\n  });\n  form.addEventListener(\'submit\',async e=>{\n    e.preventDefault();if(busy||unknown)return;\n    busy=true;save.disabled=true;state(\'Saving\');\n    const body=new URLSearchParams(new FormData(form));\n    fields().forEach(s=>s.disabled=true);\n    try{\n      const response=await request(form.action,{method:\'POST\',headers:{Accept:\'application/json\'},body});\n      const result=await response.json();\n      if(response.ok && result.outcome===\'saved\' && result.target===target){baseline=snapshot();form.querySelectorAll(\'.saved-effect\').forEach(n=>n.remove());state(\'Policy saved\');}\n      else if((response.status===400||response.status===403)&&result.outcome===\'rejected\'){compare.hidden=false;state(\'Save rejected · Draft retained. \'+(result.error||\'Review and retry save.\'));}\n      else throw new Error(\'No receipt\');\n    }catch(error){unknown=true;compare.hidden=false;state(\'Save outcome unknown · Draft retained. Reload to compare before retrying\');}\n    finally{busy=false;fields().forEach(s=>s.disabled=false);save.disabled=unknown;}\n  });\n  compare.onclick=async()=>{\n    compare.disabled=true;state(\'Loading saved policy for comparison\');\n    try{\n      const response=await request(form.action,{cache:\'no-store\'});\n      const doc=new DOMParser().parseFromString(await response.text(),\'text/html\');\n      const loaded=doc.querySelector(\'#policy-form[data-loaded="true"]\');\n      if(!response.ok||!loaded||loaded.dataset.target!==target)throw new Error(\'Load failed\');\n      const saved=Array.from(loaded.querySelectorAll(\'select[name^="op__"]\'));\n      if(saved.length!==fields().length||fields().some(s=>!saved.some(v=>v.name===s.name)))throw new Error(\'Scope changed\');\n      const matches=fields().every(s=>saved.some(v=>v.name===s.name&&v.value===s.value));\n      baseline=JSON.stringify(fields().map(s=>[s.name,saved.find(v=>v.name===s.name).value]));\n      form.querySelector(\'[name=_csrf]\').value=loaded.querySelector(\'[name=_csrf]\').value;\n      unknown=false;save.disabled=false;compare.hidden=true;\n      if(matches){baseline=snapshot();state(\'Saved policy matches draft\');}\n      else{state(\'Saved policy differs · Draft retained. Review before saving\');\n        fields().forEach(s=>{let note=s.parentElement.querySelector(\'.saved-effect\');if(!note){note=document.createElement(\'small\');note.className=\'saved-effect\';s.after(note);}note.textContent=\' Saved: \'+saved.find(v=>v.name===s.name).value;});}\n    }catch(error){state(\'Comparison unavailable · Draft retained. Retry load\');}\n    finally{compare.disabled=false;}\n  };\n});\nfunction setAll(effect){document.querySelectorAll(\'select[name^="op__"]\').forEach(function(s){s.value=effect;});}\nfunction setTool(tool,effect){document.querySelectorAll(\'select[name^="op__\'+tool+\'__"]\').forEach(function(s){s.value=effect;});}\nfunction showTab(name){\n  document.querySelectorAll(\'[data-tab-panel]\').forEach(function(p){\n    p.classList.toggle(\'hidden\', p.getAttribute(\'data-tab-panel\')!==name);});\n  document.querySelectorAll(\'.tab-button\').forEach(function(b){\n    b.classList.toggle(\'active\', b.getAttribute(\'data-tab\')===name);});\n}\ndocument.addEventListener(\'DOMContentLoaded\', function(){\n  var tabs = document.querySelectorAll(\'.tab-button\');\n  if(!tabs.length) return;\n  tabs.forEach(function(b){b.addEventListener(\'click\', function(){\n    var n=b.getAttribute(\'data-tab\'); showTab(n); history.replaceState(null,\'\',\'#\'+n);});});\n  var want=(location.hash||\'\').replace(\'#\',\'\');\n  if(!want || !document.querySelector(\'[data-tab-panel="\'+want+\'"]\'))\n    want=tabs[0].getAttribute(\'data-tab\');\n  showTab(want);\n});\n\n// Client-side row filter for the Requests + Audit tables: a text box (matches the row text:\n// caller, tool.op, event, details) AND an optional outcome/status dropdown (matches data-key).\nfunction filterTable(tableId){\n  var box = document.querySelector(\'[data-filter-for="\'+tableId+\'"]\');\n  var sel = document.querySelector(\'[data-filter-sel="\'+tableId+\'"]\');\n  var q = (box ? box.value : \'\').toLowerCase();\n  var key = sel ? sel.value : \'\';\n  document.querySelectorAll(\'#\'+tableId+\' tbody tr[data-row]\').forEach(function(tr){\n    var textOk = tr.textContent.toLowerCase().indexOf(q) >= 0;\n    var keyOk = !key || tr.getAttribute(\'data-key\') === key;\n    tr.style.display = (textOk && keyOk) ? \'\' : \'none\';\n  });\n}\ndocument.addEventListener(\'DOMContentLoaded\', function(){\n  document.querySelectorAll(\'[data-filter-for]\').forEach(function(el){\n    el.addEventListener(\'input\', function(){filterTable(el.getAttribute(\'data-filter-for\'));});});\n  document.querySelectorAll(\'[data-filter-sel]\').forEach(function(el){\n    el.addEventListener(\'change\', function(){filterTable(el.getAttribute(\'data-filter-sel\'));});});\n});\n</script></head><body><header><div class=\'brand\'><h1>Toolstack Admin</h1><nav class=\'appnav\'><a href=\'/\' class="active">Dashboard</a><a href=\'/tools\'>Tools</a><a href=\'/config\'>Config</a></nav></div><form method=\'post\' action=\'/logout\'><input type="hidden" name="_csrf" value="29eca65b138d7ada5afc99bf935d5c2272a283d2390ea88b9a8b36610947144a"><span class=\'muted\'>admin</span> <button>Sign out</button></form></header><main><div class=\'banner\'>Removed registration for <code>echo</code> · deleted its managed folder. Restart the broker to apply.</div><nav class=\'tabs\'><button class=\'tab-button active\' type=\'button\' data-tab=\'broker\'>Broker</button><button class=\'tab-button\' type=\'button\' data-tab=\'callers\'>Callers</button><button class=\'tab-button\' type=\'button\' data-tab=\'tokens\'>Tokens</button><button class=\'tab-button\' type=\'button\' data-tab=\'requests\'>Requests</button><button class=\'tab-button\' type=\'button\' data-tab=\'audit\'>Audit</button></nav><div class=\'tab-panel\' data-tab-panel=\'broker\'><section><h2>Broker</h2><p><span class=\'pill muted\'>stopped</span></p><div class=\'actions\'><form method=\'post\' action=\'/broker/start\' class=\'inline-form\'><input type="hidden" name="_csrf" value="29eca65b138d7ada5afc99bf935d5c2272a283d2390ea88b9a8b36610947144a"><button type=\'submit\'>Start</button></form><form method=\'post\' action=\'/broker/stop\' class=\'inline-form\'><input type="hidden" name="_csrf" value="29eca65b138d7ada5afc99bf935d5c2272a283d2390ea88b9a8b36610947144a"><button type=\'submit\' disabled>Stop</button></form><form method=\'post\' action=\'/broker/restart\' class=\'inline-form\' data-confirm=\'Restart local broker 127.0.0.1:None? Reloads the configured tool catalog and interrupts broker availability and active calls.\'><input type="hidden" name="_csrf" value="29eca65b138d7ada5afc99bf935d5c2272a283d2390ea88b9a8b36610947144a"><button type=\'submit\' disabled>Restart</button></form></div><details><summary>Broker log</summary><pre>No broker log yet.</pre></details><h3>Run config</h3><table><tr><td>port</td><td><code>8765</code></td></tr><tr><td>db_path</td><td><code>/private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/clear-desk-web-tmp/admin-app-wbsdoa26/broker.sqlite3</code></td></tr><tr><td>tools_root</td><td><code>/private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/clear-desk-web-tmp/admin-app-wbsdoa26/tools</code></td></tr><tr><td>nod_url</td><td><code></code></td></tr><tr><td>nod_token</td><td><code>not set</code></td></tr><tr><td>nod_channel</td><td><code></code></td></tr><tr><td>approval_ttl</td><td><code>3600</code></td></tr><tr><td>rate_limit</td><td><code>120</code></td></tr><tr><td>tool_dirs</td><td><code>[]</code></td></tr></table><p class=\'actions\'><a class=\'button\' href=\'/config\'>Edit config</a><a class=\'button\' href=\'/tools\'>Manage tools</a></p></section></div><div class=\'tab-panel hidden\' data-tab-panel=\'callers\'><section><h2>Callers</h2><form method=\'post\' action=\'/callers\' class=\'toolbar\'><input type="hidden" name="_csrf" value="29eca65b138d7ada5afc99bf935d5c2272a283d2390ea88b9a8b36610947144a"><input name=\'name\' placeholder=\'caller name\' required><button type=\'submit\'>Create caller</button></form><table><thead><tr><th>Name</th><th>Status</th><th>Actions</th></tr></thead><tbody><tr><td colspan=\'3\' class=\'muted\'>No callers yet.</td></tr></tbody></table></section></div><div class=\'tab-panel hidden\' data-tab-panel=\'tokens\'><section><h2>Active tokens</h2><p class=\'muted\'>Only active tokens are listed. Revoked and rotated tokens appear in the Audit log.</p><table><thead><tr><th>Hash prefix</th><th>Caller</th><th></th></tr></thead><tbody><tr><td colspan=\'3\' class=\'muted\'>No active tokens.</td></tr></tbody></table></section></div><div class=\'tab-panel hidden\' data-tab-panel=\'requests\'><section><h2>Recent requests</h2><div class=\'filterbar\'><input type=\'search\' data-filter-for=\'requests-table\' placeholder=\'Filter by caller / tool...\'><select data-filter-sel=\'requests-table\'><option value=\'\'>All statuses</option></select></div><table id=\'requests-table\'><thead><tr><th>#</th><th>Caller</th><th>Operation</th><th>Status</th></tr></thead><tbody><tr><td colspan=\'4\' class=\'muted\'>No requests yet.</td></tr></tbody></table></section></div><div class=\'tab-panel hidden\' data-tab-panel=\'audit\'><section><div class=\'toolbar\'><h2>Audit</h2><form method=\'post\' action=\'/audit/clear\' class=\'inline-form\' data-confirm=\'Clear the local broker audit log? Deletes retained audit history; this cannot be undone.\'><input type="hidden" name="_csrf" value="29eca65b138d7ada5afc99bf935d5c2272a283d2390ea88b9a8b36610947144a"><button type=\'submit\'>Clear audit</button></form></div><div class=\'filterbar\'><input type=\'search\' data-filter-for=\'audit-table\' placeholder=\'Filter by caller / tool / event...\'><select data-filter-sel=\'audit-table\'><option value=\'\'>All outcomes</option><option value=\'ok\'>ok</option></select></div><table id=\'audit-table\'><thead><tr><th>Time</th><th>Event</th><th>Outcome</th><th>Req</th><th>Details</th></tr></thead><tbody><tr data-row data-key="ok" class="audit-latest"><td>2026-10-24 10:22:04</td><td>admin.tool_removed</td><td>ok</td><td></td><td><code>{&quot;operator&quot;: &quot;admin&quot;, &quot;tool&quot;: &quot;echo&quot;, &quot;deleted&quot;: true}</code></td></tr></tbody></table></section></div></main></body></html>'
+
+----------------------------------------------------------------------
+Ran 269 tests in 8.724s
+
+FAILED (failures=2)

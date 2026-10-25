@@ -1,0 +1,22 @@
+[
+  {
+    "case": "policy-1440",
+    "passed": false,
+    "returncode": 2
+  },
+  {
+    "case": "policy-1180",
+    "passed": false,
+    "returncode": 2
+  },
+  {
+    "case": "editor-1440",
+    "passed": false,
+    "returncode": 2
+  },
+  {
+    "case": "editor-1180",
+    "passed": false,
+    "returncode": 2
+  }
+]

@@ -102,9 +102,11 @@ def _cancel_pending_approvals(store: Store, caller_id: int, surface, operator: s
     process and may hold no live surface, so the store marking IS the security
     guarantee; the surface withdrawal is opportunistic card hygiene."""
     rows = store.pending_approvals_for_caller(caller_id)
+    cancelled = 0
     for row in rows:
-        store.update_approval(row["id"], status="cancelled")
-        store.update_request(row["request_id"], status="expired", arguments_json=None)
+        if not store.finish_pending(row["request_id"], "expired", "cancelled"):
+            continue
+        cancelled += 1
         if surface is not None:
             try:
                 surface.cancel(row["surface_ref"])
@@ -114,7 +116,7 @@ def _cancel_pending_approvals(store: Store, caller_id: int, surface, operator: s
                            row["correlation_id"], row["request_id"],
                            {"reason": reason, "operator": operator,
                             "tool": row["tool"], "op": row["op"]})
-    return len(rows)
+    return cancelled
 
 
 def revoke_caller(store: Store, name: str, operator: str, surface=None) -> int:
@@ -130,11 +132,19 @@ def revoke_caller(store: Store, name: str, operator: str, surface=None) -> int:
 def set_policy(store: Store, name: str, allow, review, operator: str, deny=None) -> None:
     caller = require_caller(store, name)
     policy = build_policy(allow, review, deny)
-    enabled = store.policy_for(caller["id"]).get("enabled")  # preserve tool-enablement
+    before = store.policy_for(caller["id"])
+    enabled = before.get("enabled")  # preserve tool-enablement
     if enabled:
         policy["enabled"] = enabled
     store.set_policy(caller["id"], policy)
-    record_admin_event(store, operator, "policy_changed", {"name": name})
+    def grants(value):
+        return {f"{tool}.{op}": effect
+                for tool, ops in value.get("tools", {}).items()
+                for op, effect in ops.items()}
+    old, new = grants(before), grants(policy)
+    delta = [{"operation": key, "before": old.get(key), "after": new.get(key)}
+             for key in sorted(old.keys() | new.keys()) if old.get(key) != new.get(key)]
+    record_admin_event(store, operator, "policy_changed", {"name": name, "grant_delta": delta})
 
 
 def issue_token(store: Store, name: str, operator: str) -> str:

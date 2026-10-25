@@ -8,7 +8,7 @@ this app started is stopped; an admin you already had running is left alone.
 
 It uses [pywebview](https://pywebview.flowrl.com/): the operating system's own webview
 (macOS WebKit / Linux WebKit2GTK / Windows WebView2), **not** a bundled Chromium, so the
-shell stays tiny. The "slick" look comes from the admin UI itself (see [T-028]).
+shell stays tiny. The implemented Clear desk appearance comes from the admin UI itself.
 
 ## Run
 
@@ -33,6 +33,8 @@ a token, exactly as in the web admin. Point your agent at the broker on `127.0.0
   `Stack.stop()` stops the admin **only if this app started it**.
 - **Window** (pywebview, imported lazily): a single window onto the admin URL
   (`TOOLSTACK_ADMIN_URL`, default `http://127.0.0.1:8780`).
+- **Startup failure**: a local error surface offers Retry and Close. Retry waits for
+  readiness; cleanup never stops an existing admin the shell does not own.
 
 Loopback only: the window talks to the admin on `127.0.0.1`; nothing new is exposed.
 
@@ -40,10 +42,13 @@ Loopback only: the window talks to the admin on `127.0.0.1`; nothing new is expo
 
 `python3 -m desktop` is the runnable shell. To ship a double-clickable bundle, wrap it with
 [briefcase](https://briefcase.readthedocs.io/) or py2app; that's a distribution step, out of
-scope here. For a heavier, more product-grade shell (system tray, `.dmg`, auto-update), the
-Tauri path discussed on [T-027] remains an option to graduate to.
+scope here. The separate [native Mac app](../macapp/README.md) has a local
+development-signing recipe, not a distribution release.
 
 ## Not yet
+
+- Trusted keyboard/Escape, VoiceOver, native webview focus and Close-during-retry
+  acceptance remain open. Offscreen synthetic interaction is not live acceptance.
 
 - Auto-starting the broker (today you click **Start broker** in the window, same as the web
   admin and the [Docker one-box](../deploy/docker/README.md)).

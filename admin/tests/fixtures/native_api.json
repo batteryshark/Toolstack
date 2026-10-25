@@ -1,0 +1,10 @@
+{
+  "backend": {"plugin": "localfile", "env_path": "/fake/sps.env", "host": "127.0.0.1", "port": 8743},
+  "secret_status": {"backend": "localfile", "settable": false, "fields": ["API_KEY"], "provisioned": null, "status": "UNKNOWN"},
+  "tool_states": [
+    {"running": true, "alive": true, "state": "running", "health": "unknown"},
+    {"running": true, "alive": false, "state": "crashed", "health": "stopped"},
+    {"running": false, "alive": false, "state": "stopped", "health": "stopped"},
+    {"running": true, "alive": null, "state": "unknown", "health": "unknown"}
+  ]
+}

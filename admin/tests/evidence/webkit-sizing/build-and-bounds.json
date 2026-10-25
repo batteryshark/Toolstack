@@ -1,0 +1,88 @@
+{
+  "source_sha256": "3c6e2dc9dcf3eea962d0201db9d250fc3112d1aca08479dc830a186f4bc27c3c",
+  "binary_sha256": "33dd44d9a5eda9970b1595d6494cce66f8c6c3ac00d4e2ae9c529b575736c23f",
+  "compile_jobs": 2,
+  "assertions": 356,
+  "bounds": {
+    "policy-1440": {
+      "selects": [
+        {
+          "height": 38,
+          "label": "AllowReviewDeny",
+          "tag": "SELECT",
+          "width": 87,
+          "x": 807.5625,
+          "y": 284.78125
+        }
+      ],
+      "button_heights": [
+        38
+      ],
+      "below_viewport_count": 0
+    },
+    "policy-1180": {
+      "selects": [
+        {
+          "height": 38,
+          "label": "AllowReviewDeny",
+          "tag": "SELECT",
+          "width": 87,
+          "x": 677.5625,
+          "y": 284.78125
+        }
+      ],
+      "button_heights": [
+        38
+      ],
+      "below_viewport_count": 0
+    },
+    "editor-1440": {
+      "selects": [
+        {
+          "height": 38,
+          "label": "apimcprest",
+          "tag": "SELECT",
+          "width": 520,
+          "x": 200.5,
+          "y": 340.921875
+        },
+        {
+          "height": 38,
+          "label": "readwritedestructive",
+          "tag": "SELECT",
+          "width": 114,
+          "x": 418.859375,
+          "y": 1017.921875
+        }
+      ],
+      "button_heights": [
+        38
+      ],
+      "below_viewport_count": 10
+    },
+    "editor-1180": {
+      "selects": [
+        {
+          "height": 38,
+          "label": "apimcprest",
+          "tag": "SELECT",
+          "width": 520,
+          "x": 70.5,
+          "y": 340.921875
+        },
+        {
+          "height": 38,
+          "label": "readwritedestructive",
+          "tag": "SELECT",
+          "width": 114,
+          "x": 288.859375,
+          "y": 1017.921875
+        }
+      ],
+      "button_heights": [
+        38
+      ],
+      "below_viewport_count": 10
+    }
+  }
+}

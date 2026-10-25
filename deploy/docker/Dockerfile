@@ -26,9 +26,10 @@ COPY broker/ broker/
 COPY toolyard/ toolyard/
 COPY client/ client/
 COPY admin/ admin/
+COPY sps/ sps/
+COPY toolstack_forwarder/ toolstack_forwarder/
 COPY tools/ tools/
-RUN pip install --no-cache-dir -e '.[vault]' \
-    && pip install --no-cache-dir -r admin/requirements.txt
+RUN pip install --no-cache-dir '.[admin,vault]' -r admin/requirements.txt -c admin/requirements-lock.txt
 
 ENV XDG_CONFIG_HOME=/data/config \
     XDG_STATE_HOME=/data/state \
@@ -51,4 +52,4 @@ EXPOSE 8765 8780
 
 # The admin process is the only foreground process; it supervises the broker + tools
 # as subprocesses (mirroring the toolyard's ProcessRunner).
-CMD ["/usr/local/bin/admin", "serve", "--host", "0.0.0.0", "--port", "8780"]
+CMD ["/usr/local/bin/admin", "serve", "--port", "8780"]

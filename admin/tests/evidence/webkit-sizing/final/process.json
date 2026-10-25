@@ -1,0 +1,10 @@
+{
+  "pid": 36756,
+  "start_epoch": 1792855021.043875,
+  "start_identity": "36756 36647 Sat Oct 24 11:17:01 2026     /private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/clear-desk-wk-sizing/runner /Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/evidence/webkit-sizing/final/fixtures.json /Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/admin/tests/evidence/webkit-sizing/final\n",
+  "exit_code": 0,
+  "elapsed_seconds": 8.805680990219116,
+  "watchdog": false,
+  "after_identity": "",
+  "child_limit": "Only direct children observable by parent identity; launchd-managed WebKit XPC services are not claimed owned or signalled."
+}

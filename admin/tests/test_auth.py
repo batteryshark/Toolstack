@@ -1,6 +1,10 @@
 """admin.auth: password hashing, signed sessions, and CSRF tokens, all stdlib.
 Round-trips succeed; wrong secrets, tampering, and expiry all fail closed."""
 
+import base64
+import hashlib
+import hmac
+import time
 import unittest
 
 from admin import auth
@@ -41,6 +45,25 @@ class Session(unittest.TestCase):
     def test_none_rejected(self):
         self.assertIsNone(auth.verify_session(None, self.SECRET))
 
+    def test_wrong_purpose_and_legacy_signatures_rejected(self):
+        expiry = str(int(time.time()) + 60)
+        # This demonstrates a domain collision, not a pre-auth token oracle.
+        for username, signature in (
+            ("csrf", auth.csrf_token(expiry, self.SECRET)),
+            ("csrf-v1", auth.csrf_token(expiry, self.SECRET)),
+            ("csrf", hmac.new(self.SECRET.encode(), ("csrf|" + expiry).encode(), hashlib.sha256).hexdigest()),
+            ("admin", hmac.new(self.SECRET.encode(), ("admin|" + expiry).encode(), hashlib.sha256).hexdigest()),
+        ):
+            cookie = base64.urlsafe_b64encode(f"{username}|{expiry}|{signature}".encode()).decode()
+            with self.subTest(username=username, signature=signature):
+                self.assertIsNone(auth.verify_session(cookie, self.SECRET))
+
+    def test_malformed_inputs_fail_closed(self):
+        malformed = base64.urlsafe_b64encode(f"admin|{int(time.time()) + 60}|é".encode()).decode()
+        for cookie in (malformed, "é", "\ud800", 42, b"cookie", [], {}, None):
+            with self.subTest(cookie=cookie):
+                self.assertIsNone(auth.verify_session(cookie, self.SECRET))
+
 
 class Csrf(unittest.TestCase):
     SECRET = "session-secret"
@@ -58,6 +81,19 @@ class Csrf(unittest.TestCase):
     def test_missing_inputs_rejected(self):
         self.assertFalse(auth.verify_csrf(None, "sess", self.SECRET))
         self.assertFalse(auth.verify_csrf("tok", None, self.SECRET))
+
+    def test_malformed_inputs_fail_closed(self):
+        for value in ("é", "\ud800", 42, b"token", [], {}, None):
+            with self.subTest(value=value):
+                self.assertFalse(auth.verify_csrf(value, "sess", self.SECRET))
+                self.assertFalse(auth.verify_csrf("token", value, self.SECRET))
+
+    def test_legacy_csrf_and_session_signature_rejected(self):
+        session = auth.sign_session("admin", self.SECRET, 60)
+        legacy = hmac.new(self.SECRET.encode(), ("csrf|" + session).encode(), hashlib.sha256).hexdigest()
+        signature = base64.urlsafe_b64decode(session).decode().rsplit("|", 1)[1]
+        self.assertFalse(auth.verify_csrf(legacy, session, self.SECRET))
+        self.assertFalse(auth.verify_csrf(signature, session, self.SECRET))
 
 
 if __name__ == "__main__":

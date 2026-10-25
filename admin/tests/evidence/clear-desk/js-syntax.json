@@ -1,0 +1,12 @@
+[
+  {
+    "script": "panel",
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "script": "editor",
+    "returncode": 0,
+    "stderr": ""
+  }
+]

@@ -32,7 +32,8 @@ unaffected. The same header rides every MCP request. See ``_env_tool_secret`` an
 ``docs/message-contracts.md``.
 
 Unreachable or non-2xx tools, and JSON-RPC protocol errors, raise, which the
-request lifecycle maps to 502. (A *handled* tool error rides back in-band: a 2xx
+request lifecycle conservatively maps to unknown/502 unless non-dispatch is
+positively established. (A *handled* tool error rides back in-band: a 2xx
 body for an api tool, an ``isError`` result for an mcp tool; neither raises, both
 reach the caller, mirroring the api path's "tool returns 200 + error body".)
 """
@@ -41,21 +42,29 @@ from __future__ import annotations
 
 import json
 import os
+import math
 import urllib.error
 import urllib.request
 
 from .registry import ToolOp
+from .bounds import DeadlineHTTPHandler, operation_bounds, read_response, chunks
 
 
 class ToolUnreachable(RuntimeError):
-    """The broker could not reach the tool at all (connection refused, DNS, or timeout),
-    i.e. the tool process is probably not running. Kept distinct from a tool that ran and
-    returned an error, so the lifecycle can report `tool_unreachable` vs `tool_failed`."""
+    """Legacy transport marker, NOT proof of non-dispatch (timeouts can follow effects).
+
+    Lifecycle conservatively reports unknown unless the stronger NotDispatched
+    subtype supplies positive connection-refused evidence.
+    """
 
 
 # Protocol version the broker advertises in `initialize`. A streamable-HTTP MCP
 # server negotiates down if it speaks an older one; we send a recent dated version.
 MCP_PROTOCOL_VERSION = "2025-06-18"
+
+class NotDispatched(ToolUnreachable):
+    """Positive transport evidence no action connection was established."""
+
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """Never auto-follow a tool-issued redirect. The response (including its Location) is
@@ -67,17 +76,17 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-# One opener for every tool hop, with redirect-following disabled. Built once; openers are
-# thread-safe for concurrent .open() calls.
-_OPENER = urllib.request.build_opener(_NoRedirect)
+# Every tool hop is direct loopback: never route channel credentials through an
+# ambient proxy or follow tool-issued redirects. Built once for all transports.
+_OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}), _NoRedirect, DeadlineHTTPHandler())
 
 
 def _env_tool_secret(tool_id: str) -> str | None:
     """The shared secret the broker presents to ``tool_id``.
 
-    Sourced from the toolyard state file: each running tool has the E_SECRET
-    the runner minted at start. The HttpRuntime constructor accepts an
-    ``e_secret_lookup`` callable; production wires it to ToolState.e_secret_for.
+    Sourced only from dedicated channel state, never private runner/SPS state.
+    The HttpRuntime constructor accepts a ``tool_secret`` callable.
     This function is the default used when the caller didn't inject one.
 
     Returns None when the tool isn't in the state file (not running, or started
@@ -90,10 +99,10 @@ def _env_tool_secret(tool_id: str) -> str | None:
     in Phase 5; it is no longer consulted. Operators who provisioned that env
     var in /etc/toolstack/admin.env or the systemd unit should remove it -- the
     state file is now the single source of truth, and a leftover env value
-    would have silently shadowed the real E_SECRET, producing ``channel_secret_mismatch``
+    would have silently shadowed the channel secret, producing ``channel_secret_mismatch``
     on every call."""
     from .tool_state import ToolState
-    val = ToolState().e_secret_for(tool_id)
+    val = ToolState().channel_secret_for(tool_id)
     return val.strip() if val else None
 
 
@@ -111,10 +120,17 @@ class HttpRuntime:
                 timeout = float(os.environ.get("TOOLSTACK_TOOL_TIMEOUT", "30"))
             except ValueError:
                 timeout = 30.0
+        if not math.isfinite(timeout) or not 0 < timeout <= 300:
+            raise ValueError("tool timeout must be finite and within (0, 300] seconds")
         self._timeout = timeout
+        self._response_max = 32 * 1024 * 1024
         self._tool_secret = tool_secret
 
     def execute(self, tool_op: ToolOp, arguments: dict, request_id: int, caller_name: str) -> dict:
+        with operation_bounds(self._timeout, self._response_max):
+            return self._execute(tool_op, arguments, request_id, caller_name)
+
+    def _execute(self, tool_op, arguments, request_id, caller_name):
         if tool_op.type == "api":
             return self._execute_api(tool_op, arguments, request_id, caller_name)
         if tool_op.type == "mcp":
@@ -142,11 +158,13 @@ class HttpRuntime:
         req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
         try:
             with _OPENER.open(req, timeout=self._timeout) as resp:
-                body = resp.read()
+                body = read_response(resp)
         except urllib.error.HTTPError as exc:
             exc.close()
             raise RuntimeError(f"tool returned HTTP {exc.code}")
         except urllib.error.URLError as exc:
+            if isinstance(exc.reason, ConnectionRefusedError):
+                raise NotDispatched("connection refused") from None
             raise ToolUnreachable(f"tool unreachable: {exc.reason}")
         try:
             return json.loads(body)
@@ -171,13 +189,15 @@ class HttpRuntime:
         req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
         try:
             with _OPENER.open(req, timeout=self._timeout) as resp:
-                body = resp.read()
+                body = read_response(resp)
         except urllib.error.HTTPError as exc:
             try:
-                body = exc.read()
+                body = read_response(exc)
             finally:
                 exc.close()
         except urllib.error.URLError as exc:
+            if isinstance(exc.reason, ConnectionRefusedError):
+                raise NotDispatched("connection refused") from None
             raise ToolUnreachable(f"tool unreachable: {exc.reason}")
         try:
             parsed = json.loads(body)
@@ -249,15 +269,19 @@ class HttpRuntime:
         req = urllib.request.Request(base, data=body, headers=headers, method="POST")
         try:
             with _OPENER.open(req, timeout=self._timeout) as resp:
-                raw = resp.read()
                 ctype = resp.headers.get("Content-Type", "")
                 new_session = resp.headers.get("Mcp-Session-Id")
+                if "text/event-stream" in ctype:
+                    message = self._read_sse(resp, msg_id)
+                else:
+                    message = self._parse_jsonrpc(read_response(resp), ctype)
         except urllib.error.HTTPError as exc:
             exc.close()
             raise RuntimeError(f"tool returned HTTP {exc.code}")
         except urllib.error.URLError as exc:
             raise ToolUnreachable(f"tool unreachable: {exc.reason}")
-        message = self._parse_jsonrpc(raw, ctype)
+        if message.get("jsonrpc") != "2.0" or type(message.get("id")) is not type(msg_id) or message.get("id") != msg_id:
+            raise RuntimeError("tool returned mismatched JSON-RPC response")
         if "error" in message:
             err = message["error"] or {}
             raise RuntimeError(f"tool MCP error: {err.get('message', err)}")
@@ -277,9 +301,37 @@ class HttpRuntime:
         req = urllib.request.Request(base, data=body, headers=headers, method="POST")
         try:
             with _OPENER.open(req, timeout=self._timeout) as resp:
-                resp.read()
-        except (urllib.error.HTTPError, urllib.error.URLError):
+                read_response(resp)
+        except urllib.error.HTTPError as exc:
+            exc.close()
+        except urllib.error.URLError:
             pass  # notification delivery is not acknowledged; the tools/call below is the real probe
+
+    @staticmethod
+    def _read_sse(resp, msg_id):
+        # Keep only one bounded event; stop at the matching response even if the
+        # server leaves its stream open. Ignore notifications and other IDs.
+        pending = b""
+        data = []
+        for chunk in chunks(resp):
+            pending += chunk
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                line = line.rstrip(b"\r")
+                if line.startswith(b"data:"):
+                    data.append(line[5:].lstrip())
+                elif not line:
+                    if data:
+                        try:
+                            msg = json.loads(b"\n".join(data))
+                        except (ValueError, UnicodeError):
+                            msg = None
+                        if (isinstance(msg, dict) and msg.get("jsonrpc") == "2.0"
+                                and type(msg.get("id")) is type(msg_id) and msg.get("id") == msg_id
+                                and ("result" in msg or "error" in msg)):
+                            return msg
+                    data = []
+        raise RuntimeError("tool returned no matching JSON-RPC response")
 
     @staticmethod
     def _parse_jsonrpc(raw: bytes, ctype: str) -> dict:

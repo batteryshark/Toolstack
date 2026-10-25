@@ -32,18 +32,30 @@ from broker.runtime import HttpRuntime
 from broker.server import build_server
 from toolyard.config import load
 from toolyard.egress_proxy import serve as _serve_egress_proxy
-from toolyard.runner import (BwrapRunner, DockerRunner, ProcessRunner, RunningTool, SeatbeltRunner,
+from toolyard.runner import (BwrapRunner, DockerRunner, ProcessRunner, RunningTool, SeatbeltRunner, RunnerConfigError,
                              _SANDBOX_EXEC, _netguard_argv, _seatbelt_profile)
 from toolyard.sandbox import EgressPolicy, SandboxPolicy
 
 REPO = Path(__file__).resolve().parents[2]
 
 import os
+_CHANNELS = {}
 def setUpModule():
-    # Default the channel credential so the tool can boot under tests.
-    # Individual tests that need a clean env (`test_runner_skips_sps_when_env_skip_set`)
-    # unset this in their own setUp.
-    os.environ.setdefault('TOOLSTACK_E_SECRET', 'chan')
+    global _fixture_dir, _fixture_env
+    from toolyard.runner import _boot_id
+    _boot_id.cache_clear()
+    _boot_id()  # Resolve before any subprocess/spawn mocks can pollute the cache.
+    _fixture_dir = tempfile.TemporaryDirectory()
+    _fixture_env = mock.patch.dict(os.environ, {
+        "TOOLSTACK_SPS_SKIP": "1", "TOOLSTACK_SPS_FAKE": "1",
+        "PYTHONPATH": str(REPO),
+        "TOOLSTACK_SPS_ENV": str(Path(_fixture_dir.name) / "absent.env"),
+        "TOOLSTACK_TOOLYARD_STATE": str(Path(_fixture_dir.name) / "state.json"),
+        "TOOLSTACK_TOOLYARD_CHANNEL_STATE": str(Path(_fixture_dir.name) / "channels.json"),
+    })
+    _fixture_env.start()
+    # Foreign SPS credentials must never become channel credentials.
+    os.environ.setdefault('TOOLSTACK_E_SECRET', 'foreign-sps-key')
     # Phase 5: tool boot pulls secrets from SPS. The 12 tool-starting tests
     # don't exercise the SPS wire (that's covered in sps/tests); they only
     # need the tool subprocess to come up. TOOLSTACK_SPS_FAKE=1 makes the
@@ -52,17 +64,20 @@ def setUpModule():
     # tests reset os.environ under their own mock.patch.dict, so this flag never
     # leaks into assertions there. Production never sets this env var.
     os.environ.setdefault('TOOLSTACK_SPS_FAKE', '1')
-    # Phase 5 verify_broker reads $TOOLSTACK_E_SECRET (set just above) and the
-    # broker runtime reads TOOLSTACK_TOOL_SECRET_<TOOL> to fill the matching
-    # X-Toolstack-Secret header. Set the legacy env vars here so the default
-    # HttpRuntime() path used by _call/_mcp_call/build_server() sends a header
-    # the spawned tool will accept. (TOOLSTACK_TOOL_SECRET_ECHO is also the
-    # name the real broker uses for the per-tool channel secret; the runner
-    # normally writes ToolState() instead, but the in-tree tests bypass cli.py
-    # and never touch that file.) SharedSecretE2E passes its own tool_secret
-    # callable to HttpRuntime, so this env var is ignored for that class.
-    os.environ.setdefault('TOOLSTACK_TOOL_SECRET_ECHO', 'chan')
-    os.environ.setdefault('TOOLSTACK_TOOL_SECRET_ECHO_MCP', 'chan')
+    # Channel fixtures use only runner-minted independent keys.
+
+
+def tearDownModule():
+    _fixture_env.stop()
+    _fixture_dir.cleanup()
+    _CHANNELS.clear()
+
+
+def _remember_running(running):
+    from toolyard.cli import _atomic_private_json
+    _CHANNELS[running.port] = running.channel_secret
+    _atomic_private_json(Path(os.environ["TOOLSTACK_TOOLYARD_CHANNEL_STATE"]),
+                         {running.tool_id: {"channel_secret": running.channel_secret}})
 
 TOOL_TOML = REPO / "tools" / "echo_api" / "toolyard.toml"
 TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
@@ -101,12 +116,12 @@ def _wait_for_tool(port: int, tries: int = 80) -> bool:
 
 
 def _call(port, op, arguments, request_id=1, caller="hermes"):
-    return HttpRuntime().execute(ToolOp("echo", op, "low", port, "api"),
+    return HttpRuntime(tool_secret=lambda _: _CHANNELS.get(port)).execute(ToolOp("echo", op, "low", port, "api"),
                                  arguments, request_id, caller)
 
 
 def _mcp_call(port, op, arguments, request_id=1, caller="hermes"):
-    return HttpRuntime().execute(ToolOp("echo-mcp", op, "read", port, "mcp"),
+    return HttpRuntime(tool_secret=lambda _: _CHANNELS.get(port)).execute(ToolOp("echo-mcp", op, "read", port, "mcp"),
                                  arguments, request_id, caller)
 
 
@@ -132,6 +147,7 @@ class ProcessRunnerE2E(unittest.TestCase):
         self.runner = ProcessRunner()
         self.running = self.runner.start(self.tool)
         self.addCleanup(self.runner.stop, self.running)
+        _remember_running(self.running)
         if not _wait_for_tool(self.tool.port):
             self.fail("echo tool did not start")
 
@@ -162,13 +178,7 @@ class SharedSecretE2E(unittest.TestCase):
     SHARED = "broker-shh-456"
 
     def setUp(self):
-        # Phase 5: verify_broker on the tool reads $TOOLSTACK_E_SECRET and
-        # requires the broker's X-Toolstack-Secret header to match it. The
-        # test's tool_secret callable returns SHARED, so the spawned tool
-        # must see SHARED in its env for the matching-secret assertion to
-        # pass. (Module-level setUpModule sets TOOLSTACK_E_SECRET=chan for
-        # the other classes; SharedSecretE2E overrides to SHARED and lets
-        # ProcessRunnerE2E override back to chan via _prev_e bookkeeping.)
+        # A foreign inherited SPS key must not become the fresh channel key.
         self._prev_e = os.environ.get("TOOLSTACK_E_SECRET")
         os.environ["TOOLSTACK_E_SECRET"] = self.SHARED
         self.addCleanup(self._restore_e)
@@ -177,6 +187,8 @@ class SharedSecretE2E(unittest.TestCase):
         self.running = self.runner.start(
             self.tool)
         self.addCleanup(self.runner.stop, self.running)
+        _remember_running(self.running)
+        self.SHARED = self.running.channel_secret
         if not self._ready():
             self.fail("echo tool did not start")
 
@@ -230,6 +242,7 @@ class McpOverHttpE2E(unittest.TestCase):
         self.runner = ProcessRunner()
         self.running = self.runner.start(self.tool)
         self.addCleanup(self.runner.stop, self.running)
+        _remember_running(self.running)
         if not _wait_for_tool(self.tool.port):
             self.fail("echo tool did not start")
 
@@ -287,6 +300,7 @@ class McpProcessRunnerE2E(unittest.TestCase):
         self.runner = ProcessRunner()
         self.running = self.runner.start(self.tool)  # echo-mcp ships with no secrets
         self.addCleanup(self.runner.stop, self.running)
+        _remember_running(self.running)
         if not _wait_for_mcp_tool(self.tool.port):
             self.fail("echo-mcp tool did not start")
 
@@ -404,6 +418,8 @@ class RestRunnerConfig(unittest.TestCase):
             return subprocess.CompletedProcess(["docker", *args], 0, stdout="true\n", stderr="")
 
         with mock.patch.object(DockerRunner, "_docker", side_effect=fake_docker), \
+             mock.patch("toolyard.runner._start_docker_log_follower", return_value=None), \
+             mock.patch.dict(os.environ, {"TOOLSTACK_E_SECRET": ""}), \
              mock.patch.object(DockerRunner, "is_alive", return_value=True):
             DockerRunner().start(dataclasses.replace(self.tool, image="toolstack-forwarder"))
         run = next(args for args in calls if args[:2] == ["run", "-d"])
@@ -418,6 +434,8 @@ class RestRunnerConfig(unittest.TestCase):
             return subprocess.CompletedProcess(["docker", *args], 0, stdout="true\n", stderr="")
 
         with mock.patch.object(DockerRunner, "_docker", side_effect=fake_docker), \
+             mock.patch("toolyard.runner._start_docker_log_follower", return_value=None), \
+             mock.patch.dict(os.environ, {"TOOLSTACK_E_SECRET": ""}), \
              mock.patch.object(DockerRunner, "is_alive", return_value=True):
             DockerRunner().start(self.tool)
         self.assertFalse(any(args[:1] == ["build"] for args in calls))
@@ -428,7 +446,8 @@ class RestRunnerConfig(unittest.TestCase):
 
 
 def _seatbelt_ok() -> bool:
-    return sys.platform == "darwin" and shutil.which("sandbox-exec") is not None
+    return (os.environ.get("TOOLSTACK_TEST_NATIVE") == "1" and
+            sys.platform == "darwin" and shutil.which("sandbox-exec") is not None)
 
 
 def _pid_alive(pid) -> bool:
@@ -488,18 +507,18 @@ class TerminateSafety(unittest.TestCase):
         killpg.assert_not_called()
         waitpid.assert_not_called()
 
-    def test_terminate_swallows_already_gone_pids(self):
-        # A real runner cleanup usually calls _terminate with a pid that has just exited
-        # (or one we never spawned, after a crash). The existing ProcessLookupError path
-        # is what we want here, NOT the new <=1 refusal.
+    def test_terminate_retains_unknown_pids(self):
+        # A missing identity and no own-child reap receipt cannot prove exit.
+        # Do not even probe the unknown process group with a signal.
         from toolyard.runner import _terminate
         with mock.patch("toolyard.runner.os.killpg",
                         side_effect=ProcessLookupError) as killpg, \
              mock.patch("toolyard.runner.os.waitpid",
                         side_effect=ChildProcessError) as waitpid:
-            _terminate(_TEST_PID)  # safe sentinel value (well above any pid_max)
-        killpg.assert_called_once_with(_TEST_PID, signal.SIGTERM)
-        waitpid.assert_called_once_with(_TEST_PID, 0)
+            with self.assertRaises(RuntimeError):
+                _terminate(_TEST_PID)  # unknown is not proof of exit
+        killpg.assert_not_called()
+        waitpid.assert_called_once_with(_TEST_PID, os.WNOHANG)
 
     def test_terminate_none_is_a_noop(self):
         # Already handled by the early `if pid is None: return`, but pinned so a future
@@ -653,14 +672,8 @@ class SeatbeltEgressConfinement(unittest.TestCase):
 
 
 def _bwrap_ok() -> bool:
-    """The Linux native runner needs nftables + cgroup v2 reachable through a non-interactive
-    sudo (the locked-down netguard rule). Gated so the suite still runs cleanly off-host."""
-    if not sys.platform.startswith("linux") or shutil.which("nft") is None:
-        return False
-    try:
-        return subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=10).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
+    """Linux native backend is disabled; never probe sudo during discovery."""
+    return False
 
 
 @unittest.skipUnless(_bwrap_ok(), "Linux + nft + non-interactive sudo required")
@@ -822,6 +835,12 @@ class SpsRegistration(unittest.TestCase):
     `secrets` arg is supplied for backward compat (legacy host-disk path); the
     SPS path uses `tool_def.secrets` for the CS_TUPLE list."""
 
+    def setUp(self):
+        self.resolve = mock.patch("toolyard.runner._resolve_sps", return_value=mock.Mock(
+            sp_host="127.0.0.1", sp_port=8743, sp_tls_ca="fake-ca", verify=True))
+        self.resolve.start()
+        self.addCleanup(self.resolve.stop)
+
     def _tool(self):
         # Same shape as the echo_api fixture but with [[secrets]] entries
         # so the SPS CS_TUPLE list is non-empty.
@@ -879,31 +898,66 @@ class SpsRegistration(unittest.TestCase):
         # Strip the module-level E_SECRET default for this test -- it asserts
         # the env the runner injects contains NO E_SECRET, which is only
         # true when the runner didn't mint one (i.e. SPS was skipped).
-        with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch.dict(os.environ, {"TOOLSTACK_SPS_SKIP": "1"}, clear=True):
             tool = self._tool()
             runner = ProcessRunner()
             with mock.patch("toolyard.runner._check_port_free"), \
                  mock.patch("toolyard.runner._sps_register") as reg, \
                  mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
-                 mock.patch("os.posix_spawn", return_value=123) as spawn:
+                 mock.patch("os.posix_spawn", return_value=123) as spawn, \
+                 self.assertLogs("toolyard.runner", level="WARNING") as logs:
                 running = runner.start(tool)
+            self.assertIn("DEVELOPMENT ONLY", " ".join(logs.output))
             reg.assert_not_called()
             self.assertIsNone(running.e_secret)
             env = spawn.call_args.args[2]
             self.assertNotIn("TOOLSTACK_E_SECRET", env)
 
-    def test_runner_skips_sps_when_env_file_missing(self):
+    def test_runner_refuses_required_secrets_when_env_file_missing(self):
         tool = self._tool()
         runner = ProcessRunner()
         with mock.patch("toolyard.runner._check_port_free"), \
              mock.patch("toolyard.runner._sps_register") as reg, \
              mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
-             mock.patch("os.posix_spawn", return_value=123), \
+             mock.patch("os.posix_spawn", return_value=123) as spawn, \
+             mock.patch("toolyard.runner._tool_log_path") as logs, \
              mock.patch.dict(os.environ, {"TOOLSTACK_SPS_ENV": "/tmp/does-not-exist.env",
                                           "TOOLSTACK_SPS_SKIP": "0"}, clear=False):
-            running = runner.start(tool)
+            with self.assertRaisesRegex(RunnerConfigError, "configuration is absent"):
+                runner.start(tool)
         reg.assert_not_called()
+        spawn.assert_not_called()
+        logs.assert_not_called()
+
+    def test_unsupported_backends_refuse_secrets_before_side_effects(self):
+        tool = self._tool()
+        for backend in (DockerRunner(), SeatbeltRunner(), BwrapRunner()):
+            for skip in ("0", "1"):
+                with self.subTest(backend=backend.backend, skip=skip), \
+                     mock.patch.dict(os.environ, {"TOOLSTACK_SPS_SKIP": skip,
+                                                   "TOOLSTACK_SPS_ENV": str(tool.path / "missing")}), \
+                     mock.patch("toolyard.runner._check_port_free"), \
+                     mock.patch("toolyard.runner._sps_register") as register, \
+                     mock.patch("toolyard.runner._tool_log_path") as logs, \
+                     mock.patch("toolyard.runner.os.posix_spawn") as spawn, \
+                     mock.patch.object(DockerRunner, "_docker") as docker:
+                    with self.assertRaises(RunnerConfigError):
+                        backend.start(tool)
+                    for effect in (register, logs, spawn, docker):
+                        effect.assert_not_called()
+
+    def test_no_secret_tool_still_starts_without_sps_config(self):
+        tool = self._tool_without_secrets()
+        with mock.patch.dict(os.environ, {"TOOLSTACK_SPS_SKIP": "0",
+                                          "TOOLSTACK_SPS_ENV": str(tool.path / "missing")}), \
+             mock.patch("toolyard.runner._check_port_free"), \
+             mock.patch("toolyard.runner._sps_register") as register, \
+             mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
+             mock.patch("toolyard.runner.os.posix_spawn", return_value=_TEST_PID) as spawn:
+            running = ProcessRunner().start(tool)
         self.assertIsNone(running.e_secret)
+        register.assert_not_called()
+        spawn.assert_called_once()
 
     def test_stop_calls_sps_unregister(self):
         tool = self._tool()
@@ -913,7 +967,7 @@ class SpsRegistration(unittest.TestCase):
              mock.patch("toolyard.runner._sps_register"), \
              mock.patch("toolyard.runner._sps_unregister") as unreg, \
              mock.patch("toolyard.runner.os.killpg"), \
-             mock.patch("toolyard.runner.os.waitpid"), \
+             mock.patch("toolyard.runner._terminate"), \
              mock.patch.object(ProcessRunner, "is_alive", return_value=True), \
              mock.patch("os.posix_spawn", return_value=_TEST_PID), \
              mock.patch.dict(os.environ,
@@ -950,8 +1004,8 @@ class SpsRegistration(unittest.TestCase):
         tool = self._tool()
         runner = ProcessRunner()
         with mock.patch("toolyard.runner._check_port_free"), \
-             mock.patch("toolyard.runner._check_sps_env",
-                        side_effect=SystemExit("bad mode")), \
+             mock.patch("toolyard.runner._resolve_sps",
+                         side_effect=RunnerConfigError("bad mode")), \
              mock.patch("toolyard.runner._sps_register"), \
              mock.patch("toolyard.runner._cleanup_partial_start") as cleanup, \
              mock.patch("os.posix_spawn", return_value=_TEST_PID), \
@@ -959,7 +1013,7 @@ class SpsRegistration(unittest.TestCase):
                              {"TOOLSTACK_SPS_ENV": "/tmp/spfake.env",
                               "TOOLSTACK_SPS_SKIP": "0"}, clear=False):
             with mock.patch("os.path.exists", return_value=True):
-                with self.assertRaises(SystemExit):
+                with self.assertRaises(RunnerConfigError):
                     runner.start(tool)
         cleanup.assert_called_once()
 

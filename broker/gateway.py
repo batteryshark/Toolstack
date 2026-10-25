@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from . import mcp
 from . import policy as policy_rules
 from . import request_lifecycle as lifecycle
+import re
 from .identity import authenticate, token_fingerprint
 
 # lifecycle terminal status -> (request.* audit event_type, audit outcome word). A single
@@ -49,13 +50,21 @@ _OUTCOME_STATUS = {
     lifecycle.EXPIRED: 200,  # only seen on a status query, never on submit
     lifecycle.FAILED: 502,
     lifecycle.UNAVAILABLE: 503,
+    lifecycle.RECEIVED: 202,
+    lifecycle.EXECUTING: 202,
+    lifecycle.UNKNOWN: 502,
+    lifecycle.RESULT_EXPIRED: 200,
+    lifecycle.CONFLICT: 409,
+    lifecycle.INVALID: 400,
 }
+_REQUEST_TERMINAL[lifecycle.UNKNOWN] = ("unknown", "unknown")
 
 # HTTP status -> audit outcome word (for the egress event)
 _AUDIT_OUTCOME = {
     200: "ok", 202: "accepted", 400: "invalid", 401: "denied",
     403: "denied", 404: "not_found", 429: "rate_limited", 502: "failed", 503: "unavailable",
 }
+_AUDIT_OUTCOME[409] = "conflict"
 
 
 @dataclass(frozen=True)
@@ -69,7 +78,7 @@ def make_correlation_id(headers: dict) -> str:
     """Propagate a caller-supplied correlation id, or mint one. Length-capped so a
     caller cannot smuggle a large value into our logs."""
     supplied = (headers.get("x-correlation-id") or "").strip()
-    return supplied[:64] if supplied else uuid.uuid4().hex
+    return supplied if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", supplied) else uuid.uuid4().hex
 
 
 def handle(method: str, path: str, headers: dict, body, ctx) -> Response:
@@ -96,7 +105,11 @@ def handle(method: str, path: str, headers: dict, body, ctx) -> Response:
 
 def _route(method, path, headers, body, ctx, correlation_id) -> Response:
     if method == "GET" and path == HEALTH_PATH:
-        return Response(200, {"status": "ok"}, correlation_id)
+        body = {"status": "ok"}
+        observation = getattr(ctx, "catalog_observation_id", None)
+        if observation:
+            body["catalog_observation_id"] = observation
+        return Response(200, body, correlation_id)
 
     bearer = headers.get("authorization")
     caller = authenticate(ctx.store, bearer)
@@ -114,7 +127,7 @@ def _route(method, path, headers, body, ctx, correlation_id) -> Response:
     if method == "POST" and path.startswith(ACTIONS_PREFIX):
         if ctx.rate_limiter is not None and not ctx.rate_limiter.allow(caller.id):
             return Response(429, {"error": "rate_limited"}, correlation_id)
-        return _action(path, body, ctx, caller, correlation_id)
+        return _action(path, body, ctx, caller, correlation_id, idempotency_key=headers.get("idempotency-key"))
 
     if method == "POST" and path == MCP_PATH:
         # Same authority as the action API: authenticated above; policy/approval/audit and rate
@@ -122,7 +135,7 @@ def _route(method, path, headers, body, ctx, correlation_id) -> Response:
         # the initialize/list/ping handshake, mirroring GET /v1/tools, which is unmetered).
         # mcp.handle returns the HTTP status so a throttle (429) / internal error (500)
         # audits with the right outcome via _AUDIT_OUTCOME.
-        status, mcp_body = mcp.handle(body, ctx, caller, correlation_id)
+        status, mcp_body = mcp.handle(body, ctx, caller, correlation_id, idempotency_key=headers.get("idempotency-key"))
         return Response(status, mcp_body, correlation_id)
 
     if method == "GET" and path == TOOLS_PATH:
@@ -180,13 +193,17 @@ def _request_status(path, ctx, caller, correlation_id) -> Response:
     # Only a pending_approval request can transition to terminal here; a re-poll of an
     # already-resolved request must not re-emit its terminal event.
     was_pending = req["status"] == "pending_approval"
-    outcome = lifecycle.resolve_request(ctx, int(rid))
+    if ctx.store.authorized_request(caller, int(rid)) is None:
+        return Response(403, {"status": "denied", "error": "authority"}, correlation_id)
+    outcome = lifecycle.resolve_request(ctx, int(rid), caller=caller)
+    if ctx.store.authorized_request(caller, int(rid)) is None:
+        return Response(403, {"status": "denied", "error": "authority"}, correlation_id)
     if was_pending:
         _audit_request_terminal(ctx, outcome, correlation_id, req["tool"], req["op"])
     return Response(200, _outcome_body(outcome), correlation_id)
 
 
-def _action(path, body, ctx, caller, correlation_id) -> Response:
+def _action(path, body, ctx, caller, correlation_id, idempotency_key=None) -> Response:
     spec = path[len(ACTIONS_PREFIX):]
     parts = spec.split(".")
     if len(parts) != 2 or not all(parts):
@@ -201,14 +218,8 @@ def _action(path, body, ctx, caller, correlation_id) -> Response:
     if not isinstance(arguments, dict):
         return Response(400, {"error": "invalid",
                               "detail": "arguments must be an object"}, correlation_id)
-    tool_op = ctx.registry.lookup(tool, op)
-    if tool_op is not None and tool_op.type == "rest":
-        invalid = _validate_rest_arguments(tool_op, arguments)
-        if invalid is not None:
-            return Response(400, {"error": "invalid_envelope", "detail": invalid}, correlation_id)
-
     outcome = lifecycle.submit(ctx, caller, tool, op, arguments, correlation_id,
-                               reason=body.get("reason"))
+                               reason=body.get("reason"), idempotency_key=idempotency_key)
     _audit_request_terminal(ctx, outcome, correlation_id, tool, op)
     return Response(_OUTCOME_STATUS[outcome.status], _outcome_body(outcome), correlation_id)
 
@@ -218,6 +229,10 @@ def _audit_request_terminal(ctx, outcome, correlation_id, tool, op) -> None:
     that just reached a terminal state. No-op for a still-pending outcome or a missing
     request row, so callers must guard re-polls (don't re-emit for an already-resolved
     request); see `_request_status`."""
+    if outcome.reused:
+        ctx.audit.record("request", "receipt_reused", outcome.status, correlation_id,
+                         request_id=outcome.request_id, details={"tool": tool, "op": op})
+        return
     mapped = _REQUEST_TERMINAL.get(outcome.status)
     if mapped is None or outcome.request_id is None:
         return
@@ -228,6 +243,12 @@ def _audit_request_terminal(ctx, outcome, correlation_id, tool, op) -> None:
 
 def _outcome_body(outcome) -> dict:
     body = {"status": outcome.status}
+    if outcome.idempotency_key is not None:
+        body["idempotency_key"] = outcome.idempotency_key
+    if outcome.payloads_pruned:
+        body["payloads_pruned"] = True
+    if outcome.reused:
+        body["reused"] = True
     if outcome.request_id is not None:
         body["request_id"] = outcome.request_id
     if outcome.result is not None:

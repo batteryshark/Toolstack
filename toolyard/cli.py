@@ -15,31 +15,120 @@ import argparse
 import json
 import logging
 import os
+import fcntl
+import tempfile
+import stat
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
 from .config import discover
-from .runner import RunningTool, get_runner
+from .runner import RunningTool, RunnerStartCleanupError, get_runner
 
 
 def _state_path() -> Path:
+    explicit = os.environ.get("TOOLSTACK_TOOLYARD_STATE")
+    if explicit:
+        return Path(explicit)
     state = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
     return Path(state) / "toolstack" / "toolyard" / "state.json"
 
 
 def _load_state() -> dict:
     path = _state_path()
+    _private_parent(path)
+    _validate_file(path)
     return json.loads(path.read_text()) if path.exists() else {}
 
 
+def _private_parent(path: Path) -> None:
+    """Create private directories, but never repair arbitrary existing permissions.
+
+    Refuse symlinks anywhere in the parent chain; existing leaf directories must
+    already be owned by us and private. Shared ancestors (e.g. /tmp) aren't chmodded.
+    Same-owner hostile processes remain outside this trusted-host threat model.
+    """
+    parent = path.absolute().parent
+    for ancestor in reversed((parent, *parent.parents)):
+        try:
+            info = ancestor.lstat()
+        except FileNotFoundError:
+            ancestor.mkdir(mode=0o700, exist_ok=True)
+            info = ancestor.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            raise ValueError(f"unsafe state directory: {ancestor}")
+    info = parent.lstat()
+    if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
+        raise ValueError(f"state directory must be owner-private: {parent}")
+
+
+def _validate_file(path: Path) -> None:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) & 0o077 or info.st_nlink != 1):
+        raise ValueError(f"state file must be private, regular and unlinked: {path}")
+
+
 def _save_state(state: dict) -> None:
+    """Publish private state then the credential-only view; caller holds state_lock."""
     path = _state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(state, indent=2))
-    os.replace(tmp, path)   # atomic: a torn write can't orphan the running tools' records
+    channel_path = Path(os.environ.get("TOOLSTACK_TOOLYARD_CHANNEL_STATE",
+                                       str(path.with_name("channels.json"))))
+    destinations = [os.path.abspath(p) for p in (path, channel_path, path.with_suffix(".lock"))]
+    if len(set(destinations)) != len(destinations):
+        raise ValueError("private state, channel view and lock must have different paths")
+    for target in (path, channel_path):
+        _private_parent(target)
+        _validate_file(target)
+    _atomic_private_json(path, state)
+    channels = {key: {"channel_secret": rec["channel_secret"]}
+                for key, rec in state.items() if rec.get("channel_secret")}
+    _atomic_private_json(channel_path, channels)
 
 
+def _atomic_private_json(path: Path, value: dict) -> None:
+    _private_parent(path)
+    _validate_file(path)
+    fd, tmp = tempfile.mkstemp(prefix=".state-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump(value, stream, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+@contextmanager
+def state_lock():
+    """Hold across the entire load / lifecycle / save transaction, not just rename."""
+    path = _state_path()
+    if path.with_suffix(".lock") == path:
+        raise ValueError("private state path must differ from lock path")
+    _private_parent(path)
+    _validate_file(path.with_suffix(".lock"))
+    fd = os.open(path.with_suffix(".lock"), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def _locked(fn):
+    def call(*args, **kwargs):
+        with state_lock():
+            return fn(*args, **kwargs)
+    return call
+
+
+@_locked
 def cmd_up(args) -> None:
     root = args.root or os.environ.get("TOOLSTACK_TOOLS_ROOT") or "tools"
     defs = {d.id: d for d in discover(root)}
@@ -55,17 +144,35 @@ def cmd_up(args) -> None:
             if recorded_runner.is_alive(recorded):
                 print(f"{tool_id}: already running")
                 continue
-            recorded_runner.stop(recorded)
+            try:
+                recorded_runner.stop(recorded)
+            except RunnerStartCleanupError as exc:
+                state[tool_id] = asdict(exc.running)
+                _save_state(state)
+                raise
             del state[tool_id]
             # Persist the cleanup before starting. If start fails, the dead record must
             # not make every later `up` look successful while doing nothing.
             _save_state(state)
-        running = runner.start(defs[tool_id])
+        try:
+            running = runner.start(defs[tool_id])
+        except RunnerStartCleanupError as exc:
+            state[tool_id] = asdict(exc.running)
+            _save_state(state)
+            raise
         state[tool_id] = asdict(running)
+        try:
+            _save_state(state)
+        except Exception:
+            runner.stop(running)
+            del state[tool_id]
+            _save_state(state)
+            raise
         print(f"{tool_id}: started ({running.backend}) on 127.0.0.1:{running.port}")
     _save_state(state)
 
 
+@_locked
 def cmd_down(args) -> None:
     state = _load_state()
     targets = [args.id] if args.id else list(state)
@@ -74,8 +181,14 @@ def cmd_down(args) -> None:
             print(f"{tool_id}: not running")
             continue
         running = RunningTool(**state[tool_id])
-        get_runner(running.backend).stop(running)
+        try:
+            get_runner(running.backend).stop(running)
+        except RunnerStartCleanupError as exc:
+            state[tool_id] = asdict(exc.running)
+            _save_state(state)
+            raise
         del state[tool_id]
+        _save_state(state)
         print(f"{tool_id}: stopped")
     _save_state(state)
 

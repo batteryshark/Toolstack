@@ -1,0 +1,133 @@
+Building for debugging...
+[0/6] Write sources
+[2/6] Write swift-version--58304C5D6DBC2206.txt
+[4/8] Compiling ToolstackApp AppModel.swift
+[5/8] Emitting module ToolstackApp
+[6/10] Compiling ToolstackApp NativeSnapshots.swift
+[7/10] Compiling ToolstackApp ToolstackApp.swift
+[7/11] Write Objects.LinkFileList
+[8/11] Linking ToolstackApp
+[9/11] Applying ToolstackApp
+[11/13] Emitting module ToolstackKitTests
+[12/13] Compiling ToolstackKitTests CorrectiveTests.swift
+[12/14] Write Objects.LinkFileList
+[13/14] Linking ToolstackPackageTests
+Build complete! (3.73s)
+Test Suite 'Selected tests' started at 2026-10-24 10:14:34.852.
+Test Suite 'ToolstackPackageTests.xctest' started at 2026-10-24 10:14:34.852.
+Test Suite 'ApiClientTests' started at 2026-10-24 10:14:34.852.
+Test Case '-[ToolstackKitTests.ApiClientTests testAddToolFromGitHubOmitsEmptyOptionals]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testAddToolFromGitHubOmitsEmptyOptionals]' passed (0.004 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testAddToolFromGitHubPostsRepoSubdirRef]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testAddToolFromGitHubPostsRepoSubdirRef]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testAddToolNoManifestMapsTo422]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testAddToolNoManifestMapsTo422]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testAddToolPostsSource]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testAddToolPostsSource]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testAuditDecodesEventsRequestsAndDetails]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testAuditDecodesEventsRequestsAndDetails]' passed (0.001 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testAuthedRequestSendsBearer]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testAuthedRequestSendsBearer]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testAuthorToolPostsSourceAndManifest]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testAuthorToolPostsSourceAndManifest]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testConfigDecodesMasked]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testConfigDecodesMasked]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testCreateCallerSendsBodyAndParsesToken]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testCreateCallerSendsBodyAndParsesToken]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testDeleteToolSendsDELETE]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testDeleteToolSendsDELETE]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testGetPolicyDecodes]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testGetPolicyDecodes]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testHttpErrorCarriesServerDetail]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testHttpErrorCarriesServerDetail]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testImportedHeaderDeclarationPayloadIsNotStaticInjection]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testImportedHeaderDeclarationPayloadIsNotStaticInjection]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testListCallersDecodesSnakeCase]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testListCallersDecodesSnakeCase]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsDecodesDescription]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsDecodesDescription]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsDecodesGitHubSource]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsDecodesGitHubSource]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsDecodesOps]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsDecodesOps]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsDecodesSecrets]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsDecodesSecrets]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsToleratesMissingOps]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsToleratesMissingOps]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsToleratesNullSource]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testListToolsToleratesNullSource]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testLoginSendsPasswordUnauthedAndStoresToken]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testLoginSendsPasswordUnauthedAndStoresToken]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testParseOpenAPIPostsSpecAndDecodesRestDraft]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testParseOpenAPIPostsSpecAndDecodesRestDraft]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testPolicyHTTPRejectionRetainsDraft]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testPolicyHTTPRejectionRetainsDraft]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testPolicyLoadFailureCannotSave]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testPolicyLoadFailureCannotSave]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testPolicyTimeoutIsUnknownAndNotReplayed]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testPolicyTimeoutIsUnknownAndNotReplayed]' passed (0.001 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testResyncToolPostsToUpdatePath]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testResyncToolPostsToUpdatePath]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testRevokeCallerPosts]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testRevokeCallerPosts]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testRotateTokenPostsAndReturnsNewToken]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testRotateTokenPostsAndReturnsNewToken]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testSaveConfigSendsTokenOnlyWhenProvided]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testSaveConfigSendsTokenOnlyWhenProvided]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testSecretBackendDecodes]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testSecretBackendDecodes]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testSecretStatusDecodes]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testSecretStatusDecodes]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testSetEnabledToolsPutsList]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testSetEnabledToolsPutsList]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testSetPolicySendsAllowReviewDenyViaPut]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testSetPolicySendsAllowReviewDenyViaPut]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testToolActionPostsToActionPath]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testToolActionPostsToActionPath]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testUnauthorizedMapsToApiError]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testUnauthorizedMapsToApiError]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.ApiClientTests testUpdateToolPostsDescriptionAndSecrets]' started.
+Test Case '-[ToolstackKitTests.ApiClientTests testUpdateToolPostsDescriptionAndSecrets]' passed (0.000 seconds).
+Test Suite 'ApiClientTests' passed at 2026-10-24 10:14:34.869.
+	 Executed 36 tests, with 0 failures (0 unexpected) in 0.015 (0.016) seconds
+Test Suite 'CorrectiveTests' started at 2026-10-24 10:14:34.869.
+Test Case '-[ToolstackKitTests.CorrectiveTests testAdminScopedStateResetWithoutCredentialAccess]' started.
+Test Case '-[ToolstackKitTests.CorrectiveTests testAdminScopedStateResetWithoutCredentialAccess]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.CorrectiveTests testCommittedPolicy500ThenObservedMatchDoesNotReplay]' started.
+Test Case '-[ToolstackKitTests.CorrectiveTests testCommittedPolicy500ThenObservedMatchDoesNotReplay]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.CorrectiveTests testConservativeHTTPClassification]' started.
+Test Case '-[ToolstackKitTests.CorrectiveTests testConservativeHTTPClassification]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.CorrectiveTestswarning: '--build-system native' has been deprecated and will be removed in a future release; please report an issue at https://github.com/swiftlang/swift-package-manager/issues if you are unable to adopt the default build system.
+ testEnablement500ThenMatchingReadNeedsNoSecondWrite]' started.
+Test Case '-[ToolstackKitTests.CorrectiveTests testEnablement500ThenMatchingReadNeedsNoSecondWrite]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.CorrectiveTests testEnablementMergeCases]' started.
+Test Case '-[ToolstackKitTests.CorrectiveTests testEnablementMergeCases]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.CorrectiveTests testListingErrorPreservesRowsAndFailedCompareRetainsUnknown]' started.
+Test Case '-[ToolstackKitTests.CorrectiveTests testListingErrorPreservesRowsAndFailedCompareRetainsUnknown]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.CorrectiveTests testSameIdentityUnauthorizedPreservesDraftAndEnabledComparisonInputs]' started.
+Test Case '-[ToolstackKitTests.CorrectiveTests testSameIdentityUnauthorizedPreservesDraftAndEnabledComparisonInputs]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.CorrectiveTests testThreeWayEnablementPreservesRemoteChanges]' started.
+Test Case '-[ToolstackKitTests.CorrectiveTests testThreeWayEnablementPreservesRemoteChanges]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.CorrectiveTests testToolAndBrokerPendingEffectsAreSingleFlight]' started.
+Test Case '-[ToolstackKitTests.CorrectiveTests testToolAndBrokerPendingEffectsAreSingleFlight]' passed (0.001 seconds).
+Test Suite 'CorrectiveTests' passed at 2026-10-24 10:14:34.872.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.003 (0.003) seconds
+Test Suite 'PolicyDraftTests' started at 2026-10-24 10:14:34.872.
+Test Case '-[ToolstackKitTests.PolicyDraftTests testCompareMatchesWithoutReplay]' started.
+Test Case '-[ToolstackKitTests.PolicyDraftTests testCompareMatchesWithoutReplay]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.PolicyDraftTests testComparisonPreservesConcurrentUneditedGrants]' started.
+Test Case '-[ToolstackKitTests.PolicyDraftTests testComparisonPreservesConcurrentUneditedGrants]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.PolicyDraftTests testLoadGate]' started.
+Test Case '-[ToolstackKitTests.PolicyDraftTests testLoadGate]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.PolicyDraftTests testMemoryDraftRetainsTargetAcrossNavigation]' started.
+Test Case '-[ToolstackKitTests.PolicyDraftTests testMemoryDraftRetainsTargetAcrossNavigation]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.PolicyDraftTests testRejectedSaveRetainsTargetAndOtherGrants]' started.
+Test Case '-[ToolstackKitTests.PolicyDraftTests testRejectedSaveRetainsTargetAndOtherGrants]' passed (0.000 seconds).
+Test Case '-[ToolstackKitTests.PolicyDraftTests testUnknownRequiresCompareBeforeRetry]' started.
+Test Case '-[ToolstackKitTests.PolicyDraftTests testUnknownRequiresCompareBeforeRetry]' passed (0.000 seconds).
+Test Suite 'PolicyDraftTests' passed at 2026-10-24 10:14:34.872.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+Test Suite 'ToolstackPackageTests.xctest' passed at 2026-10-24 10:14:34.872.
+	 Executed 51 tests, with 0 failures (0 unexpected) in 0.018 (0.020) seconds
+Test Suite 'Selected tests' passed at 2026-10-24 10:14:34.873.
+	 Executed 51 tests, with 0 failures (0 unexpected) in 0.018 (0.021) seconds

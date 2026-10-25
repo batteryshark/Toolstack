@@ -1,7 +1,8 @@
 """Privileged network-egress guard for the Linux bubblewrap tool sandbox.
 
-Run as root through a locked-down ``sudo`` rule, invoked only by the toolyard's
-``BwrapRunner``. It confines ONE tool's outbound network with a per-tool cgroup v2 plus an
+DISABLED for runner launch: do not authorize this mutable Python module with sudo.
+A validated immutable privileged helper is required before Linux native support.
+The retained implementation models ONE tool's outbound network with a per-tool cgroup v2 plus an
 nftables rule: the tool may answer the broker (established connections) and, when it has an
 egress allowlist, reach the broker's loopback egress proxy on a single port -- every other
 outbound packet is dropped. This is the Linux counterpart of the macOS Seatbelt profile's
@@ -18,16 +19,14 @@ Subcommands (both keyed by a validated ``--tool`` id):
     Kill anything left in the tool's cgroup, remove its nft rule, and remove the cgroup.
     Idempotent, so it is safe to call for a tool that never fully started.
 
-Privilege containment: the tool always runs as the *invoking* user, taken from ``SUDO_UID`` /
-``SUDO_GID`` (never from an argument), and the helper refuses to run as anything but root
-dropping to a non-root user. A caller therefore cannot use it to gain privilege -- it only
-ever lands back at the unprivileged user the broker already runs as. Root is confined to this
-one small helper; the broker itself stays unprivileged.
+Dropping to the invoking user does not make importing mutable application code as
+root safe. These functions remain for fake lifecycle tests, not a deployment recipe.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import subprocess
@@ -51,7 +50,7 @@ def _cgroup_dir(tool_id: str) -> str:
 
 def _table(tool_id: str) -> str:
     # one nft table per tool, named in nft's identifier charset (alnum + underscore).
-    return "toolyard_" + re.sub(r"[^a-z0-9_]", "_", tool_id)
+    return "toolyard_" + hashlib.sha256(tool_id.encode("utf-8")).hexdigest()
 
 
 def _ruleset(tool_id: str, proxy_port: int | None) -> str:

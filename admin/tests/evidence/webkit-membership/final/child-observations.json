@@ -1,0 +1,4 @@
+{
+  "recorded": [],
+  "after": "No direct child PIDs were observed; no assertion about launchd-managed XPC helpers."
+}

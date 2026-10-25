@@ -2,7 +2,8 @@
 
 `type = "rest"` tools are named HTTP operations backed by the generic
 `toolstack_forwarder` process. Each REST tool is still one toolyard-managed
-process with one secrets directory and one loopback port.
+process with one SPS capability and one loopback port. See
+[security contracts](security-contracts.md) for the supported trusted-host boundary.
 
 ## Manifest Shape
 
@@ -78,10 +79,9 @@ The broker calls the forwarder:
 }
 ```
 
-`X-Toolstack-Secret` is optional and works the same way as api / mcp tools. If the
-broker has a shared secret for the tool it sends the header; if the forwarder has
-`$TOOLSTACK_SECRETS_DIR/broker_secret`, it verifies the header. With neither side
-configured, the channel check stays off.
+`X-Toolstack-Secret` is required by the forwarder and compared to the independently
+random `TOOLSTACK_CHANNEL_SECRET`, not E_SECRET. Broker reads dedicated channels.json,
+never private runner state. Same-account host access remains trusted.
 
 Success:
 
@@ -136,7 +136,8 @@ operation card.
 ## Broker Visibility
 
 The broker registry stores only REST metadata needed for routing, audit, and
-approval cards: op name, risk, port, verb, host, path template, and body kind.
+approval cards: op name, risk, port, verb, host, path template, body kind and
+approval_fields. REST body remains an opaque string, not JSON-decoded for pointers.
 It never reads `[[secrets]]` and never stores `base_url` path/query text.
 
 REST ops are not exposed through broker-native `/mcp`.

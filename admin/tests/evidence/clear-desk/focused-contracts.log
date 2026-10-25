@@ -1,0 +1,29 @@
+/Users/batteryshark/.cache/uv/archive-v0/glcQ6zq55NJq8otq/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_actual_load_edit_reload_and_failed_reload (admin.tests.test_catalog_observation.CatalogObservation.test_actual_load_edit_reload_and_failed_reload) ... {"at": 1792851642.811251, "component": "registry", "correlation_id": "18c81d0e97e3491a9ea8cd0bb9d5aad5", "details": {"ops_after": 1, "ops_before": 1, "tools_after": 1, "tools_before": 1}, "event_id": 1, "event_type": "reloaded", "outcome": "ok", "request_id": null}
+ok
+test_health_only_exposes_random_identity (admin.tests.test_catalog_observation.CatalogObservation.test_health_only_exposes_random_identity) ... ok
+test_missing_mismatched_receipt_and_sources (admin.tests.test_catalog_observation.CatalogObservation.test_missing_mismatched_receipt_and_sources) ... ok
+test_previous_process_receipt_cannot_certify_new_load (admin.tests.test_catalog_observation.CatalogObservation.test_previous_process_receipt_cannot_certify_new_load) ... {"at": 1792851644.358251, "component": "registry", "correlation_id": "4169f5df72c34e5da4c2c68ca9637b6a", "details": {"ops_after": 1, "ops_before": 1, "tools_after": 1, "tools_before": 1}, "event_id": 1, "event_type": "reloaded", "outcome": "ok", "request_id": null}
+ok
+test_secret_block_content_does_not_enter_private_fingerprint (admin.tests.test_catalog_observation.CatalogObservation.test_secret_block_content_does_not_enter_private_fingerprint) ... ok
+test_external_unregister_retains_files_and_other_sources (admin.tests.test_tool_removal.ToolRemoval.test_external_unregister_retains_files_and_other_sources) ... ok
+test_unknown_ownership_refuses_before_effect (admin.tests.test_tool_removal.ToolRemoval.test_unknown_ownership_refuses_before_effect) ... ok
+test_policy_after_effect_failure_is_unknown_and_read_does_not_replay (admin.tests.test_app.AdminApp.test_policy_after_effect_failure_is_unknown_and_read_does_not_replay) ... ok
+test_defaults_to_loopback_8780 (desktop.tests.test_app.AdminUrl.test_defaults_to_loopback_8780) ... ok
+test_env_override (desktop.tests.test_app.AdminUrl.test_env_override) ... ok
+test_false_when_nothing_listening (desktop.tests.test_app.Health.test_false_when_nothing_listening) ... ok
+test_true_when_serving (desktop.tests.test_app.Health.test_true_when_serving) ... ok
+test_already_up_does_not_spawn (desktop.tests.test_app.Lifecycle.test_already_up_does_not_spawn) ... ok
+test_early_exit_raises_with_guidance (desktop.tests.test_app.Lifecycle.test_early_exit_raises_with_guidance) ... ok
+test_spawns_waits_for_health_then_stops (desktop.tests.test_app.Lifecycle.test_spawns_waits_for_health_then_stops) ... ok
+test_stop_is_idempotent_and_safe_when_never_started (desktop.tests.test_app.Lifecycle.test_stop_is_idempotent_and_safe_when_never_started) ... ok
+test_extracts_or_defaults (desktop.tests.test_app.PortOf.test_extracts_or_defaults) ... ok
+test_double_click_failure_renders_before_main_and_cleans_up (desktop.tests.test_app.StartupSurface.test_double_click_failure_renders_before_main_and_cleans_up) ... ok
+test_error_is_escaped (desktop.tests.test_app.StartupSurface.test_error_is_escaped) ... ok
+test_retry_failure_stays_local_then_success_opens_admin (desktop.tests.test_app.StartupSurface.test_retry_failure_stays_local_then_success_opens_admin) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 4.210s
+
+OK

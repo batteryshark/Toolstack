@@ -1,8 +1,9 @@
-# Toolstack one-box for a laptop. `docker compose up -d` brings up broker + admin +
-# toolyard in a single container; state persists in ./data. Copy .env.example to .env
-# and set a password first. See README.md.
+# Experimental scaffold only: no proven SPS wiring/lifecycle. Not supported release.
+# Explicit experimental profile required; see README.md before any future test.
 services:
   toolstack:
+    # Explicitly opt-in: no proven SPS supervisor/runner lifecycle here.
+    profiles: [experimental]
     build:
       context: ../..                      # the repo root (the image needs the whole stack)
       dockerfile: deploy/docker/Dockerfile

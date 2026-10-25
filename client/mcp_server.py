@@ -8,8 +8,8 @@ quoting breakage. Run it as an MCP server command: `python3 -m client.mcp_server
 
 Review ops advertise an optional `_reason` string in their input schema, the MCP
 analogue of the CLI's `--reason`. `tools/call` pulls `_reason` out of the arguments
-(it is never forwarded to the tool) and sends it as the broker's justification, so it
-reaches the human approver and the audit log.
+(it is never forwarded to the tool). It is private pending-request metadata,
+never shown to the human approver or copied into audit text.
 
 Config (env): TOOLSTACK_URL, TOOLSTACK_TOKEN / TOOLSTACK_TOKEN_FILE (shared with the
 CLI). Stdlib only.
@@ -22,19 +22,21 @@ import sys
 import time
 import urllib.error
 
-from .toolstack import _FAIL, _send
+from .toolstack import _FAIL, _WAITING, _send
+import math
+from http.client import HTTPException
 
 PROTOCOL_VERSION = "2024-11-05"
 _JSON_TYPES = {"string", "integer", "number", "boolean", "object", "array"}
 
 
-def _call(method: str, path: str, body=None):
+def _call(method: str, path: str, body=None, *, idempotency_key=None):
     # Same broker call as the CLI (client.toolstack._send); only the unreachable
     # case differs: surface it as a JSON-RPC error rather than exiting.
     try:
-        return _send(method, path, body)
+        return _send(method, path, body, idempotency_key=idempotency_key) if idempotency_key is not None else _send(method, path, body)
     except urllib.error.URLError as exc:
-        raise RuntimeError(f"broker unreachable: {exc.reason}")
+        raise RuntimeError("broker unreachable; outcome may be unknown; never retry with a new key") from None
 
 
 def _input_schema(args: list) -> dict:
@@ -56,13 +58,13 @@ def _input_schema(args: list) -> dict:
 
 def _with_reason(schema: dict) -> dict:
     """Advertise the optional `_reason` justification on a review tool's input schema.
-    It is the MCP analogue of the CLI's --reason: shown to the human approver and
-    audited, and stripped by `_call_tool` before the tool runs (never a tool arg)."""
+    It is legacy private metadata, stripped before the tool runs and never
+    included in the approval summary or audit text."""
     props = dict(schema.get("properties", {}))
     props["_reason"] = {
         "type": "string",
-        "description": ("Why you need this, shown to the human approver and recorded "
-                        "in the audit log. Recommended on review ops; not passed to the tool."),
+        "description": ("Legacy private request metadata; omitted from approval and audit text. "
+                         "Not passed to the tool. Do not include secrets."),
     }
     return {**schema, "type": "object", "properties": props}
 
@@ -82,6 +84,7 @@ class Server:
                 "protocolVersion": params.get("protocolVersion", PROTOCOL_VERSION),
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "toolstack", "version": "0.1.0"},
+                "instructions": 'Supply tools/call params._meta["toolstack/idempotency-key"] (1-128 letters/digits/_/-). Reuse only with the same action. Unknown outcomes are not retry permission.',
             }
         if method == "ping":
             return {}
@@ -117,18 +120,30 @@ class Server:
         tool, op = self._names[name]
         # `_reason` is adapter metadata, not a tool argument: pull it out (so it is
         # never forwarded to the tool) and pass it as the broker's justification,
-        # the MCP equivalent of the CLI's --reason. It rides to the human approver
-        # on review ops and is audited (redacted).
+        # the MCP equivalent of the CLI's --reason. It stays private to the broker
+        # on review ops; audit records only whether metadata was provided.
         args = dict(arguments)
         reason = args.pop("_reason", None)
         body = {"arguments": args}
         if isinstance(reason, str) and reason.strip():
             body["reason"] = reason
-        _, resp = _call("POST", f"/v1/actions/{tool}.{op}", body)
-        if resp.get("status") == "pending_approval":
+        meta = params.get("_meta", {})
+        if not isinstance(meta, dict):
+            raise ValueError("_meta must be an object")
+        key = meta.get("toolstack/idempotency-key")
+        try:
+            _, resp = _call("POST", f"/v1/actions/{tool}.{op}", body, idempotency_key=key) if key is not None else _call("POST", f"/v1/actions/{tool}.{op}", body)
+        except (OSError, RuntimeError, HTTPException, json.JSONDecodeError) as exc:
+            resp = {"status": "unknown", "error": "broker_transport_error", "detail": type(exc).__name__,
+                    "source": "client", "note": "Use original key and exact payload; never auto-resubmit with a new key."}
+        if resp.get("status") in _WAITING:
             resp = self._poll(resp["request_id"])
+        if key is not None:
+            resp.setdefault("idempotency_key", key)
         status = resp.get("status")
-        is_error = status in _FAIL or (status is None and "error" in resp)
+        nested = resp.get("result")
+        is_error = (status in _FAIL or (status is None and "error" in resp)
+                    or (isinstance(nested, dict) and nested.get("isError") is True))
         return _result(json.dumps(resp, indent=2), is_error=is_error)
 
     def _poll(self, request_id) -> dict:
@@ -136,17 +151,25 @@ class Server:
         # isError:true: the call has NOT completed, even though the request may still
         # be pending on the broker. Otherwise an MCP agent reads a timed-out call as a
         # successful one.
+        if not math.isfinite(self._poll_timeout) or not 0 <= self._poll_timeout <= 86400:
+            raise ValueError("invalid poll timeout")
         deadline = time.monotonic() + self._poll_timeout
         while True:
-            _, resp = _call("GET", f"/v1/requests/{request_id}")
-            if resp.get("status") != "pending_approval":
+            try:
+                _, resp = _call("GET", f"/v1/requests/{request_id}")
+            except (OSError, RuntimeError, HTTPException, json.JSONDecodeError) as exc:
+                return {"status": "unknown", "request_id": request_id, "source": "client",
+                        "error": "broker_transport_error", "detail": type(exc).__name__}
+            resp.setdefault("request_id", request_id)
+            if resp.get("status") not in _WAITING:
                 return resp
             if time.monotonic() >= deadline:
                 return {**resp, "status": "timeout", "request_id": request_id,
+                        "broker_status": resp.get("status"),
                         "note": (f"wait timed out after {self._poll_timeout:g}s; the "
-                                 "request is still pending approval on the broker and "
+                                  f"request is still {resp.get('status')} on the broker and "
                                  "has not completed")}
-            time.sleep(2.0)
+            time.sleep(min(2.0, max(0, deadline - time.monotonic())))
 
 
 def _result(text: str, is_error: bool = False) -> dict:
@@ -164,7 +187,7 @@ def _handle(server: Server, message: dict):
         return {"jsonrpc": "2.0", "id": mid,
                 "error": {"code": -32601, "message": f"method not found: {exc}"}}
     except Exception as exc:  # surface as a JSON-RPC error, never crash the server
-        return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": str(exc)}}
+        return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": type(exc).__name__}}
 
 
 def serve(stdin, stdout) -> None:

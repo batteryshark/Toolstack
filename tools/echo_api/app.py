@@ -5,11 +5,10 @@ A tool is its own program. It binds the port the toolyard gives it, serves
 by the SPS at boot. The runner handed it an ``E_SECRET`` and a CA bundle
 in the environment; the tool uses those to talk to SPS over TLS/TCP.
 
-Defense in depth (Phase 4): if ``$TOOLSTACK_E_SECRET`` is set, the tool
-requires the broker's ``X-Toolstack-Secret`` header to match it, so a
-stray loopback process can't call this tool directly and bypass the
-broker's policy. With no ``TOOLSTACK_E_SECRET`` (e.g. a one-off standalone
-run), the check is skipped.
+The broker's ``X-Toolstack-Secret`` must match the independent
+``TOOLSTACK_CHANNEL_SECRET``. Missing channel configuration refuses requests;
+the SPS credential is never accepted for API authentication. Unrestricted
+same-owner processes remain trusted, not isolated by this mechanism.
 
 Stdlib only, so it runs as a bare process or inside a container unchanged.
 """
@@ -49,11 +48,10 @@ _secrets = SecretClient.from_env(_tool_id_from_config())
 
 
 def verify_broker(headers) -> bool:
-    """Defense in depth: compare X-Toolstack-Secret against the E_SECRET the
-    runner minted for this tool. No E_SECRET env -> feature off."""
-    expected = os.environ.get("TOOLSTACK_E_SECRET") or ""
+    """Require the independent runner-minted API credential."""
+    expected = os.environ.get("TOOLSTACK_CHANNEL_SECRET") or ""
     if not expected:
-        return True
+        return False
     presented = headers.get("X-Toolstack-Secret", "")
     return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
 

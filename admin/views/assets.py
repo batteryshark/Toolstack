@@ -12,11 +12,11 @@ main{max-width:1100px;margin:0 auto;padding:22px;}
 section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px;}
 h2{font-size:16px;margin:0 0 12px;}
 h3{font-size:14px;margin:16px 0 8px;color:var(--muted);}
-button,input,select{font:inherit;min-height:34px;border-radius:6px;border:1px solid var(--line);padding:6px 9px;background:#fff;}
+button,input,select{font:inherit;min-height:38px;border-radius:6px;border:1px solid var(--line);padding:6px 9px;background:#fff;}
 button{background:#f3f5f8;cursor:pointer;}
-button[type=submit],button:not([type]){background:var(--accent);border-color:var(--accent);color:#fff;}
+button.primary,a.button.primary,#tool-form button[type=submit],.login button[type=submit]{background:var(--accent);border-color:var(--accent);color:#fff;}
 button:disabled{opacity:.5;cursor:not-allowed;}
-a.button{display:inline-flex;align-items:center;min-height:34px;border-radius:6px;border:1px solid var(--line);padding:6px 9px;background:#f3f5f8;color:var(--ink);text-decoration:none;}
+a.button{display:inline-flex;align-items:center;min-height:38px;border-radius:6px;border:1px solid var(--line);padding:6px 9px;background:#f3f5f8;color:var(--ink);text-decoration:none;}
 table{width:100%;border-collapse:collapse;}
 td,th{border-top:1px solid var(--line);padding:8px;text-align:left;vertical-align:middle;}
 code{background:#eef1f5;padding:2px 5px;border-radius:5px;overflow-wrap:anywhere;}
@@ -68,11 +68,159 @@ nav.appnav a.active{background:rgba(255,255,255,.16);color:#fff;}
 .filterbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
 .filterbar input[type=search]{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}
 .filterbar select{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}
+select,.filterbar select{-webkit-appearance:none;appearance:none;height:38px;min-height:38px;padding-right:30px;color:var(--ink);background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 14px) 16px,calc(100% - 9px) 16px;background-size:5px 5px;background-repeat:no-repeat;}
 .audit-latest{background:#fff9df;}
+:focus-visible{outline:3px solid #0d6efd;outline-offset:3px;}
+[data-caller-policy]{cursor:pointer;}
+dialog{max-width:min(520px,90vw);border:1px solid var(--line);border-radius:8px;padding:24px;color:var(--ink);}
+dialog .actions{justify-content:flex-end;gap:20px;}
+dialog::backdrop{background:#17203366;}
+@media(max-width:1000px){main{padding:14px;}section{overflow-x:auto;}header{flex-wrap:wrap;gap:12px;}}
 """
 
 
 _JS = """
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('form[data-confirm]').forEach(form=>{
+    let accepted=false;
+    form.addEventListener('submit',e=>{
+      if(accepted)return;e.preventDefault();
+      const dialog=document.createElement('dialog'), message=document.createElement('p');
+      message.textContent=form.dataset.confirm;dialog.setAttribute('aria-label',form.dataset.confirm);dialog.append(message);
+      const cancel=document.createElement('button'), proceed=document.createElement('button');
+      cancel.textContent='Cancel';cancel.autofocus=true;
+      proceed.textContent=form.dataset.confirm.split('?')[0];
+      const actions=document.createElement('div');actions.className='actions';
+      actions.append(cancel,proceed);dialog.append(actions);document.body.append(dialog);
+      cancel.onclick=()=>dialog.close();
+      proceed.onclick=()=>{accepted=true;dialog.close();form.requestSubmit();};
+      dialog.addEventListener('close',()=>dialog.remove());dialog.showModal();cancel.focus();
+    });
+  });
+  document.querySelectorAll('form[data-confirm],form[data-mutation]').forEach(form=>{
+    let inFlight=false, uncertain=false;
+    const scope=form.closest('tr')||form.closest('section')||form;
+    if(document.querySelector('[data-mutation-outcome="unknown"]')){
+      scope.dataset.mutationUnknown='true';scope.querySelectorAll('button').forEach(b=>b.disabled=true);
+    }
+    form.addEventListener('submit',async e=>{
+      if(e.defaultPrevented)return;
+      e.preventDefault();if(inFlight||uncertain||scope.dataset.mutationUnknown==='true')return;
+      inFlight=true;
+      const body=new URLSearchParams(new FormData(form));
+      const buttons=Array.from(form.querySelectorAll('button'));
+      buttons.forEach(b=>b.disabled=true);
+      const status=document.createElement('p');status.setAttribute('role','status');
+      status.textContent='Applying requested change…';form.append(status);
+      const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),30000);
+      try{
+        const response=await fetch(form.action,{method:'POST',body,signal:controller.signal});
+        if(!response.ok||new URL(response.url).pathname==='/login')throw Error('No acknowledgement');
+        if(response.headers?.get('X-Toolstack-Mutation-Outcome')==='unknown')throw Error('Unknown stage receipt');
+        const html=await response.text();
+        if(!html.includes('<main>'))throw Error('No acknowledgement');
+        const returned=new DOMParser().parseFromString(html,'text/html');
+        if(returned.querySelector('[data-mutation-outcome="unknown"]'))throw Error('Unknown stage receipt');
+        document.open();document.write(html);document.close();
+      }catch(error){
+        scope.dataset.mutationUnknown='true';scope.querySelectorAll('button').forEach(b=>b.disabled=true);
+        uncertain=true;status.textContent='Outcome unknown. Target and inputs retained. Refresh state before deciding on another action; nothing was replayed.';
+        const refresh=document.createElement('a');refresh.className='button';
+        const path=new URL(form.action).pathname, target=form.querySelector('[name=catalog_target]');
+        refresh.href=target?'/tools?tool='+encodeURIComponent(target.value):
+          path.startsWith('/toolyard/tools/')?'/tools?tool='+encodeURIComponent(decodeURIComponent(path.split('/')[3])):
+          path.startsWith('/callers/')?'/#callers':path.startsWith('/audit/')?'/#audit':'/tools';
+        refresh.textContent='Refresh state';status.after(refresh);
+      }finally{clearTimeout(timer);inFlight=false;}
+    });
+  });
+});
+document.addEventListener('DOMContentLoaded', function(){
+  const form=document.getElementById('policy-form');
+  if(!form || form.dataset.loaded!=='true') return;
+  const save=form.querySelector('button[type=submit]'), target=form.dataset.target;
+  const status=document.createElement('p');status.setAttribute('role','status');
+  form.querySelector('section').append(status);
+  const compare=document.createElement('button');compare.type='button';compare.textContent='Reload to compare';compare.hidden=true;
+  status.after(compare);
+  const currentPage=document.createElement('a');currentPage.href=form.action;currentPage.textContent='Load current policy page';currentPage.hidden=true;compare.after(currentPage);
+  const fields=()=>Array.from(form.querySelectorAll('select[name^="op__"]'));
+  const snapshot=()=>JSON.stringify(fields().map(s=>[s.name,s.value]));
+  let baseline=snapshot(), unknown=false, busy=false, blocked=false;
+  const sessionMessage='Session expired · Sign in in another tab, then Reload to compare. Draft retained.';
+  async function request(url,options,format='text'){
+    const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),15000);
+    try{const response=await fetch(url,{...options,signal:controller.signal});
+      if(response.url && new URL(response.url,location.href).pathname==='/login')throw new Error('Session expired');
+      const data=await response[format]();return {response,data};
+    }finally{clearTimeout(timer);}
+  }
+  const dirty=()=>snapshot()!==baseline;
+  function state(text){status.textContent=text+' · '+target;}
+  form.addEventListener('change',()=>{if(!blocked)state(unknown?'Save outcome unknown · Reload to compare before retrying':(dirty()?'Unsaved changes':'No unsaved changes'));});
+  function resume(){if(dirty()&&!busy&&!unknown&&!blocked&&!status.textContent.includes('rejected'))state('Resume policy draft');}
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)resume();});
+  window.addEventListener('pageshow',resume);
+  window.addEventListener('beforeunload',e=>{if(dirty()||busy||unknown){e.preventDefault();e.returnValue='';}});
+  function leaveDraft(proceed){
+    const d=document.createElement('dialog'), title=document.createElement('h2');
+    title.textContent='Leave policy draft · '+target+'?';d.setAttribute('aria-label',title.textContent);d.append(title);
+    const stay=document.createElement('button');stay.textContent='Stay';stay.autofocus=true;
+    const discard=document.createElement('button');discard.textContent='Discard draft';
+    discard.disabled=busy;
+    const actions=document.createElement('div');actions.className='actions';
+    actions.append(stay,discard);d.append(actions);document.body.append(d);
+    stay.onclick=()=>d.close();discard.onclick=()=>{baseline=snapshot();unknown=false;d.close();proceed();};
+    d.addEventListener('close',()=>d.remove());d.showModal();stay.focus();
+  }
+  document.addEventListener('click',e=>{
+    const link=e.target.closest('a[href]');if(!link||(!dirty()&&!unknown&&!busy))return;
+    e.preventDefault();leaveDraft(()=>{location.href=link.href;});
+  });
+  document.addEventListener('submit',e=>{
+    if(e.target===form||(!dirty()&&!unknown&&!busy))return;
+    e.preventDefault();const destination=e.target;leaveDraft(()=>destination.requestSubmit());
+  },true);
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();if(busy||unknown||blocked)return;
+    busy=true;save.disabled=true;state('Saving');
+    const body=new URLSearchParams(new FormData(form));
+    fields().forEach(s=>s.disabled=true);
+    try{
+      const {response,data:result}=await request(form.action,{method:'POST',headers:{Accept:'application/json'},body},'json');
+      if(response.ok && result.outcome==='saved' && result.target===target){baseline=snapshot();form.querySelectorAll('.saved-effect').forEach(n=>n.remove());state('Policy saved');}
+      else if((response.status===400||response.status===403)&&result.outcome==='rejected'){blocked=true;compare.hidden=false;state('Save rejected · Draft retained. '+(result.error||'Reload to compare before saving.'));}
+      else throw new Error('No receipt');
+    }catch(error){blocked=true;compare.hidden=false;
+      if(error.message==='Session expired')state('Save rejected · '+sessionMessage);
+      else{unknown=true;state('Save outcome unknown · Draft retained. Reload to compare before retrying');}}
+    finally{busy=false;fields().forEach(s=>s.disabled=false);save.disabled=unknown||blocked;save.classList.toggle('primary',!save.disabled);compare.classList.toggle('primary',save.disabled);if(save.disabled)compare.focus();}
+  });
+  compare.onclick=async()=>{
+    if(busy)return;busy=true;save.disabled=true;
+    compare.disabled=true;state('Loading saved policy for comparison');
+    try{
+      const {response,data:html}=await request(form.action,{cache:'no-store'});
+      const doc=new DOMParser().parseFromString(html,'text/html');
+      const loaded=doc.querySelector('#policy-form[data-loaded="true"]');
+      if(!response.ok||!loaded||loaded.dataset.target!==target)throw new Error('Load failed');
+      const saved=Array.from(loaded.querySelectorAll('select[name^="op__"]'));
+      if(saved.length!==fields().length||fields().some(s=>!saved.some(v=>v.name===s.name)))throw new Error('Operation set changed');
+      const matches=fields().every(s=>saved.some(v=>v.name===s.name&&v.value===s.value));
+      baseline=JSON.stringify(fields().map(s=>[s.name,saved.find(v=>v.name===s.name).value]));
+      form.querySelector('[name=_csrf]').value=loaded.querySelector('[name=_csrf]').value;
+      unknown=false;blocked=false;save.disabled=false;compare.hidden=true;currentPage.hidden=true;currentPage.className='';
+      if(matches){baseline=snapshot();state('Saved policy matches draft');}
+      else{state('Saved policy differs · Draft retained. Review before saving');
+        fields().forEach(s=>{let note=s.parentElement.querySelector('.saved-effect');if(!note){note=document.createElement('small');note.className='saved-effect';s.after(note);}note.textContent=' Saved: '+saved.find(v=>v.name===s.name).value;});}
+    }catch(error){blocked=true;
+      const prior=unknown?'Save outcome unknown · ':'';
+      if(error.message==='Session expired')state(prior+sessionMessage);
+      else if(error.message==='Operation set changed'){currentPage.hidden=false;currentPage.className='button';state(prior+'Operation set changed · Draft retained. Load the current policy page to review available operations; leaving requires discarding this draft.');}
+      else state(prior+'Comparison unavailable · Draft retained. Retry load');
+    }finally{busy=false;save.disabled=unknown||blocked;compare.disabled=false;save.classList.toggle('primary',!save.disabled);compare.classList.toggle('primary',save.disabled);if(save.disabled)(currentPage.hidden?compare:currentPage).focus();else save.focus();}
+  };
+});
 function setAll(effect){document.querySelectorAll('select[name^="op__"]').forEach(function(s){s.value=effect;});}
 function setTool(tool,effect){document.querySelectorAll('select[name^="op__'+tool+'__"]').forEach(function(s){s.value=effect;});}
 function showTab(name){
@@ -81,6 +229,21 @@ function showTab(name){
   document.querySelectorAll('.tab-button').forEach(function(b){
     b.classList.toggle('active', b.getAttribute('data-tab')===name);});
 }
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('[data-caller-policy]').forEach(function(row){
+    row.addEventListener('dblclick', function(event){
+      // Nested actions keep their own meaning; never turn a revoke/rotate into navigation.
+      if(event.target.closest('a,button,input,select,textarea,form,summary,[role="button"],[role="menu"],[contenteditable]')) return;
+      row.querySelector('[data-policy-link]').click();
+    });
+    row.addEventListener('keydown', function(event){
+      if(event.key==='Enter' && event.target===row && !event.repeat){
+        event.preventDefault();
+        row.querySelector('[data-policy-link]').click();
+      }
+    });
+  });
+});
 document.addEventListener('DOMContentLoaded', function(){
   var tabs = document.querySelectorAll('.tab-button');
   if(!tabs.length) return;
@@ -213,6 +376,8 @@ _TOOL_EDITOR_JS = """
     card.querySelector('.op-body-kind').value = o.body_kind||'none';
     card.querySelector('.op-body-content-type').value = o.body_content_type||'';
     card._body_substitution = o.body_substitution;
+    // Nonvisual metadata: retain absence versus an explicit empty allowlist.
+    if (Object.prototype.hasOwnProperty.call(o, 'approval_fields')) card._approval_fields = o.approval_fields;
     card.querySelector('.op-redact-body').checked = !!o.redact_response_body;
     card.querySelector('.op-redact-headers').checked = !!o.redact_response_headers;
     var args = card.querySelector('.args');
@@ -271,7 +436,7 @@ _TOOL_EDITOR_JS = """
               extract_path: r.querySelector('.rule-extract-path').value,
               match_status: r.querySelector('.rule-match-status').value};
     }).filter(function(r){return r.secret_name || r.extract_path;});
-    return {name: card.querySelector('.op-name').value,
+    var operation = {name: card.querySelector('.op-name').value,
             risk: card.querySelector('.op-risk').value,
             description: card.querySelector('.op-desc').value,
             verb: card.querySelector('.op-verb').value,
@@ -289,6 +454,8 @@ _TOOL_EDITOR_JS = """
                       required: r.querySelector('.arg-req').checked,
                       description: r.querySelector('.arg-desc').value};
             })};
+    if (Object.prototype.hasOwnProperty.call(card, '_approval_fields')) operation.approval_fields = card._approval_fields;
+    return operation;
   }
   function secRow(s){
     s = s||{};

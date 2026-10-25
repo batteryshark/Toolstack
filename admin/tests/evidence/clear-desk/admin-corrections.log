@@ -1,0 +1,23 @@
+/Users/batteryshark/.cache/uv/archive-v0/glcQ6zq55NJq8otq/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_bad_tool_degrades_to_banner_not_500 (admin.tests.test_app.AdminApp.test_bad_tool_degrades_to_banner_not_500) ... ok
+test_remove_root_tool_deletes_its_folder (admin.tests.test_app.AdminApp.test_remove_root_tool_deletes_its_folder) ... ok
+test_remove_tool_unregisters_but_keeps_files (admin.tests.test_app.AdminApp.test_remove_tool_unregisters_but_keeps_files) ... ok
+test_toolyard_action_requires_csrf (admin.tests.test_app.AdminApp.test_toolyard_action_requires_csrf) ... ok
+test_dead_record_leaves_start_button_enabled (admin.tests.test_toolyard_ops.ToolyardOps.test_dead_record_leaves_start_button_enabled) ... ok
+test_list_tools_includes_explicit_tool_dirs (admin.tests.test_toolyard_ops.ToolyardOps.test_list_tools_includes_explicit_tool_dirs) ... ok
+test_list_tools_reports_defined_not_running (admin.tests.test_toolyard_ops.ToolyardOps.test_list_tools_reports_defined_not_running) ... ok
+test_removable_flag_marks_only_tool_dirs (admin.tests.test_toolyard_ops.ToolyardOps.test_removable_flag_marks_only_tool_dirs) ... ok
+test_remove_deletes_a_managed_tool_dir (admin.tests.test_toolyard_ops.ToolyardOps.test_remove_deletes_a_managed_tool_dir) ... ok
+test_remove_refuses_external_tool_dir (admin.tests.test_toolyard_ops.ToolyardOps.test_remove_refuses_external_tool_dir) ... ok
+test_remove_unknown_tool_raises (admin.tests.test_toolyard_ops.ToolyardOps.test_remove_unknown_tool_raises) ... ok
+test_start_keeps_live_record (admin.tests.test_toolyard_ops.ToolyardOps.test_start_keeps_live_record) ... ok
+test_start_replaces_dead_record (admin.tests.test_toolyard_ops.ToolyardOps.test_start_replaces_dead_record) ... ok
+test_start_unknown_tool_raises (admin.tests.test_toolyard_ops.ToolyardOps.test_start_unknown_tool_raises) ... ok
+test_stop_unknown_tool_is_noop (admin.tests.test_toolyard_ops.ToolyardOps.test_stop_unknown_tool_is_noop) ... ok
+test_external_delete_unregisters_only_matching_source (admin.tests.test_api.JsonApi.test_external_delete_unregisters_only_matching_source) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.298s
+
+OK

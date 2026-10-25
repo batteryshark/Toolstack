@@ -9,7 +9,8 @@ User=toolstack
 Group=toolstack
 # EDIT: absolute path to the Toolstack checkout (same root as the ExecStart line below).
 WorkingDirectory=/opt/toolstack
-EnvironmentFile=-/etc/toolstack/sps.env
+# sps.env is TOML, NOT a systemd EnvironmentFile.
+EnvironmentFile=-/etc/toolstack/sps-runtime.env
 # EDIT: absolute path to the admin venv's python (install.sh creates it at admin/.venv;
 # the SPS plugin runs in the same venv so infisical/cryptography deps are available).
 ExecStart=/opt/toolstack/admin/.venv/bin/python -m sps.cli serve --config /etc/toolstack/sps.env
@@ -17,6 +18,10 @@ Restart=on-failure
 RestartSec=3
 
 StateDirectory=toolstack
+StateDirectoryMode=0700
+UMask=0077
+LogsDirectory=toolstack
+LogsDirectoryMode=0700
 Environment=XDG_STATE_HOME=/var/lib
 Environment=XDG_CONFIG_HOME=/var/lib
 

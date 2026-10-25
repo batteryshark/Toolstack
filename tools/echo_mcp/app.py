@@ -69,9 +69,9 @@ _secrets = SecretClient.from_env(_tool_id_from_config())
 
 
 def verify_broker(headers) -> bool:
-    expected = os.environ.get("TOOLSTACK_E_SECRET") or ""
+    expected = os.environ.get("TOOLSTACK_CHANNEL_SECRET") or ""
     if not expected:
-        return True
+        return False
     presented = headers.get("X-Toolstack-Secret", "")
     return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
 

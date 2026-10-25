@@ -31,7 +31,8 @@ REST_FULL = {
          "allowed_headers": ["X-Trace"], "body_kind": "none",
          "args": [{"name": "user_id", "type": "string", "required": True}]},
         {"name": "login", "verb": "POST", "path": "/login",
-         "body_kind": "text", "body_content_type": "application/json",
+          "body_kind": "text", "body_content_type": "application/json",
+          "redact_response_body": False, "redact_response_headers": False,
          "secret_update_rules": [
              {"secret_name": "auth_token", "response_type": "json",
               "extract_path": "session.token", "match_status": "2xx"},
@@ -166,7 +167,16 @@ class RestAuthoring(unittest.TestCase):
         self.assertEqual(parsed["operations"][1]["body_content_type"], "application/json")
         self.assertEqual(parsed["operations"][1]["secret_update_rules"][0]["secret_name"], "auth_token")
 
-    def test_redaction_flags_round_trip_and_default_off(self):
+    def test_writeback_requires_explicit_visibility_choices(self):
+        operation = dict(REST_FULL["operations"][1])
+        operation.pop("redact_response_body")
+        operation.pop("redact_response_headers")
+        data = tool_authoring.normalize({**REST_FULL, "operations": [operation]})
+        errors = tool_authoring.validate(data)
+        self.assertTrue(any("explicit redact_response_body" in e for e in errors))
+        self.assertTrue(any("explicit redact_response_headers" in e for e in errors))
+
+    def test_redaction_flags_round_trip_with_explicit_writeback_choices(self):
         data = tool_authoring.normalize({**REST_FULL, "operations": [
             {**REST_FULL["operations"][0], "redact_response_body": True, "redact_response_headers": True},
             REST_FULL["operations"][1],
@@ -174,9 +184,9 @@ class RestAuthoring(unittest.TestCase):
         parsed = tomllib.loads(tool_authoring.to_toml(data))
         self.assertTrue(parsed["operations"][0]["redact_response_body"])
         self.assertTrue(parsed["operations"][0]["redact_response_headers"])
-        # Off by default: omitted from the TOML rather than written as false.
-        self.assertNotIn("redact_response_body", parsed["operations"][1])
-        self.assertNotIn("redact_response_headers", parsed["operations"][1])
+        # Writeback visibility is an explicit author choice, including false.
+        self.assertIs(parsed["operations"][1]["redact_response_body"], False)
+        self.assertIs(parsed["operations"][1]["redact_response_headers"], False)
         # And the forwarder reads them back as the operation's flags.
         from toolstack_forwarder.config import load_config as load_rest_config
         tmp = tempfile.mkdtemp(prefix="admin-rest-redact-")

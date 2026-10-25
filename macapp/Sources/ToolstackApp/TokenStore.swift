@@ -1,6 +1,16 @@
 import Foundation
 import Security
 
+/// Injectable credential operations; tests never need the real Keychain.
+struct TokenStorage {
+    var save: (String, String) -> Void
+    var load: (String) -> String?
+    var delete: (String) -> Void
+    static let keychain = TokenStorage(save: { TokenStore.save($0, account: $1) },
+                                      load: { TokenStore.load(account: $0) },
+                                      delete: { TokenStore.delete(account: $0) })
+}
+
 /// Persists the operator's bearer token in the macOS Keychain, keyed by the admin URL (so a token
 /// for one admin doesn't leak to another). A signed/notarized app reads its own items without a
 /// prompt; an unsigned `swift run` build changes signature each rebuild, so macOS may prompt to

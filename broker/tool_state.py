@@ -1,19 +1,7 @@
-"""Read toolyard's state file to discover the E_SECRET each running tool was
-provisioned with.
+"""Read ONLY dedicated broker-to-tool channel credentials from channels.json.
 
-Phase 4 re-sources ``X-Toolstack-Secret`` from the per-tool E_SECRET (which
-the runner minted at start, registered with SPS, and wrote to the state file).
-This module is the broker-side reader.
-
-The state file is host-local-trust (lives next to the broker, owned by the
-runner service account, never crosses a network boundary). The broker does
-NOT learn the E_SECRET from SPS -- that would put SP_SECRET (broad) on the
-broker, which is the wrong direction.
-
-Lazy + mtime-memoized: a second call within the same mtime is a dict
-lookup; a state change (the runner restart-supersedes) is picked up on the
-next call. Operator restarts of the broker are idempotent because the file
-is unchanged.
+Never read private runner state or SPS credentials. Separate files do not
+isolate unrestricted processes owned by the same OS user.
 """
 from __future__ import annotations
 
@@ -24,11 +12,14 @@ from pathlib import Path
 
 
 def _default_state_path() -> Path:
+    channel = os.environ.get("TOOLSTACK_TOOLYARD_CHANNEL_STATE")
+    if channel:
+        return Path(channel)
     state = os.environ.get("TOOLSTACK_TOOLYARD_STATE")
     if state:
-        return Path(state)
+        return Path(state).with_name("channels.json")
     base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-    return Path(base) / "toolstack" / "toolyard" / "state.json"
+    return Path(base) / "toolstack" / "toolyard" / "channels.json"
 
 
 class ToolState:
@@ -37,8 +28,8 @@ class ToolState:
         self._mtime: float | None = None
         self._by_id: dict[str, str] = {}
 
-    def e_secret_for(self, tool_id: str) -> str | None:
-        """Return the E_SECRET for `tool_id`, or None if the tool is not
+    def channel_secret_for(self, tool_id: str) -> str | None:
+        """Return the channel secret for `tool_id`, or None if the tool is not
         registered or the state file is missing. Picks up state changes via
         the file's mtime on each call (cheap; the file is small)."""
         self._refresh_if_stale()
@@ -63,11 +54,12 @@ class ToolState:
             with self._path.open() as f:
                 state = json.load(f)
             self._by_id = {
-                tid: rec.get("e_secret") or ""
+                tid: rec["channel_secret"]
                 for tid, rec in state.items()
-                if isinstance(rec, dict) and rec.get("e_secret")
+                if isinstance(rec, dict) and isinstance(rec.get("channel_secret"), str)
+                and rec["channel_secret"].strip()
             }
             self._mtime = mtime
-        except (OSError, ValueError):
+        except (OSError, ValueError, AttributeError):
             self._by_id = {}
             # Leave mtime untouched so we retry on the next call.
