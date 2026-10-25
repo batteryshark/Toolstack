@@ -12,10 +12,13 @@ tool discovery.
 from __future__ import annotations
 
 import re
+import hashlib
+import json
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
+from .approval_summary import validate_fields
 
 # Tool transports the broker knows how to route. "api" -> POST /v1/actions/<op>; "mcp" ->
 # streamable-HTTP MCP client; "rest" -> generic REST forwarder. An unknown type is rejected
@@ -40,6 +43,8 @@ class ToolOp:
     path_template: str | None = None
     base_url_host: str | None = None
     body_kind: str | None = None
+    generation: str = ""
+    approval_fields: tuple[str, ...] = ()
 
 
 class Registry:
@@ -50,14 +55,14 @@ class Registry:
 
     @staticmethod
     def _add_toml(catalog: dict, toml_path: Path) -> None:
-        with open(toml_path, "rb") as f:
-            data = tomllib.load(f)
+        raw = toml_path.read_bytes()
+        data = tomllib.loads(raw.decode("utf-8"))
         tool_id = data.get("id")
         # Fail closed at load (naming the file + id) on a missing/invalid id, like the port
         # check below. The admin panel enforces this charset; a hand-written toolyard.toml is
         # the unchecked path, where a dotted id would become a catalog key and break tool.op
         # policy routing only later.
-        if not (isinstance(tool_id, str) and _ID_RE.match(tool_id)):
+        if not (isinstance(tool_id, str) and _ID_RE.fullmatch(tool_id)):
             raise ValueError(
                 f"{toml_path}: invalid tool id {tool_id!r} (letters, digits, _ or - only; "
                 f"no dots: a dot breaks tool.op policy routing)"
@@ -85,6 +90,11 @@ class Registry:
         rest_host = _rest_base_url_host(toml_path, data) if tool_type == "rest" else None
         ops = {}
         for o in data.get("operations", []):
+            name = o.get("name")
+            if not isinstance(name, str) or not _ID_RE.fullmatch(name):
+                raise ValueError(f"{toml_path}: invalid operation name")
+            if name in ops:
+                raise ValueError(f"{toml_path}: duplicate operation {name!r}")
             rest_fields = {}
             if tool_type == "rest":
                 verb = o.get("verb")
@@ -108,6 +118,7 @@ class Registry:
                 "risk": o.get("risk", "unknown"),
                 "description": o.get("description", ""),
                 "args": o.get("args", []),
+                "approval_fields": list(validate_fields(o.get("approval_fields", []))),
                 **rest_fields,
             }
         # Auto-inject refresh + refresh_one for tools that have [[secrets]] declared.
@@ -120,6 +131,8 @@ class Registry:
         if isinstance(data.get("secrets"), list) and any(
             isinstance(s, dict) and s.get("name") for s in data["secrets"]
         ):
+            if {"refresh", "refresh_one"} & ops.keys():
+                raise ValueError(f"{toml_path}: reserved refresh operation collision")
             ops["refresh"] = {
                 "risk": "read",
                 "description": "Re-pull every declared secret from the backend into the tool's in-memory cache.",
@@ -133,7 +146,9 @@ class Registry:
             }
         # NOTE: data["secrets"] is still not read directly beyond the auto-injection above;
         # the runner reads it for SPS registration and the tool reads it for handler wiring.
-        catalog[tool_id] = {"port": port, "type": tool_type, "ops": ops}
+        catalog[tool_id] = {"port": port, "type": tool_type, "ops": ops,
+                            "manifest_path": str(toml_path.resolve()),
+                            "manifest_digest": hashlib.sha256(raw).hexdigest()}
 
     @classmethod
     def from_tools_root(cls, root: str | Path) -> "Registry":
@@ -162,11 +177,37 @@ class Registry:
         entry = self._catalog.get(tool)
         if entry is None or op not in entry["ops"]:
             return None
+        # An edited/deleted manifest invalidates the loaded immutable catalog.
+        # Reload is explicit; do not execute the old definition against new config.
+        if "manifest_path" in entry:
+            try:
+                current = hashlib.sha256(Path(entry["manifest_path"]).read_bytes()).hexdigest()
+            except OSError:
+                return None
+            if current != entry["manifest_digest"]:
+                return None
         meta = entry["ops"][op]
         return ToolOp(
             tool, op, meta["risk"], entry["port"], entry["type"],
             meta.get("verb"), meta.get("path_template"), meta.get("base_url_host"), meta.get("body_kind"),
+            hashlib.sha256(json.dumps(entry, sort_keys=True).encode()).hexdigest(),
+            tuple(meta.get("approval_fields", ())),
         )
+
+    def observation_fingerprint(self, root=None, tool_dirs=()) -> str:
+        """Private loaded-catalog identity; never hash secret blocks or expose on health."""
+        payload = {
+            "root": str(Path(root).resolve()) if root else None,
+            "tool_dirs": [str(Path(p).resolve()) for p in tool_dirs],
+            "catalog": {name: {k: value for k, value in entry.items()
+                                if k != "manifest_digest"}
+                        for name, entry in self._catalog.items()},
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+
+    def tool_ids(self) -> list[str]:
+        """Membership of this loaded projection, including tools with no operations."""
+        return sorted(self._catalog)
 
     def describe(self, tool: str, op: str) -> dict | None:
         entry = self._catalog.get(tool)
@@ -174,7 +215,8 @@ class Registry:
             return None
         meta = entry["ops"][op]
         return {"tool": tool, "op": op, "risk": meta["risk"],
-                "description": meta["description"], "args": meta["args"]}
+                "description": meta["description"], "args": meta["args"],
+                "approval_fields": list(meta.get("approval_fields", ()))}
 
     def list_ops(self) -> list[dict]:
         ops = []

@@ -1,0 +1,18 @@
+[
+  {
+    "class" : "NSHostingView<ModifiedContent<ModifiedContent<ModifiedContent<ModifiedContent<ModifiedContent<AnyView, _EnvironmentKeyWritingModifier<Optional<AppModel>>>, _EnvironmentKeyWritingModifier<ColorScheme>>, _EnvironmentKeyWritingModifier<ControlActiveState>>, _FrameLayout>, _BackgroundStyleModifier<Color>>>",
+    "frame" : "{{0, 0}, {1440, 900}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{316, 217}, {61, 28}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{995, 714}, {63, 28}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{1066, 714}, {58, 28}}"
+  }
+]

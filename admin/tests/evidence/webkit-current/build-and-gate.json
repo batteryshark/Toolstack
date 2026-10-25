@@ -1,0 +1,12 @@
+{
+  "source_sha256": "fd2a8833a4da748a47a50e88a6817a49072611c10a19b125751cdd7ecbde681c",
+  "binary_sha256": "ff723af98ed12b4ccade2f38dba9c4c192845a8e05ed69017ba4ce0bcf7a14eb",
+  "compile_jobs": 2,
+  "compile_failure": "One output-path typo caused a linker failure; corrected before renderer launch. Original log preserved.",
+  "renderer_launches": 1,
+  "renderer_exit": 2,
+  "rendered_cases": 0,
+  "assertions_executed": 0,
+  "snapshots": 0,
+  "activation_result": "setActivationPolicy(.prohibited) returned false; actual current policy was not queried. WKWebView creation was never reached. This does not establish that WebKit itself cannot render offscreen."
+}

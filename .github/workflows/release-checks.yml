@@ -1,0 +1,29 @@
+name: Release packaging checks (no publishing)
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  wheel:
+    runs-on: ubuntu-latest
+    env:
+      UV_CONCURRENT_BUILDS: '1'
+      UV_CONCURRENT_INSTALLS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.23'
+      - run: uv python install 3.11
+      - run: uv lock --check
+      - name: Check deployment export drift
+        run: |
+          uv export --frozen --extra admin --extra vault --no-dev --no-emit-project --no-hashes -o admin/requirements-lock.txt
+          git diff --exit-code -- admin/requirements-lock.txt
+      - run: uv run --no-project --python 3.11 python tests/release/check_release.py
+      - run: uv run --no-project --python 3.11 python tests/release/test_deployment.py
+      - run: bash -n deploy/install.sh deploy/redeploy-toolstack

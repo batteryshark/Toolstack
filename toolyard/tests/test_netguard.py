@@ -19,8 +19,8 @@ class ToolIdTest(unittest.TestCase):
 
     def test_table_name_is_nft_safe(self):
         # hyphens are legal in a tool id / cgroup dir but not in an nft identifier
-        self.assertEqual(netguard._table("tool-1"), "toolyard_tool_1")
-        self.assertEqual(netguard._table("echo"), "toolyard_echo")
+        self.assertRegex(netguard._table("tool-1"), r"^toolyard_[a-f0-9]{64}$")
+        self.assertRegex(netguard._table("echo"), r"^toolyard_[a-f0-9]{64}$")
 
 
 class RulesetTest(unittest.TestCase):
@@ -39,7 +39,7 @@ class RulesetTest(unittest.TestCase):
     def test_rule_is_scoped_to_the_tools_cgroup(self):
         rs = netguard._ruleset("echo", None)
         self.assertIn('socket cgroupv2 level 2 "toolyard/echo"', rs)
-        self.assertIn("table inet toolyard_echo", rs)
+        self.assertIn("table inet " + netguard._table("echo"), rs)
 
     def test_drop_rules_follow_the_accepts(self):
         # order matters: established + proxy accepts must precede the catch-all drops

@@ -1,0 +1,19 @@
+{
+  "forms": {
+    "caveat": "static tag count; cannot see runtime-generated fields, component-library inputs, or attributes set from code.",
+    "files": []
+  },
+  "targets": {
+    "caveat": "literal px values below 24 (WCAG 2.5.8 floor) on selectors naming button/input/a/[role=]; cannot see computed styles, CSS-in-JS, relative units, or resolve SCSS nesting.",
+    "findings": []
+  },
+  "flags": {
+    "caveat": "static string match; 'in help/docs' means substring presence in a doc surface or a usage/help line, not proof the flag is explained.",
+    "defined": 1,
+    "undocumented": []
+  },
+  "state": {
+    "caveat": "counts storage-API call sites only; cannot tell what is stored or whether interface state is actually persisted.",
+    "files": []
+  }
+}

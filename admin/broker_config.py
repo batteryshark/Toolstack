@@ -117,6 +117,37 @@ class BrokerRunConfig:
         return data
 
 
+def merge_update(current: BrokerRunConfig, data: dict) -> BrokerRunConfig:
+    """Shared operator save contract. Unexposed fields stay unchanged."""
+    values = asdict(current)
+    for key in ("port", "approval_ttl", "rate_limit"):
+        raw = data.get(key, values[key])
+        if raw == "":
+            continue
+        if isinstance(raw, bool) or not isinstance(raw, (str, int)):
+            raise ValueError(f"{key} must be an integer")
+        try:
+            values[key] = int(raw)
+        except ValueError:
+            raise ValueError(f"{key} must be an integer") from None
+    if not 1 <= values["port"] <= 65535:
+        raise ValueError("port must be 1..65535")
+    if values["approval_ttl"] < 1:
+        raise ValueError("approval_ttl must be >= 1")
+    if values["rate_limit"] < 0:
+        raise ValueError("rate_limit must be >= 0")
+    for key in ("tools_root", "nod_url", "nod_token", "nod_channel"):
+        if key not in data:
+            continue
+        if not isinstance(data[key], str):
+            raise ValueError(f"{key} must be text")
+        value = data[key].strip()
+        if value or key not in ("tools_root", "nod_token"):
+            values[key] = value
+    validate_nod_url(values["nod_url"])
+    return BrokerRunConfig(**values)
+
+
 def config_file() -> Path:
     return settings.config_dir() / "broker.toml"
 

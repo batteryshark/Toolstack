@@ -1,0 +1,20 @@
+{
+  "source_revision": "bcca15731eac4a4a082b6fe907ea05d1e5236347",
+  "python": "Python 3.11.17",
+  "wheel": "toolstack-0.1.0-py3-none-any.whl",
+  "sha256": "1fadade5c4890a0bf65a4a567167a81d524e7738cb000e3dcac37075602a568d",
+  "checks": [
+    "wheel contents and entrypoint",
+    "isolated clean dependency install (18 packages)",
+    "installed-path imports with -I",
+    "admin app factory with fake private password",
+    "fake localfile vault write/presence",
+    "admin/sps/brokerctl/toolstack/toolyard CLI help",
+    "forwarder missing-config rejection",
+    "uv pip check"
+  ],
+  "result": "passed",
+  "artifact_directory": "/private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/toolstack-packaging-integrated",
+  "scope": "Packaging smoke only; no listeners, providers, services, full E2E, native signing or retention proof",
+  "harness_note": "Fake password fixture added after first integrated attempt correctly rejected missing admin credentials; successful wheel not rebuilt afterward."
+}

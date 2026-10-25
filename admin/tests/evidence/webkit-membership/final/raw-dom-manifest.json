@@ -1,0 +1,114 @@
+{
+  "archive": "raw-dom.zip",
+  "format": "ZIP/DEFLATE",
+  "archive_sha256": "89eebff209cb64c1e4815746f487dcd3204eab491f8f6d3783d347a308c05e6e",
+  "verification": "Every member byte-compared and SHA-256 checked against original before plaintext removal",
+  "secret_scan": "Archive members MUST be included in the parent final secret scan; no exemption",
+  "members": [
+    {
+      "name": "add-1180.html",
+      "bytes": 21348,
+      "sha256": "7cfbd01d1b0ad6914ab0f62c8b6ab0523a7e94116bad2badc5e5c678b9b66340"
+    },
+    {
+      "name": "add-1440.html",
+      "bytes": 21348,
+      "sha256": "7cfbd01d1b0ad6914ab0f62c8b6ab0523a7e94116bad2badc5e5c678b9b66340"
+    },
+    {
+      "name": "added-stopped-1180.html",
+      "bytes": 22165,
+      "sha256": "970958b8b05abe54f0ce3899cc1301cdba9225c2caf7bfc5f932e5c44acfe128"
+    },
+    {
+      "name": "added-stopped-1440.html",
+      "bytes": 22165,
+      "sha256": "970958b8b05abe54f0ce3899cc1301cdba9225c2caf7bfc5f932e5c44acfe128"
+    },
+    {
+      "name": "confirmation-1180.html",
+      "bytes": 23523,
+      "sha256": "e8936850e19432f2e4827623b77ad63e0016e6606a7354daa10754fd530eb0c3"
+    },
+    {
+      "name": "confirmation-1440.html",
+      "bytes": 23523,
+      "sha256": "e8936850e19432f2e4827623b77ad63e0016e6606a7354daa10754fd530eb0c3"
+    },
+    {
+      "name": "editor-1180.html",
+      "bytes": 50661,
+      "sha256": "eb2d8a44bd26d29070050406e835574aa48438757938b33aafdbc5b60262963b"
+    },
+    {
+      "name": "editor-1440.html",
+      "bytes": 50661,
+      "sha256": "eb2d8a44bd26d29070050406e835574aa48438757938b33aafdbc5b60262963b"
+    },
+    {
+      "name": "load-failure-1180.html",
+      "bytes": 20224,
+      "sha256": "9f69a85375e1699271f2f5c5b3b17fa3928aa12036544b5e11c8720eeb8ffd42"
+    },
+    {
+      "name": "load-failure-1440.html",
+      "bytes": 20224,
+      "sha256": "9f69a85375e1699271f2f5c5b3b17fa3928aa12036544b5e11c8720eeb8ffd42"
+    },
+    {
+      "name": "policy-1180.html",
+      "bytes": 24211,
+      "sha256": "095e7f0f827f840b0640c7e2353c92108dabd6ae1719dde21ef085607e05b663"
+    },
+    {
+      "name": "policy-1440.html",
+      "bytes": 24211,
+      "sha256": "095e7f0f827f840b0640c7e2353c92108dabd6ae1719dde21ef085607e05b663"
+    },
+    {
+      "name": "register-confirm-1180.html",
+      "bytes": 22475,
+      "sha256": "7cdd59b376685ad316fc3c11d4146aa9b59a56e47a9db29925cf8abce5ec116c"
+    },
+    {
+      "name": "register-confirm-1440.html",
+      "bytes": 22475,
+      "sha256": "7cdd59b376685ad316fc3c11d4146aa9b59a56e47a9db29925cf8abce5ec116c"
+    },
+    {
+      "name": "registered-1180.html",
+      "bytes": 21700,
+      "sha256": "ff5435c3b0e67fbabbb247523d1384b69b9cba7f6b6b26fa1ae9771a7fa58e45"
+    },
+    {
+      "name": "registered-1440.html",
+      "bytes": 21700,
+      "sha256": "ff5435c3b0e67fbabbb247523d1384b69b9cba7f6b6b26fa1ae9771a7fa58e45"
+    },
+    {
+      "name": "replacement-1180.html",
+      "bytes": 19697,
+      "sha256": "df730a730e2395613b849b72cbdd541bc8793be6b438f1333fdf322928f7c15b"
+    },
+    {
+      "name": "replacement-1440.html",
+      "bytes": 19697,
+      "sha256": "df730a730e2395613b849b72cbdd541bc8793be6b438f1333fdf322928f7c15b"
+    },
+    {
+      "name": "returned-unknown-1180.html",
+      "bytes": 43407,
+      "sha256": "98918b117561585bfba41195a90a16f76a223fd26547c679eadab4b3104a92e1"
+    },
+    {
+      "name": "returned-unknown-1440.html",
+      "bytes": 43407,
+      "sha256": "98918b117561585bfba41195a90a16f76a223fd26547c679eadab4b3104a92e1"
+    },
+    {
+      "name": "shell-startup-620.html",
+      "bytes": 3299,
+      "sha256": "7bfe75b4532f2bd443597daca76c9c08420a53fe16b04a673a180d888d3e7302"
+    }
+  ]
+}

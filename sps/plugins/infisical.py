@@ -15,30 +15,33 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from ..config import InfisicalBlock
+from ..config import InfisicalBlock, validate_provider_url
 from .base import SPSSecretsPlugin
+from .. import transport
 
 
 class InfisicalPlugin(SPSSecretsPlugin):
     def __init__(self, block: InfisicalBlock, *, timeout: float = 15.0) -> None:
         if not block.host or not block.client_id or not block.client_secret:
             raise ValueError("InfisicalPlugin requires host/client_id/client_secret")
-        self.host = block.host.rstrip("/")
+        self.host = validate_provider_url(block.host)
         self.vault = block.vault
         self.environment = block.environment
         self.organization_slug = block.organization_slug
         self.client_id = block.client_id
         self.client_secret = block.client_secret
-        self.timeout = timeout
+        self.timeout = transport.valid_timeout(timeout)
         self._token: tuple[str, float] | None = None
         self._project_id: str | None = None
 
+    @transport.operation
     def connect(self):
         self._access_token()  # pre-warm so first get_secret doesn't pay login cost
         self._ensure_project_id()
         return self
 
     # ---- ABC ----------------------------------------------------------------
+    @transport.operation
     def get_secret(self, field: str, item: str) -> str:
         path = "/" + (item or self.vault).strip("/") if (item or self.vault) else "/"
         params = {
@@ -48,18 +51,20 @@ class InfisicalPlugin(SPSSecretsPlugin):
             "viewSecretValue": "true",
             "expandSecretReferences": "true",
             "includeImports": "true",
+            "type": "shared",
         }
-        body = self._http("GET", "/api/v4/secrets", params=params)
-        for secret in self._iter(body):
-            if secret.get("secretKey") == field:
-                value = secret.get("secretValue")
-                if not isinstance(value, str):
-                    raise ValueError(
-                        f"Infisical {self.vault}{path}/{field} has no string value"
-                    )
-                return value
-        raise KeyError(f"Infisical secret {self.vault}{path}/{field} not found")
+        # Official v4 getSecretByNameV4 contract (see handoff evidence).
+        # References/import lookup stay server-side; never list the folder.
+        body = self._http("GET", f"/api/v4/secrets/{urllib.parse.quote(field, safe='')}", params=params)
+        secret = body.get("secret") if isinstance(body, dict) else None
+        if not isinstance(secret, dict) or secret.get("secretKey") != field:
+            raise KeyError("Infisical narrow response did not match requested secret")
+        value = secret.get("secretValue")
+        if not isinstance(value, str) or secret.get("secretValueHidden") is True:
+            raise ValueError("Infisical narrow response has no readable string value")
+        return value
 
+    @transport.operation
     def write_secret(self, field: str, item: str, value: str) -> None:
         path = "/" + (item or self.vault).strip("/") if (item or self.vault) else "/"
         body = {
@@ -98,7 +103,12 @@ class InfisicalPlugin(SPSSecretsPlugin):
         if self._project_id:
             return self._project_id
         body = self._http("GET", "/api/v1/projects")
-        for p in body.get("projects") or []:
+        projects = [p for p in body.get("projects") or [] if isinstance(p, dict)]
+        exact = [p for p in projects if self.vault in (p.get("id"), p.get("_id"))]
+        matches = exact or [p for p in projects if self.vault in (p.get("name"), p.get("slug"))]
+        if len(matches) > 1:
+            raise ValueError("ambiguous Infisical project selector")
+        for p in matches:
             if not isinstance(p, dict):
                 continue
             ids = {p.get(k) for k in ("id", "_id", "name", "slug")}
@@ -109,19 +119,6 @@ class InfisicalPlugin(SPSSecretsPlugin):
                 self._project_id = pid
                 return pid
         raise KeyError(f"Infisical project {self.vault!r} not found")
-
-    @staticmethod
-    def _iter(body):
-        if not isinstance(body, dict):
-            return
-        for s in body.get("secrets") or []:
-            if isinstance(s, dict):
-                yield s
-        for imp in body.get("imports") or []:
-            if isinstance(imp, dict):
-                for s in imp.get("secrets") or []:
-                    if isinstance(s, dict):
-                        yield s
 
     def _http(self, method, path, *, params=None, json_body=None, authless=False):
         url = self.host + path
@@ -138,8 +135,8 @@ class InfisicalPlugin(SPSSecretsPlugin):
         transient: RuntimeError | None = None
         for attempt in range(3):
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                    return json.loads(resp.read().decode("utf-8"))
+                with transport.urlopen(req, timeout=transport._active.get().idle()) as resp:
+                    return json.loads(transport.read_response(resp).decode("utf-8"))
             except urllib.error.HTTPError as exc:
                 code = exc.code
                 exc.close()
@@ -155,11 +152,16 @@ class InfisicalPlugin(SPSSecretsPlugin):
                     f"Infisical {method} {path}: HTTP {code} (transient)"
                 )
             except urllib.error.URLError as exc:
-                transient = RuntimeError(
-                    f"Infisical {method} {path}: {exc.reason} (network)"
-                )
+                transient = RuntimeError("SPS provider network failure")
+            if method != "GET":
+                raise RuntimeError("SPS provider mutation outcome unknown") from None
             if attempt < 2:
-                time.sleep(0.25 * (2 ** attempt))
+                budget = transport._active.get()
+                delay = 0.25 * (2 ** attempt)
+                if delay >= budget.remaining():
+                    raise TimeoutError("SPS operation deadline exceeded")
+                time.sleep(delay)
+                budget.remaining()
         raise transient or RuntimeError(
             f"Infisical {method} {path}: exhausted retries"
         )

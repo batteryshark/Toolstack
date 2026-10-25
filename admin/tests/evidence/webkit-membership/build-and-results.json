@@ -1,0 +1,14 @@
+{
+  "source_sha256": "3c6e2dc9dcf3eea962d0201db9d250fc3112d1aca08479dc830a186f4bc27c3c",
+  "binary_sha256": "33dd44d9a5eda9970b1595d6494cce66f8c6c3ac00d4e2ae9c529b575736c23f",
+  "compile_jobs": 2,
+  "final_cases": 21,
+  "final_assertions": 164,
+  "snapshots": 21,
+  "actual_policy": {
+    "before": 2,
+    "after": 2,
+    "required": 2,
+    "request_returned": false
+  }
+}

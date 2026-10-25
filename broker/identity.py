@@ -12,13 +12,14 @@ resolves to no caller.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
 class Caller:
     id: int
     name: str
+    token_hash: str | None = field(default=None, compare=False, repr=False)
 
 
 def bearer_token(authorization_header: str | None) -> str | None:

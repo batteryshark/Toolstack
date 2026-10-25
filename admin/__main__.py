@@ -29,7 +29,7 @@ def _set_password(args) -> None:
     settings.write_password_hash(auth.hash_password(pw))
     settings.rotate_session_secret()  # a password change logs out existing sessions
     print(f"admin password set ({settings.password_hash_file()}); existing sessions invalidated "
-          "(restart the admin to apply).")
+          "on their next request.")
 
 
 def _serve(args) -> None:

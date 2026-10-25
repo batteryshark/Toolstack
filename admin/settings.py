@@ -12,6 +12,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import secrets
+import tempfile
 from pathlib import Path
 
 
@@ -109,8 +110,16 @@ def sps_info() -> dict:
 
 def _write_private(path: Path, data: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(data, encoding="utf-8")
-    path.chmod(0o600)
+    fd, name = tempfile.mkstemp(prefix=".admin-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(name, path)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
 
 
 def read_password_hash() -> str | None:
@@ -134,7 +143,7 @@ def load_or_create_session_secret() -> str:
 def rotate_session_secret() -> str:
     """Replace the session-signing secret, invalidating every existing signed session. Called
     when the admin password changes so a reset also logs out any other live sessions (it takes
-    effect on the next app start, which loads the secret once)."""
+    effect on the next request, including in already-running admin instances)."""
     secret = secrets.token_urlsafe(32)
     _write_private(session_secret_file(), secret)
     return secret

@@ -4,7 +4,7 @@
 #
 #   ./packaging/build-app.sh            # -> "build/Toolstack Operator.app" (unsigned)
 #
-# Then sign + notarize with ./packaging/sign-and-notarize.sh (needs your Developer ID).
+# Later, local-only: bash packaging/sign-local.sh, then separately verify-local.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -43,4 +43,5 @@ plutil -lint "${CONTENTS}/Info.plist" >/dev/null
 
 echo "✓ built ${OUT}"
 echo "  unsigned, run it with:  open \"${OUT}\""
-echo "  ship it with:            ./packaging/sign-and-notarize.sh"
+echo "  LOCAL only: bash packaging/sign-local.sh --identity 'Apple Development: ...'"
+echo "  verify separately: bash packaging/verify-local.sh \"${OUT}\""

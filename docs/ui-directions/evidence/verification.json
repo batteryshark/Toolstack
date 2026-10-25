@@ -1,0 +1,54 @@
+{
+  "iteration": 2,
+  "origin": "toolstack-ui-directions-20261024",
+  "principal_rejections": 0,
+  "svg_frames": 81,
+  "one_primary_per_frame": true,
+  "overview_inline_frames": 9,
+  "per_view_walkthroughs": 81,
+  "geometry_frames": 81,
+  "geometry_violations": 0,
+  "footer_regression_detected": true,
+  "gallery_js_syntax": "pass",
+  "product_diff": "empty",
+  "owned_paths_only": true,
+  "captures": {
+    "b-web-grant-1.png": {
+      "sha256": "51f1e2b7dab14d3468f7250814b7ad24c6c6a6b09dfc6da51db1418075f5ee5c",
+      "visually_inspected_fullsize": true
+    },
+    "a-mac-recover-0.png": {
+      "sha256": "10d38efd014877af4938ad6917f87f10ef85866e405a8b42fa14c2c20846e4da",
+      "visually_inspected_fullsize": true
+    },
+    "b-mac-recover-0.png": {
+      "sha256": "29198edf265349184ffc378d61a189b57d9208b053ba52258b79595f441e6d52",
+      "visually_inspected_fullsize": true
+    },
+    "a-shell-add-2.png": {
+      "sha256": "1fab432255fa1e99f96277d401d8bf7754f756556a0a0ef799cc760a329bcd11",
+      "visually_inspected_fullsize": true
+    },
+    "c-web-grant-1.png": {
+      "sha256": "8de95fafea3b3868edea8ed188ddb8c3f5e9d847fa9aaeadfc8843633495d50d",
+      "visually_inspected_fullsize": true
+    },
+    "c-mac-recover-0.png": {
+      "sha256": "50999f5767333509a771e224275268aff2c8bbaba9c434a4add95854f816ed34",
+      "visually_inspected_fullsize": true
+    },
+    "a-web-grant-1.png": {
+      "sha256": "1507577ab3fcb43439fb7dbfef2dfbbd67e2ca2170399524c6feed492f2b5c06",
+      "visually_inspected_fullsize": true
+    },
+    "c-shell-add-2.png": {
+      "sha256": "f6790f844101993e57ad27fe78d6f16e0e815cc89792e6136639505975581593",
+      "visually_inspected_fullsize": true
+    },
+    "b-shell-add-2.png": {
+      "sha256": "5b96f6e3c0b2227983cdbba77069745f7440153bcc333f72efdf86d10749996e",
+      "visually_inspected_fullsize": true
+    }
+  },
+  "limits": "Static geometry and visual mockup checks; no measured usability, native execution, product runtime or laptop reflow certification."
+}

@@ -1,0 +1,38 @@
+test_combines_root_and_tool_dirs (broker.tests.test_registry.FromSources.test_combines_root_and_tool_dirs) ... ok
+test_missing_tool_dir_is_skipped (broker.tests.test_registry.FromSources.test_missing_tool_dir_is_skipped) ... ok
+test_tool_dir_only (broker.tests.test_registry.FromSources.test_tool_dir_only) ... ok
+test_list_ops_carries_tool_type (broker.tests.test_registry.FromToolsRoot.test_list_ops_carries_tool_type) ... ok
+test_lookup_resolves_op_metadata_and_port (broker.tests.test_registry.FromToolsRoot.test_lookup_resolves_op_metadata_and_port) ... ok
+test_registry_is_secret_unaware (broker.tests.test_registry.FromToolsRoot.test_registry_is_secret_unaware) ... ok
+test_unknown_op_is_none (broker.tests.test_registry.FromToolsRoot.test_unknown_op_is_none) ... ok
+test_unknown_tool_is_none (broker.tests.test_registry.FromToolsRoot.test_unknown_tool_is_none) ... ok
+test_dotted_id_raises_naming_the_id (broker.tests.test_registry.IdValidation.test_dotted_id_raises_naming_the_id) ... ok
+test_id_with_leading_dash_raises (broker.tests.test_registry.IdValidation.test_id_with_leading_dash_raises) ... ok
+test_missing_id_raises (broker.tests.test_registry.IdValidation.test_missing_id_raises) ... ok
+test_slash_in_id_raises (broker.tests.test_registry.IdValidation.test_slash_in_id_raises) ... ok
+test_valid_id_with_dash_and_underscore_loads (broker.tests.test_registry.IdValidation.test_valid_id_with_dash_and_underscore_loads) ... ok
+test_lookup_carries_mcp_type_and_port (broker.tests.test_registry.McpType.test_lookup_carries_mcp_type_and_port) ... ok
+test_boolean_port_raises (broker.tests.test_registry.PortValidation.test_boolean_port_raises) ... ok
+test_mcp_tool_also_needs_a_port (broker.tests.test_registry.PortValidation.test_mcp_tool_also_needs_a_port) ... ok
+test_missing_port_raises_naming_the_tool (broker.tests.test_registry.PortValidation.test_missing_port_raises_naming_the_tool) ... ok
+test_non_integer_port_raises (broker.tests.test_registry.PortValidation.test_non_integer_port_raises) ... ok
+test_out_of_range_port_raises (broker.tests.test_registry.PortValidation.test_out_of_range_port_raises) ... ok
+test_rest_type_loads_with_valid_port (broker.tests.test_registry.PortValidation.test_rest_type_loads_with_valid_port) ... ok
+test_unknown_type_rejected_even_with_a_valid_port (broker.tests.test_registry.PortValidation.test_unknown_type_rejected_even_with_a_valid_port) ... ok
+test_valid_port_loads (broker.tests.test_registry.PortValidation.test_valid_port_loads) ... ok
+test_base_url_host_with_invalid_characters_is_rejected (broker.tests.test_registry.RestType.test_base_url_host_with_invalid_characters_is_rejected) ... ok
+test_credentialed_base_url_is_rejected (broker.tests.test_registry.RestType.test_credentialed_base_url_is_rejected) ... ok
+test_lookup_carries_rest_metadata_and_strips_base_url_to_host (broker.tests.test_registry.RestType.test_lookup_carries_rest_metadata_and_strips_base_url_to_host) ... ok
+test_registry_is_secret_and_base_url_path_unaware (broker.tests.test_registry.RestType.test_registry_is_secret_and_base_url_path_unaware) ... ok
+test_actual_load_edit_reload_and_failed_reload (admin.tests.test_catalog_observation.CatalogObservation.test_actual_load_edit_reload_and_failed_reload) ... {"at": 1792851854.0342212, "component": "registry", "correlation_id": "1993154e5fab4a6b8c44e0f579dc070a", "details": {"ops_after": 1, "ops_before": 1, "tools_after": 1, "tools_before": 1}, "event_id": 1, "event_type": "reloaded", "outcome": "ok", "request_id": null}
+ok
+test_health_only_exposes_random_identity (admin.tests.test_catalog_observation.CatalogObservation.test_health_only_exposes_random_identity) ... ok
+test_missing_mismatched_receipt_and_sources (admin.tests.test_catalog_observation.CatalogObservation.test_missing_mismatched_receipt_and_sources) ... ok
+test_previous_process_receipt_cannot_certify_new_load (admin.tests.test_catalog_observation.CatalogObservation.test_previous_process_receipt_cannot_certify_new_load) ... {"at": 1792851855.5787039, "component": "registry", "correlation_id": "d491069d896f4788a34a9d591396bd51", "details": {"ops_after": 1, "ops_before": 1, "tools_after": 1, "tools_before": 1}, "event_id": 1, "event_type": "reloaded", "outcome": "ok", "request_id": null}
+ok
+test_secret_block_content_does_not_enter_private_fingerprint (admin.tests.test_catalog_observation.CatalogObservation.test_secret_block_content_does_not_enter_private_fingerprint) ... ok
+
+----------------------------------------------------------------------
+Ran 31 tests in 2.580s
+
+OK

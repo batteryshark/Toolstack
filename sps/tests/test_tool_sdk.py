@@ -45,9 +45,7 @@ class FromEnv(unittest.TestCase):
                 "status": "ok", "secrets": {"a": "1", "b": "2"},
             }
             c = SecretClient.from_env("echo")
-            cli.return_value.get_secret.return_value = {
-                "status": "ok", "secrets": {"a": "1-new"},
-            }
+            cli.return_value.get_secret.return_value = "1-new"
             c.refresh("a")
         self.assertEqual(c.get("a"), "1-new")
         self.assertEqual(c.get("b"), "2")

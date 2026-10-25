@@ -1,8 +1,9 @@
 """Approval contract types (the broker side of the approval-surface adapter).
 
-`OperationCard` is the redacted prompt the broker hands a surface; it describes
-the operation and may include bounded, redacted arguments so similar calls are
-distinguishable. `SurfaceState` is the normalized answer the broker reads back.
+`OperationCard` is the allowlisted prompt the broker hands a surface; it describes
+the operation and includes visible omissions and a private-request binding digest.
+Selected arbitrary text is NOT guaranteed secret-free. `SurfaceState` is the
+normalized answer the broker reads back.
 See docs/approval-surface-adapter.md.
 """
 
@@ -27,9 +28,12 @@ class OperationCard:
     op: str
     risk: str
     reason: str  # why policy routed this to review
-    justification: str | None = None  # the agent's (redacted) reason, shown to the human
-    details: str | None = None  # redacted arguments, shown so similar calls are distinguishable
+    justification: str | None = None  # legacy field; Nod intentionally never displays this
+    details: str | None = None  # structural allowlisted summary with explicit omissions
     endpoint: str | None = None  # rest tools: "VERB host /path/{template}", never hydrated values
+    installation_id: str | None = None
+    request_digest: str | None = None
+    operation_generation: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,7 +46,9 @@ class SurfaceState:
 
 def build_card(request_id: int, caller: str, tool: str, op: str, risk: str,
                reason: str, justification: str | None = None,
-               details: str | None = None, endpoint: str | None = None) -> OperationCard:
+               details: str | None = None, endpoint: str | None = None,
+               installation_id: str | None = None, request_digest: str | None = None,
+               operation_generation: str | None = None) -> OperationCard:
     label = f"{tool}.{op}"
     return OperationCard(
         request_id=request_id,
@@ -55,4 +61,7 @@ def build_card(request_id: int, caller: str, tool: str, op: str, risk: str,
         justification=justification,
         details=details,
         endpoint=endpoint,
+        installation_id=installation_id,
+        request_digest=request_digest,
+        operation_generation=operation_generation,
     )

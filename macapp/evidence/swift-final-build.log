@@ -1,0 +1,11 @@
+[0/1] Planning build
+Building for debugging...
+[0/4] Write sources
+[1/4] Write swift-version--58304C5D6DBC2206.txt
+[3/6] Emitting module ToolstackApp
+[4/6] Compiling ToolstackApp ToolstackApp.swift
+[4/7] Write Objects.LinkFileList
+[5/7] Linking ToolstackApp
+[6/7] Applying ToolstackApp
+Build complete! (2.77s)
+warning: '--build-system native' has been deprecated and will be removed in a future release; please report an issue at https://github.com/swiftlang/swift-package-manager/issues if you are unable to adopt the default build system.

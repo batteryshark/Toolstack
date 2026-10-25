@@ -41,6 +41,13 @@ class _Upstream(BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else b""
         self.server.seen.append({"method": "POST", "path": self.path,
                                 "headers": dict(self.headers), "body": body})
+        if self.path == "/v1/session":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("X-Session", "xy7")
+            self.end_headers()
+            self.wfile.write(b'{"session":{"token":"xy7"}}')
+            return
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
@@ -64,6 +71,8 @@ def _fake_secrets(table: dict | None = None) -> SecretClient:
                 raise KeyError(name)
             return table[name]
         def writeback(self, name, value):
+            self.write_secret(name, value)
+        def write_secret(self, name, value):
             table[name] = value
         def refresh_all(self):
             pass
@@ -87,20 +96,24 @@ class ForwarderServer(unittest.TestCase):
         self._start(self.upstream)
         self.addCleanup(self.upstream.server_close)
         # Default channel secret; tests can override via TOOLSTACK_E_SECRET.
-        self._prev_env = os.environ.get("TOOLSTACK_E_SECRET")
-        os.environ["TOOLSTACK_E_SECRET"] = "chan"
+        self._prev_env = os.environ.get("TOOLSTACK_CHANNEL_SECRET")
+        os.environ["TOOLSTACK_CHANNEL_SECRET"] = "chan"
         self.addCleanup(self._restore_env)
 
     def _restore_env(self):
         if self._prev_env is None:
-            os.environ.pop("TOOLSTACK_E_SECRET", None)
+            os.environ.pop("TOOLSTACK_CHANNEL_SECRET", None)
         else:
-            os.environ["TOOLSTACK_E_SECRET"] = self._prev_env
+            os.environ["TOOLSTACK_CHANNEL_SECRET"] = self._prev_env
 
     def _start(self, server):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        self.addCleanup(server.shutdown)
+        def stop():
+            server.shutdown()
+            thread.join(3)
+            self.assertFalse(thread.is_alive())
+        self.addCleanup(stop)
         return thread
 
     def _config(self, extra_ops: str = ""):
@@ -174,16 +187,30 @@ allowed_headers = ["X-Trace"]
         self.assertEqual(status, 401)
         self.assertEqual(body["error"], "channel_secret_mismatch")
 
-    def test_missing_e_secret_env_disables_channel_auth(self):
+    def test_missing_channel_env_refuses_requests(self):
         # No TOOLSTACK_E_SECRET -> channel auth off; any header value passes.
-        os.environ.pop("TOOLSTACK_E_SECRET")
+        os.environ.pop("TOOLSTACK_CHANNEL_SECRET")
         status, body = self._post(
             self._forwarder(),
             {"op": "get_item", "arguments": {"variables": {"item_id": "i1"}}},
             secret="anything",
         )
+        self.assertEqual(status, 401)
+        self.assertEqual(body["error"], "channel_secret_missing")
+
+    def test_non_ascii_channel_header_fails_closed_then_valid_request_works(self):
+        url = self._forwarder()
+        payload = {"op": "get_item", "arguments": {"variables": {"item_id": "i1"}}}
+        with mock.patch("toolstack_forwarder.server.outbound.send") as dispatch:
+            status, body = self._post(url, payload, secret="é")
+            self.assertEqual(status, 401)
+            self.assertEqual(body, {"error": "channel_secret_mismatch"})
+            dispatch.assert_not_called()
+        self.assertEqual(self.upstream.seen, [])
+        status, body = self._post(url, payload)
         self.assertEqual(status, 200)
         self.assertEqual(body["status"], 201)
+        self.assertEqual(len(self.upstream.seen), 1)
 
     def test_does_not_follow_upstream_redirect(self):
         cfg = self._config("""
@@ -244,6 +271,8 @@ path = "/login"
 allowed_headers = []
 body_kind = "text"
 body_content_type = "application/json"
+redact_response_body = false
+redact_response_headers = false
 secret_update_rules = [
   { secret_name = "auth_token", response_type = "plaintext", extract_path = "abc(def)", match_status = "200" },
 ]
@@ -260,6 +289,39 @@ writable = true
         # writeback saw the real body (not the redacted caller's body)
         self.assertEqual(secrets.table["_t"]["auth_token"], "def")
 
+    def test_login_writeback_receives_token_but_response_redacts_body_and_headers(self):
+        cfg = self._config('''
+[[operations]]
+name = "login"
+risk = "write"
+verb = "POST"
+path = "/session"
+body_kind = "text"
+body_content_type = "application/json"
+redact_response_body = true
+redact_response_headers = true
+secret_update_rules = [
+  { secret_name = "auth_token", response_type = "json", extract_path = "session.token", match_status = "200" },
+]
+[[secrets]]
+name = "auth_token"
+field = "AUTH_TOKEN"
+writable = true
+''')
+        secrets = _fake_secrets({"auth_token": "old"})
+        secrets.writeback = mock.Mock(wraps=secrets.writeback)
+        secrets.write_secret = mock.Mock(wraps=secrets.write_secret)
+        self.assertEqual(os.environ["TOOLSTACK_CHANNEL_SECRET"], "chan")
+        status, body = self._post(self._forwarder(cfg, secrets=secrets),
+                                  {"op": "login", "arguments": {"body": "{}"}}, secret="chan")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status"], 200)
+        secrets.writeback.assert_called_once_with("auth_token", "xy7")
+        secrets.write_secret.assert_called_once_with("auth_token", "xy7")
+        self.assertEqual(secrets.table["_t"]["auth_token"], "xy7")
+        self.assertNotIn("xy7", json.dumps(body))
+        self.assertNotIn("x-session", body["headers"])
+
     def test_secret_update_rule_failure_partial_skips_remaining_writes(self):
         # Two rules; the FIRST succeeds, the SECOND's extract regex fails.
         # Extraction is all-or-nothing: when ANY rule's extract fails, we
@@ -274,6 +336,8 @@ path = "/login"
 allowed_headers = []
 body_kind = "text"
 body_content_type = "application/json"
+redact_response_body = false
+redact_response_headers = false
 secret_update_rules = [
   { secret_name = "auth_token",  response_type = "plaintext", extract_path = "abc(def)", match_status = "200" },
   { secret_name = "refresh_token", response_type = "plaintext", extract_path = "nope=([a-z]+)", match_status = "200" },

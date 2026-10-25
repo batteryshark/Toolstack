@@ -12,7 +12,7 @@ from .layout import _csrf_field, esc, page
 def _broker_section(broker: dict, log_tail: str, config: dict, csrf: str) -> str:
     if broker["running"]:
         healthy = broker["healthy"]
-        cls, word = ("ok", "healthy") if healthy else ("bad", "unhealthy")
+        cls, word = ("muted", "health endpoint responded") if healthy else ("bad", "health observation unavailable")
         status = (f"<span class='pill {cls}'>running · {word}</span> "
                   f"<span class='muted'>pid {esc(broker['pid'])} · port {esc(broker['port'])}</span>")
     else:
@@ -20,7 +20,10 @@ def _broker_section(broker: dict, log_tail: str, config: dict, csrf: str) -> str
 
     def btn(action: str, label: str, disabled: bool) -> str:
         d = " disabled" if disabled else ""
-        return (f"<form method='post' action='/broker/{action}' class='inline-form'>"
+        target = f"local broker 127.0.0.1:{broker.get('port') or config.get('port', '')}"
+        confirmation = (f" data-confirm='{esc('Restart ' + target + '? Reloads the configured tool catalog and interrupts broker availability and active calls.')}'"
+                        if action == "restart" else "")
+        return (f"<form method='post' action='/broker/{action}' class='inline-form'{confirmation}>"
                 f"{_csrf_field(csrf)}<button type='submit'{d}>{esc(label)}</button></form>")
 
     running = broker["running"]
@@ -61,18 +64,18 @@ def token_reveal_banner(lead: str, token: str) -> str:
 
 def _callers_section(callers, csrf: str) -> str:
     rows = "".join(
-        "<tr>"
+        f"<tr data-caller-policy tabindex='0' aria-label='{esc('Open policy settings for ' + c['name'])}' "
+        "title='Double-click or press Enter to open policy settings'>"
         f"<td>{esc(c['name'])}</td>"
         f"<td>{'revoked' if c['revoked_at'] else 'active'}</td>"
         "<td class='actions'>"
-        f"<a class='button' href='/callers/{esc(c['name'])}/policy'>Policy</a>"
+        f"<a class='button' data-policy-link href='/callers/{esc(c['name'])}/policy'>Policy</a>"
         f"<a class='button' href='/callers/{esc(c['name'])}/tools'>Tools</a>"
         f"<form method='post' action='/callers/refresh-token' class='inline-form' "
-        "onsubmit=\"return confirm('Rotate this caller\\'s token? Its current token stops "
-        "working immediately and a new one is shown once.')\">"
+        f"data-confirm='{esc('Rotate token for ' + c['name'] + '? Existing token stops working; update clients using this caller. The new token is shown once.')}'>"
         f"{_csrf_field(csrf)}"
         f"<input type='hidden' name='name' value='{esc(c['name'])}'><button type='submit'>Refresh token</button></form>"
-        f"<form method='post' action='/callers/revoke' class='inline-form'>{_csrf_field(csrf)}"
+        f"<form method='post' action='/callers/revoke' class='inline-form' data-confirm='{esc('Revoke ' + c['name'] + '? Removes caller access and cancels its pending approvals.')}'>{_csrf_field(csrf)}"
         f"<input type='hidden' name='name' value='{esc(c['name'])}'><button type='submit'>Revoke</button></form>"
         "</td></tr>"
         for c in callers
@@ -156,7 +159,7 @@ def _audit_section(events, csrf: str) -> str:
     bar = _filterbar("audit-table", "Filter by caller / tool / event...", "All outcomes",
                      sorted({e["outcome"] for e in events}))
     clear = ("<form method='post' action='/audit/clear' class='inline-form' "
-             "onsubmit=\"return confirm('Clear the audit log?')\">"
+             "data-confirm='Clear the local broker audit log? Deletes retained audit history; this cannot be undone.'>"
              f"{_csrf_field(csrf)}<button type='submit'>Clear audit</button></form>")
     return ("<section><div class='toolbar'><h2>Audit</h2>" + clear + "</div>" + bar +
             "<table id='audit-table'><thead><tr><th>Time</th><th>Event</th><th>Outcome</th><th>Req</th><th>Details</th></tr></thead>"

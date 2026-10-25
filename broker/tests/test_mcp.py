@@ -34,6 +34,13 @@ def _tool_result(response):
 
 
 class Auth(BrokerTestCase):
+    def test_nested_tool_error_propagates_to_outer_mcp(self):
+        ctx = self.make_ctx(catalog=CATALOG)
+        token = seed_caller(ctx.store, allow=["echo.say"])
+        ctx.runtime.execute = lambda *args: {"isError": True, "content": []}
+        response = _mcp(ctx, token, "tools/call", {"name": "echo__say", "arguments": {}})
+        self.assertTrue(response.body["result"]["isError"])
+
     def test_unauthenticated_mcp_is_401(self):
         # Same boundary as the action API: only GET /v1/health is open; /mcp needs a token.
         r = handle("POST", "/mcp", {}, {"jsonrpc": "2.0", "id": 1, "method": "ping"}, self.make_ctx())
@@ -187,7 +194,7 @@ class ToolsCall(BrokerTestCase):
         self.assertEqual(ctx.runtime.calls, [])  # tool has NOT run yet
 
         # the agent's reason rode to the human approver (redacted)
-        self.assertIn("please review", surface.opened[0].justification)
+        self.assertIsNone(surface.opened[0].justification)
 
         # resolution uses the regular request poll
         surface.set(approval.APPROVED, approver="owner")

@@ -208,7 +208,7 @@ class Hardening(BrokerTestCase):
         self.assertEqual(handle("POST", "/v1/actions/echo.say", h, {"arguments": {}}, ctx).status, 200)
         self.assertEqual(handle("POST", "/v1/actions/echo.say", h, {"arguments": {}}, ctx).status, 429)
 
-    def test_reason_is_redacted_in_audit(self):
+    def test_reason_is_omitted_in_audit(self):
         ctx = self.make_ctx(catalog={"echo": {"say": "low"}})
         token = seed_caller(ctx.store, "hermes", allow=["echo.say"])
         reason = "rotate token " + "Z" * 40
@@ -216,7 +216,8 @@ class Hardening(BrokerTestCase):
                {"arguments": {}, "reason": reason}, ctx)
         blob = json.dumps(ctx.audit.events())
         self.assertNotIn("Z" * 40, blob)
-        self.assertIn("[redacted]", blob)
+        self.assertNotIn("rotate token", blob)
+        self.assertIn('"reason_provided": true', blob)
 
 
 class Discovery(BrokerTestCase):

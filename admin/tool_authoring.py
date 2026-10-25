@@ -17,6 +17,8 @@ import re
 import tomllib
 from pathlib import Path
 from urllib.parse import urlsplit
+from broker.approval_summary import validate_fields
+from . import manifest_files
 
 # The risk taxonomy: read / write / destructive. (One vocabulary, no low/medium/high.)
 RISK_CHOICES = ("read", "write", "destructive")
@@ -61,6 +63,8 @@ def normalize(data: dict) -> dict:
     tool_type = s(data.get("type")) or "api"
     operations = []
     for o in data.get("operations") or []:
+        # Preserve presence as well as the raw value; validation must not coerce it.
+        approval = {"approval_fields": o["approval_fields"]} if "approval_fields" in o else {}
         name = s(o.get("name"))
         if not name:
             continue
@@ -70,6 +74,7 @@ def normalize(data: dict) -> dict:
             allowed_headers = [s(h) for h in (o.get("allowed_headers") or []) if s(h)]
             path_template = s(o.get("path"))
             operations.append({
+                **approval,
                 "name": name,
                 "risk": REST_VERB_RISK.get(verb, "write"),
                 "description": s(o.get("description")),
@@ -79,8 +84,8 @@ def normalize(data: dict) -> dict:
                 "body_kind": body_kind,
                 "body_content_type": s(o.get("body_content_type")),
                 "body_substitution": bool(o.get("body_substitution", body_kind == "text")),
-                "redact_response_body": bool(o.get("redact_response_body")),
-                "redact_response_headers": bool(o.get("redact_response_headers")),
+                "redact_response_body": o.get("redact_response_body"),
+                "redact_response_headers": o.get("redact_response_headers"),
                 "secret_update_rules": _norm_secret_update_rules(o.get("secret_update_rules")),
                 "args": _rest_envelope_args(path_template, allowed_headers, body_kind),
             })
@@ -97,6 +102,7 @@ def normalize(data: dict) -> dict:
                 "description": s(a.get("description")),
             })
         operations.append({
+            **approval,
             "name": name,
             "risk": s(o.get("risk")) or "read",
             "description": s(o.get("description")),
@@ -230,6 +236,11 @@ def validate(data: dict) -> list[str]:
         errors.append("add at least one operation")
     seen = set()
     for o in data["operations"]:
+        if "approval_fields" in o:
+            try:
+                validate_fields(o["approval_fields"])
+            except ValueError:
+                errors.append("approval_fields must be <=32 unique non-root RFC6901 pointers (<=256 characters)")
         if not _NAME_RE.match(o["name"]):
             errors.append(f"operation name '{o['name']}' may contain only letters, digits and _")
         if o["name"] in seen:
@@ -267,6 +278,11 @@ def validate(data: dict) -> list[str]:
             errors.append(f"secret '{sec['name']}' path has invalid characters")
     if data["type"] == "rest":
         for o in data["operations"]:
+            for flag in ("redact_response_body", "redact_response_headers"):
+                if o.get("secret_update_rules") and not isinstance(o.get(flag), bool):
+                    errors.append(f"rest operation '{o['name']}' writeback needs explicit {flag} decision")
+                elif o.get(flag) is not None and not isinstance(o[flag], bool):
+                    errors.append(f"rest operation '{o['name']}' {flag} must be boolean")
             for rule in o.get("secret_update_rules", []):
                 if rule.get("secret_name") not in writable:
                     errors.append(
@@ -357,6 +373,9 @@ def to_toml(data: dict) -> str:
     out.append(f"port = {data['port']}")
     for o in data["operations"]:
         out += ["", "[[operations]]", f"name = {_s(o['name'])}"]
+        if "approval_fields" in o:
+            fields = validate_fields(o["approval_fields"])
+            out.append("approval_fields = [" + ", ".join(_s(p) for p in fields) + "]")
         if data["type"] == "rest":
             out.append(f"verb = {_s(o['verb'])}")
             out.append(f"path = {_s(o['path'])}")
@@ -373,10 +392,9 @@ def to_toml(data: dict) -> str:
                 out.append(f"body_content_type = {_s(o['body_content_type'])}")
             if bool(o.get("body_substitution", o.get("body_kind") == "text")) != (o.get("body_kind") == "text"):
                 out.append(f"body_substitution = {str(bool(o.get('body_substitution'))).lower()}")
-            if o.get("redact_response_body"):
-                out.append("redact_response_body = true")
-            if o.get("redact_response_headers"):
-                out.append("redact_response_headers = true")
+            for flag in ("redact_response_body", "redact_response_headers"):
+                if isinstance(o.get(flag), bool):
+                    out.append(f"{flag} = {str(o[flag]).lower()}")
             if o.get("secret_update_rules"):
                 out.append("secret_update_rules = [ " + ", ".join(
                     _rule_inline(r) for r in o["secret_update_rules"]) + " ]")
@@ -391,8 +409,7 @@ def to_toml(data: dict) -> str:
 
 def read(dir_path: str | Path) -> dict:
     """Load an existing tool's toolyard.toml into the editor's dict shape."""
-    with open(Path(dir_path) / "toolyard.toml", "rb") as f:
-        data = tomllib.load(f)
+    data = tomllib.loads(manifest_files.read(dir_path).decode("utf-8"))
     entry = data.get("entrypoint", {})
     return normalize({
         "id": data.get("id", ""),
@@ -421,5 +438,5 @@ def write(dir_path: str | Path, data: dict, runner: str | None = None) -> Path:
     if ep_err:
         raise ValueError(ep_err)
     target = path / "toolyard.toml"
-    target.write_text(to_toml(data), encoding="utf-8")
+    manifest_files.write(path, to_toml(data))
     return target

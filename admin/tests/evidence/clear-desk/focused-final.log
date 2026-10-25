@@ -1,0 +1,92 @@
+/Users/batteryshark/.cache/uv/archive-v0/glcQ6zq55NJq8otq/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_bad_tool_degrades_to_banner_not_500 (admin.tests.test_app.AdminApp.test_bad_tool_degrades_to_banner_not_500) ... ok
+test_remove_root_tool_deletes_its_folder (admin.tests.test_app.AdminApp.test_remove_root_tool_deletes_its_folder) ... ok
+test_remove_tool_unregisters_but_keeps_files (admin.tests.test_app.AdminApp.test_remove_tool_unregisters_but_keeps_files) ... ok
+test_external_delete_unregisters_only_matching_source (admin.tests.test_api.JsonApi.test_external_delete_unregisters_only_matching_source) ... ok
+test_combines_root_and_tool_dirs (broker.tests.test_registry.FromSources.test_combines_root_and_tool_dirs) ... ok
+test_missing_tool_dir_is_skipped (broker.tests.test_registry.FromSources.test_missing_tool_dir_is_skipped) ... ok
+test_tool_dir_only (broker.tests.test_registry.FromSources.test_tool_dir_only) ... ok
+test_list_ops_carries_tool_type (broker.tests.test_registry.FromToolsRoot.test_list_ops_carries_tool_type) ... ok
+test_lookup_resolves_op_metadata_and_port (broker.tests.test_registry.FromToolsRoot.test_lookup_resolves_op_metadata_and_port) ... ok
+test_registry_is_secret_unaware (broker.tests.test_registry.FromToolsRoot.test_registry_is_secret_unaware) ... ok
+test_unknown_op_is_none (broker.tests.test_registry.FromToolsRoot.test_unknown_op_is_none) ... ok
+test_unknown_tool_is_none (broker.tests.test_registry.FromToolsRoot.test_unknown_tool_is_none) ... ok
+test_dotted_id_raises_naming_the_id (broker.tests.test_registry.IdValidation.test_dotted_id_raises_naming_the_id) ... ok
+test_id_with_leading_dash_raises (broker.tests.test_registry.IdValidation.test_id_with_leading_dash_raises) ... ok
+test_missing_id_raises (broker.tests.test_registry.IdValidation.test_missing_id_raises) ... ok
+test_slash_in_id_raises (broker.tests.test_registry.IdValidation.test_slash_in_id_raises) ... ok
+test_valid_id_with_dash_and_underscore_loads (broker.tests.test_registry.IdValidation.test_valid_id_with_dash_and_underscore_loads) ... ok
+test_lookup_carries_mcp_type_and_port (broker.tests.test_registry.McpType.test_lookup_carries_mcp_type_and_port) ... ok
+test_boolean_port_raises (broker.tests.test_registry.PortValidation.test_boolean_port_raises) ... ok
+test_mcp_tool_also_needs_a_port (broker.tests.test_registry.PortValidation.test_mcp_tool_also_needs_a_port) ... ok
+test_missing_port_raises_naming_the_tool (broker.tests.test_registry.PortValidation.test_missing_port_raises_naming_the_tool) ... ok
+test_non_integer_port_raises (broker.tests.test_registry.PortValidation.test_non_integer_port_raises) ... ok
+test_out_of_range_port_raises (broker.tests.test_registry.PortValidation.test_out_of_range_port_raises) ... ok
+test_rest_type_loads_with_valid_port (broker.tests.test_registry.PortValidation.test_rest_type_loads_with_valid_port) ... ok
+test_unknown_type_rejected_even_with_a_valid_port (broker.tests.test_registry.PortValidation.test_unknown_type_rejected_even_with_a_valid_port) ... ok
+test_valid_port_loads (broker.tests.test_registry.PortValidation.test_valid_port_loads) ... ok
+test_base_url_host_with_invalid_characters_is_rejected (broker.tests.test_registry.RestType.test_base_url_host_with_invalid_characters_is_rejected) ... ok
+test_credentialed_base_url_is_rejected (broker.tests.test_registry.RestType.test_credentialed_base_url_is_rejected) ... ok
+test_lookup_carries_rest_metadata_and_strips_base_url_to_host (broker.tests.test_registry.RestType.test_lookup_carries_rest_metadata_and_strips_base_url_to_host) ... ok
+test_registry_is_secret_and_base_url_path_unaware (broker.tests.test_registry.RestType.test_registry_is_secret_and_base_url_path_unaware) ... FAIL
+test_does_not_inject_when_no_secrets_block (broker.tests.test_registry_inject.RefreshOpInjection.test_does_not_inject_when_no_secrets_block) ... ok
+test_does_not_inject_when_secrets_block_empty (broker.tests.test_registry_inject.RefreshOpInjection.test_does_not_inject_when_secrets_block_empty) ... ok
+test_existing_ops_preserved (broker.tests.test_registry_inject.RefreshOpInjection.test_existing_ops_preserved) ... ok
+test_injects_refresh_ops_when_secrets_declared (broker.tests.test_registry_inject.RefreshOpInjection.test_injects_refresh_ops_when_secrets_declared) ... ok
+test_refresh_one_takes_a_name_arg (broker.tests.test_registry_inject.RefreshOpInjection.test_refresh_one_takes_a_name_arg) ... ok
+test_refresh_ops_are_read_risk (broker.tests.test_registry_inject.RefreshOpInjection.test_refresh_ops_are_read_risk) ... ok
+test_allow_returns_200_with_result (broker.tests.test_gateway.Actions.test_allow_returns_200_with_result) ... ok
+test_denied_returns_403 (broker.tests.test_gateway.Actions.test_denied_returns_403) ... ok
+test_malformed_action_path_returns_400 (broker.tests.test_gateway.Actions.test_malformed_action_path_returns_400) ... ok
+test_malformed_body_returns_400 (broker.tests.test_gateway.Actions.test_malformed_body_returns_400) ... ok
+test_review_returns_202 (broker.tests.test_gateway.Actions.test_review_returns_202) ... ok
+test_token_value_never_logged (broker.tests.test_gateway.Actions.test_token_value_never_logged) ... ok
+test_unknown_tool_returns_404 (broker.tests.test_gateway.Actions.test_unknown_tool_returns_404) ... ok
+test_authenticated_unknown_route_404 (broker.tests.test_gateway.Auth.test_authenticated_unknown_route_404) ... ok
+test_bad_token_401 (broker.tests.test_gateway.Auth.test_bad_token_401) ... ok
+test_revoked_token_401 (broker.tests.test_gateway.Auth.test_revoked_token_401) ... ok
+test_unauthenticated_action_401 (broker.tests.test_gateway.Auth.test_unauthenticated_action_401) ... ok
+test_minted_when_absent (broker.tests.test_gateway.CorrelationId.test_minted_when_absent) ... ok
+test_supplied_is_propagated (broker.tests.test_gateway.CorrelationId.test_supplied_is_propagated) ... ok
+test_describe_allowed_op (broker.tests.test_gateway.Discovery.test_describe_allowed_op) ... ok
+test_describe_denied_op_is_404 (broker.tests.test_gateway.Discovery.test_describe_denied_op_is_404) ... ok
+test_tools_lists_only_allowed_with_effects (broker.tests.test_gateway.Discovery.test_tools_lists_only_allowed_with_effects) ... ok
+test_rate_limit_returns_429 (broker.tests.test_gateway.Hardening.test_rate_limit_returns_429) ... ok
+test_reason_is_omitted_in_audit (broker.tests.test_gateway.Hardening.test_reason_is_omitted_in_audit) ... ok
+test_health_is_not_audited (broker.tests.test_gateway.Health.test_health_is_not_audited) ... ok
+test_open_without_auth (broker.tests.test_gateway.Health.test_open_without_auth) ... ok
+test_cannot_read_another_callers_request (broker.tests.test_gateway.RequestStatus.test_cannot_read_another_callers_request) ... ok
+test_poll_pending_then_approved_runs_it (broker.tests.test_gateway.RequestStatus.test_poll_pending_then_approved_runs_it) ... ok
+test_unknown_request_404 (broker.tests.test_gateway.RequestStatus.test_unknown_request_404) ... ok
+test_binary_body_must_be_base64 (broker.tests.test_gateway.RestEnvelopeValidation.test_binary_body_must_be_base64) ... ok
+test_none_body_rejects_present_body (broker.tests.test_gateway.RestEnvelopeValidation.test_none_body_rejects_present_body) ... ok
+test_text_body_required_and_must_be_string (broker.tests.test_gateway.RestEnvelopeValidation.test_text_body_required_and_must_be_string) ... ok
+test_valid_text_envelope_submits (broker.tests.test_gateway.RestEnvelopeValidation.test_valid_text_envelope_submits) ... ok
+test_variables_and_headers_must_be_string_maps (broker.tests.test_gateway.RestEnvelopeValidation.test_variables_and_headers_must_be_string_maps) ... ok
+test_defaults_to_loopback_8780 (desktop.tests.test_app.AdminUrl.test_defaults_to_loopback_8780) ... ok
+test_env_override (desktop.tests.test_app.AdminUrl.test_env_override) ... ok
+test_false_when_nothing_listening (desktop.tests.test_app.Health.test_false_when_nothing_listening) ... ok
+test_true_when_serving (desktop.tests.test_app.Health.test_true_when_serving) ... ok
+test_already_up_does_not_spawn (desktop.tests.test_app.Lifecycle.test_already_up_does_not_spawn) ... ok
+test_early_exit_raises_with_guidance (desktop.tests.test_app.Lifecycle.test_early_exit_raises_with_guidance) ... ok
+test_spawns_waits_for_health_then_stops (desktop.tests.test_app.Lifecycle.test_spawns_waits_for_health_then_stops) ... ok
+test_stop_is_idempotent_and_safe_when_never_started (desktop.tests.test_app.Lifecycle.test_stop_is_idempotent_and_safe_when_never_started) ... ok
+test_extracts_or_defaults (desktop.tests.test_app.PortOf.test_extracts_or_defaults) ... ok
+test_double_click_failure_renders_before_main_and_cleans_up (desktop.tests.test_app.StartupSurface.test_double_click_failure_renders_before_main_and_cleans_up) ... ok
+test_error_is_escaped (desktop.tests.test_app.StartupSurface.test_error_is_escaped) ... ok
+test_retry_failure_stays_local_then_success_opens_admin (desktop.tests.test_app.StartupSurface.test_retry_failure_stays_local_then_success_opens_admin) ... ok
+test_retry_latch_and_close_during_startup (desktop.tests.test_app.StartupSurface.test_retry_latch_and_close_during_startup) ... ok
+
+======================================================================
+FAIL: test_registry_is_secret_and_base_url_path_unaware (broker.tests.test_registry.RestType.test_registry_is_secret_and_base_url_path_unaware)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/batteryshark/Projects/workstack/toolstack/.worktrees/clear-desk-web/broker/tests/test_registry.py", line 167, in test_registry_is_secret_and_base_url_path_unaware
+    self.assertNotIn(forbidden, blob)
+AssertionError: 'tenant' unexpectedly found in '{\'kv\': {\'port\': 4621, \'type\': \'rest\', \'ops\': {\'get_item\': {\'risk\': \'read\', \'description\': \'\', \'args\': [], \'approval_fields\': [], \'verb\': \'GET\', \'path_template\': \'/items/{item_id}\', \'base_url_host\': \'api.example.test\', \'body_kind\': \'none\'}, \'refresh\': {\'risk\': \'read\', \'description\': "Re-pull every declared secret from the backend into the tool\'s in-memory cache.", \'args\': []}, \'refresh_one\': {\'risk\': \'read\', \'description\': \'Re-pull a single secret by name (arg: name).\', \'args\': [{\'name\': \'name\', \'type\': \'string\', \'required\': True, \'description\': \'Secret name to refresh.\'}]}}, \'observation_manifest\': {\'id\': \'kv\', \'type\': \'rest\', \'entrypoint\': {\'port\': 4621}, \'operations\': [{\'name\': \'get_item\', \'risk\': \'read\', \'verb\': \'GET\', \'path\': \'/items/{item_id}\', \'body_kind\': \'none\'}], \'base_url\': \'https://api.example.test/tenant/secret-path?debug=1\'}, \'manifest_path\': \'/private/var/folders/pz/lrml3ths3mg3mf4bb75rmcvc0000gn/T/opencode/clear-desk-web-tmp/tmpkv4s6e1n/kv/toolyard.toml\', \'manifest_digest\': \'a1d7eb76cc0605deb7394c9f04fa8f5cf37a2c88bc4ed444c71000a0b5b2e97c\'}}'
+
+----------------------------------------------------------------------
+Ran 77 tests in 1.814s
+
+FAILED (failures=1)

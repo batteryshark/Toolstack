@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PROOF PASS</title><style>
+:root{color-scheme:light;--bg:#f6f7f9;--ink:#18202a;--muted:#697483;--line:#d9dee7;--panel:#fff;--accent:#0d6efd;}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;background:#172033;color:#fff;}
+header h1{font-size:18px;margin:0;font-weight:650;}
+main{max-width:1100px;margin:0 auto;padding:22px;}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px;}
+h2{font-size:16px;margin:0 0 12px;}
+h3{font-size:14px;margin:16px 0 8px;color:var(--muted);}
+button,input,select{font:inherit;min-height:38px;border-radius:6px;border:1px solid var(--line);padding:6px 9px;background:#fff;}
+button{background:#f3f5f8;cursor:pointer;}
+button.primary,#policy-form button[type=submit],#tool-form button[type=submit],.login button[type=submit]{background:var(--accent);border-color:var(--accent);color:#fff;}
+button:disabled{opacity:.5;cursor:not-allowed;}
+a.button{display:inline-flex;align-items:center;min-height:38px;border-radius:6px;border:1px solid var(--line);padding:6px 9px;background:#f3f5f8;color:var(--ink);text-decoration:none;}
+table{width:100%;border-collapse:collapse;}
+td,th{border-top:1px solid var(--line);padding:8px;text-align:left;vertical-align:middle;}
+code{background:#eef1f5;padding:2px 5px;border-radius:5px;overflow-wrap:anywhere;}
+pre{background:#0d1117;color:#e6edf3;padding:12px;border-radius:6px;overflow:auto;max-height:240px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;}
+.toolbar,.inline-form,header form,.actions,.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.banner{background:#e9f8ef;border:1px solid #a9dfbc;padding:12px;border-radius:8px;margin-bottom:16px;}
+.error{background:#fff0f0;border:1px solid #efb3b3;padding:12px;border-radius:8px;color:#8c1f1f;margin-bottom:16px;}
+.muted{color:var(--muted);}
+.login{max-width:380px;margin:60px auto;display:grid;gap:12px;}
+.login label{display:grid;gap:6px;}
+.field{display:grid;gap:6px;margin-bottom:12px;max-width:520px;}
+.pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;}
+.pill.ok{background:#e9f8ef;color:#1c7a3f;}
+.pill.bad{background:#ffe8e8;color:#8c1f1f;}
+.pill.muted{background:#eef1f5;color:#697483;}
+.risk{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;background:#eef1f5;color:#333;}
+.risk.read{background:#e8f5ff;color:#185d8f;}
+.risk.write{background:#fff6df;color:#7a5100;}
+.risk.destructive{background:#ffe8e8;color:#8c1f1f;}
+.card{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;background:#fbfcfe;}
+.argrow,.headerrow,.rulerow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0;}
+.argrow input,.headerrow input{min-width:120px;}
+.rulerow input,.rulerow select{min-width:130px;}
+.rest-sub{display:grid;gap:6px;margin-top:8px;}
+details.opcard-acc>summary,details.sub-acc>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:2px 0;}
+details.opcard-acc>summary::-webkit-details-marker,details.sub-acc>summary::-webkit-details-marker{display:none;}
+details.opcard-acc>summary::before,details.sub-acc>summary::before{content:'\25B8';color:var(--muted);transition:transform .1s ease;}
+details[open].opcard-acc>summary::before,details[open].sub-acc>summary::before{transform:rotate(90deg);}
+details.opcard-acc>summary{font-weight:600;}
+.op-title.muted{font-weight:400;}
+.op-sub,.acc-count{color:var(--muted);font-weight:400;font-size:12px;}
+.sub-acc{border-top:1px dashed var(--line);padding-top:6px;}
+.linkish{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:2px 6px;font:inherit;font-size:12px;text-decoration:underline;}
+.linkish:hover{color:var(--ink);}
+.sechead,.secrow{display:grid;grid-template-columns:1.3fr 1.3fr 1.2fr 70px 80px;gap:8px;align-items:center;margin:6px 0;}
+.sechead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 2px;}
+.secrow input{min-width:0;width:100%;}
+.colcenter{justify-self:center;text-align:center;}
+.brand{display:flex;align-items:center;gap:18px;}
+nav.appnav{display:flex;gap:4px;align-items:center;}
+nav.appnav a{color:#c7d0dc;text-decoration:none;padding:6px 12px;border-radius:6px;font-weight:550;}
+nav.appnav a:hover{background:rgba(255,255,255,.08);color:#fff;}
+nav.appnav a.active{background:rgba(255,255,255,.16);color:#fff;}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;}
+.tab-button{background:transparent;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 16px;color:var(--muted);cursor:pointer;font-weight:550;}
+.tab-button:hover{color:var(--ink);}
+.tab-button.active{background:var(--panel);border-color:var(--line);color:var(--ink);margin-bottom:-1px;}
+.tab-panel.hidden{display:none;}
+.filterbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.filterbar input[type=search]{flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}
+.filterbar select{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);}
+.audit-latest{background:#fff9df;}
+:focus-visible{outline:3px solid #0d6efd;outline-offset:3px;}
+dialog{max-width:min(520px,90vw);border:1px solid var(--line);border-radius:8px;padding:24px;color:var(--ink);}
+dialog::backdrop{background:#17203366;}
+@media(max-width:1000px){main{padding:14px;}section{overflow-x:auto;}header{flex-wrap:wrap;gap:12px;}}
+</style><script>
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('form[data-confirm]').forEach(form=>{
+    let accepted=false;
+    form.addEventListener('submit',e=>{
+      if(accepted)return;e.preventDefault();
+      const dialog=document.createElement('dialog'), message=document.createElement('p');
+      message.textContent=form.dataset.confirm;dialog.append(message);
+      const cancel=document.createElement('button'), proceed=document.createElement('button');
+      cancel.textContent='Cancel';cancel.autofocus=true;
+      proceed.textContent=form.dataset.confirm.split('?')[0];
+      dialog.append(cancel,proceed);document.body.append(dialog);
+      cancel.onclick=()=>dialog.close();
+      proceed.onclick=()=>{accepted=true;dialog.close();form.requestSubmit();};
+      dialog.addEventListener('close',()=>dialog.remove());dialog.showModal();cancel.focus();
+    });
+  });
+});
+document.addEventListener('DOMContentLoaded', function(){
+  const form=document.getElementById('policy-form');
+  if(!form || form.dataset.loaded!=='true') return;
+  const save=form.querySelector('button[type=submit]'), target=form.dataset.target;
+  const status=document.createElement('p');status.setAttribute('role','status');
+  form.querySelector('section').append(status);
+  const compare=document.createElement('button');compare.type='button';compare.textContent='Reload to compare';compare.hidden=true;
+  status.after(compare);
+  const fields=()=>Array.from(form.querySelectorAll('select[name^="op__"]'));
+  const snapshot=()=>JSON.stringify(fields().map(s=>[s.name,s.value]));
+  let baseline=snapshot(), unknown=false, busy=false;
+  const dirty=()=>snapshot()!==baseline;
+  function state(text){status.textContent=text+' · '+target;}
+  form.addEventListener('change',()=>state(dirty()?'Unsaved changes':'No unsaved changes'));
+  function resume(){if(dirty()&&!busy&&!unknown&&!status.textContent.includes('rejected'))state('Resume policy draft');}
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)resume();});
+  window.addEventListener('pageshow',resume);
+  window.addEventListener('beforeunload',e=>{if(dirty()||busy||unknown){e.preventDefault();e.returnValue='';}});
+  document.addEventListener('click',e=>{
+    const link=e.target.closest('a[href]');if(!link||(!dirty()&&!unknown&&!busy))return;
+    e.preventDefault();
+    const d=document.createElement('dialog'), title=document.createElement('h2');
+    title.textContent='Leave policy draft · '+target+'?';d.append(title);
+    const stay=document.createElement('button');stay.textContent='Stay';stay.autofocus=true;
+    const discard=document.createElement('button');discard.textContent='Discard draft';
+    discard.disabled=busy;
+    d.append(stay,discard);document.body.append(d);
+    stay.onclick=()=>d.close();discard.onclick=()=>{baseline=snapshot();unknown=false;location.href=link.href;};
+    d.addEventListener('close',()=>d.remove());d.showModal();stay.focus();
+  });
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();if(busy||unknown)return;
+    busy=true;save.disabled=true;state('Saving');
+    const body=new URLSearchParams(new FormData(form));
+    fields().forEach(s=>s.disabled=true);
+    try{
+      const response=await fetch(form.action,{method:'POST',headers:{Accept:'application/json'},body});
+      const result=await response.json();
+      if(response.ok && result.outcome==='saved' && result.target===target){baseline=snapshot();form.querySelectorAll('.saved-effect').forEach(n=>n.remove());state('Policy saved');}
+      else if(result.outcome==='rejected'){state('Save rejected · Draft retained');}
+      else throw new Error('No receipt');
+    }catch(error){unknown=true;compare.hidden=false;state('Save outcome unknown · Draft retained. Reload to compare before retrying');}
+    finally{busy=false;fields().forEach(s=>s.disabled=false);save.disabled=unknown;}
+  });
+  compare.onclick=async()=>{
+    compare.disabled=true;state('Loading saved policy for comparison');
+    try{
+      const response=await fetch(form.action,{cache:'no-store'});
+      const doc=new DOMParser().parseFromString(await response.text(),'text/html');
+      const loaded=doc.querySelector('#policy-form[data-loaded="true"]');
+      if(!response.ok||!loaded||loaded.dataset.target!==target)throw new Error('Load failed');
+      const saved=Array.from(loaded.querySelectorAll('select[name^="op__"]'));
+      if(saved.length!==fields().length||fields().some(s=>!saved.some(v=>v.name===s.name)))throw new Error('Scope changed');
+      const matches=fields().every(s=>saved.some(v=>v.name===s.name&&v.value===s.value));
+      form.querySelector('[name=_csrf]').value=loaded.querySelector('[name=_csrf]').value;
+      unknown=false;save.disabled=false;compare.hidden=true;
+      if(matches){baseline=snapshot();state('Saved policy matches draft');}
+      else{state('Saved policy differs · Draft retained. Review before saving');
+        fields().forEach(s=>{let note=s.parentElement.querySelector('.saved-effect');if(!note){note=document.createElement('small');note.className='saved-effect';s.after(note);}note.textContent=' Saved: '+saved.find(v=>v.name===s.name).value;});}
+    }catch(error){state('Comparison unavailable · Draft retained. Retry load');}
+    finally{compare.disabled=false;}
+  };
+});
+function setAll(effect){document.querySelectorAll('select[name^="op__"]').forEach(function(s){s.value=effect;});}
+function setTool(tool,effect){document.querySelectorAll('select[name^="op__'+tool+'__"]').forEach(function(s){s.value=effect;});}
+function showTab(name){
+  document.querySelectorAll('[data-tab-panel]').forEach(function(p){
+    p.classList.toggle('hidden', p.getAttribute('data-tab-panel')!==name);});
+  document.querySelectorAll('.tab-button').forEach(function(b){
+    b.classList.toggle('active', b.getAttribute('data-tab')===name);});
+}
+document.addEventListener('DOMContentLoaded', function(){
+  var tabs = document.querySelectorAll('.tab-button');
+  if(!tabs.length) return;
+  tabs.forEach(function(b){b.addEventListener('click', function(){
+    var n=b.getAttribute('data-tab'); showTab(n); history.replaceState(null,'','#'+n);});});
+  var want=(location.hash||'').replace('#','');
+  if(!want || !document.querySelector('[data-tab-panel="'+want+'"]'))
+    want=tabs[0].getAttribute('data-tab');
+  showTab(want);
+});
+
+// Client-side row filter for the Requests + Audit tables: a text box (matches the row text:
+// caller, tool.op, event, details) AND an optional outcome/status dropdown (matches data-key).
+function filterTable(tableId){
+  var box = document.querySelector('[data-filter-for="'+tableId+'"]');
+  var sel = document.querySelector('[data-filter-sel="'+tableId+'"]');
+  var q = (box ? box.value : '').toLowerCase();
+  var key = sel ? sel.value : '';
+  document.querySelectorAll('#'+tableId+' tbody tr[data-row]').forEach(function(tr){
+    var textOk = tr.textContent.toLowerCase().indexOf(q) >= 0;
+    var keyOk = !key || tr.getAttribute('data-key') === key;
+    tr.style.display = (textOk && keyOk) ? '' : 'none';
+  });
+}
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('[data-filter-for]').forEach(function(el){
+    el.addEventListener('input', function(){filterTable(el.getAttribute('data-filter-for'));});});
+  document.querySelectorAll('[data-filter-sel]').forEach(function(el){
+    el.addEventListener('change', function(){filterTable(el.getAttribute('data-filter-sel'));});});
+});
+</script></head><body><header><div class="brand"><h1>Toolstack Admin</h1><nav class="appnav"><a href="/">Dashboard</a><a href="/tools">Tools</a><a href="/config">Config</a></nav></div><form method="post" action="/logout"><input type="hidden" name="_csrf" value="fake"><span class="muted">fake-admin</span> <button>Sign out</button></form></header><main><form id="policy-form" data-target="writer-demo" data-loaded="true" method="post" action="/callers/writer-demo/policy"><input type="hidden" name="_csrf" value="fake"><section class="row"><a class="button" href="/">Back</a><strong>Policy for writer-demo</strong><button type="submit">Save policy</button><p role="status">Policy saved · writer-demo</p><button type="button" hidden="">Reload to compare</button></section><section><div class="row"><h2>notes-demo</h2></div><table><thead><tr><th>Operation</th><th>Risk</th><th>Description</th><th>Effect</th></tr></thead><tbody><tr><td>read_note</td><td><span class="risk read">read</span></td><td></td><td><select name="op__notes-demo__read_note"><option value="allow">Allow</option><option value="review">Review</option><option value="deny" selected="">Deny</option></select></td></tr></tbody></table></section></form></main><script>document.addEventListener('DOMContentLoaded',async()=>{
+    const results=[];function check(ok,name){results.push({name,ok:!!ok});}
+    try{
+const form=document.querySelector('#policy-form'), select=form.querySelector('select');
+const save=form.querySelector('[type=submit]');
+const original=document.documentElement.outerHTML;
+select.value='allow';select.dispatchEvent(new Event('change',{bubbles:true}));
+window.fetch=async()=>({ok:false,json:async()=>({outcome:'rejected'})});
+form.requestSubmit();await new Promise(r=>setTimeout(r,20));
+check(select.value==='allow'&&!save.disabled,'rejected save retains editable draft');
+check(form.textContent.includes('Save rejected'),'rejection visible');
+window.fetch=async()=>{throw Error('lost response');};
+form.requestSubmit();await new Promise(r=>setTimeout(r,20));
+check(save.disabled&&select.value==='allow','unknown save blocks retry and retains draft');
+window.fetch=async()=>({ok:true,text:async()=>original});
+Array.from(form.querySelectorAll('button')).find(b=>b.textContent==='Reload to compare').click();
+await new Promise(r=>setTimeout(r,20));
+check(!save.disabled&&select.value==='allow','comparison retains differing draft');
+check(form.textContent.includes('Saved: deny'),'saved effect shown alongside draft');
+form.querySelector('a').click();
+check(document.querySelector('dialog[open]')!==null,'dirty navigation opens dialog');
+check(document.activeElement.textContent==='Stay','safe Stay receives focus');
+document.activeElement.click();
+check(select.value==='allow','Stay retains draft');
+select.focus();check(document.activeElement===select,'policy control focusable');
+window.fetch=async()=>({ok:true,json:async()=>({outcome:'saved',target:'writer-demo'})});
+form.requestSubmit();await new Promise(r=>setTimeout(r,20));
+check(form.textContent.includes('Policy saved'),'acknowledged save receipt');
+
+    check(document.documentElement.scrollWidth<=innerWidth,'no horizontal viewport overflow');
+    }catch(e){results.push({name:String(e),ok:false});}
+    const report=document.createElement('pre');report.id='browser-proof';report.hidden=true;
+    report.textContent=JSON.stringify(results);document.body.append(report);
+    document.title=results.every(r=>r.ok)?'PROOF PASS':'PROOF FAIL';
+    });</script><dialog><h2>Leave policy draft · writer-demo?</h2><button autofocus="">Stay</button><button>Discard draft</button></dialog><pre id="browser-proof" hidden="">[{"name":"rejected save retains editable draft","ok":true},{"name":"rejection visible","ok":true},{"name":"unknown save blocks retry and retains draft","ok":true},{"name":"comparison retains differing draft","ok":true},{"name":"saved effect shown alongside draft","ok":true},{"name":"dirty navigation opens dialog","ok":true},{"name":"safe Stay receives focus","ok":true},{"name":"Stay retains draft","ok":true},{"name":"policy control focusable","ok":true},{"name":"acknowledged save receipt","ok":true},{"name":"no horizontal viewport overflow","ok":true}]</pre></body></html>

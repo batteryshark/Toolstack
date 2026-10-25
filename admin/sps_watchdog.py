@@ -10,8 +10,8 @@ This watchdog closes that gap. SPS answers a secret-free ``ping`` with its
 random ``boot_id``. This thread polls an injected ``probe`` callable (the live
 ``SPSLink.boot_id``); whenever the id changes, it walks every running tool in
 the toolyard state and re-registers it via the existing
-``toolyard.runner.reregister_all_with_sps`` (idempotent: overwrites the
-existing registration).
+``toolyard.runner.reregister_all_with_sps_detailed`` (idempotent).
+A boot is acknowledged only when the detailed result reports complete.
 
 The watchdog lives in admin because admin is the long-lived supervisor.
 The broker process is short-lived (supervised by ``admin.supervisor``) and
@@ -33,6 +33,16 @@ log = logging.getLogger(__name__)
 
 
 DEFAULT_POLL_INTERVAL = 30.0  # seconds
+
+
+def recover_with_runner(**kwargs):
+    """Require the runner's detailed contract; a missing API is retryable.
+
+    Import at call time so an unintegrated runner does not prevent admin
+    startup. Never fall back to the legacy failure-swallowing integer API.
+    """
+    from toolyard.runner import reregister_all_with_sps_detailed
+    return reregister_all_with_sps_detailed(**kwargs)
 
 
 class SPSWatchdog(threading.Thread):
@@ -89,11 +99,11 @@ class SPSWatchdog(threading.Thread):
             "SPS boot_id changed: %r -> %r (re-registering tools)",
             self._last_seen, cur,
         )
-        self._last_seen = cur
-        self._re_register_all()
+        if self._re_register_all():
+            self._last_seen = cur
 
-    def _re_register_all(self) -> None:
-        def _pass() -> int:
+    def _re_register_all(self) -> bool:
+        def _pass():
             return self._re_register(
                 tools_root=self._config.tools_root,
                 tool_dirs=self._config.tool_dirs,
@@ -108,6 +118,12 @@ class SPSWatchdog(threading.Thread):
                     count = _pass()
             else:
                 count = _pass()
-            log.info("SPS watchdog re-registered %d tool(s)", count)
+            # Legacy integer counts swallow per-tool failures: never treat them
+            # as proof of completion. Runner must supply an explicit flag.
+            complete = getattr(count, "complete", False) is True
+            if not complete:
+                log.warning("SPS recovery incomplete or unconfirmed; retrying this boot")
+            return complete
         except Exception:
             log.exception("SPS re-registration pass failed")
+            return False

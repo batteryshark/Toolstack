@@ -12,6 +12,43 @@ import stat
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
+import ipaddress
+
+
+def strict_bool(value: bool | str) -> bool:
+    """Shared TLS verification parser. Invalid values never disable verification."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("1", "true", "yes", "on"):
+            return True
+        if normalized in ("0", "false", "no", "off"):
+            return False
+    raise ValueError("expected a strict boolean")
+
+
+def parse_bool(value: bool | str, *, name: str = "boolean") -> bool:
+    try:
+        return strict_bool(value)
+    except ValueError as exc:
+        raise ValueError(f"{name}: expected a strict boolean") from exc
+
+
+def validate_provider_url(value: str) -> str:
+    parsed = urlsplit(value)
+    host = parsed.hostname
+    local = host == "localhost"
+    try:
+        local = local or ipaddress.ip_address(host or "").is_loopback
+    except ValueError:
+        pass
+    if (not host or parsed.username or parsed.password or parsed.query or
+            parsed.fragment or parsed.scheme not in ("https", "http") or
+            (parsed.scheme == "http" and not local)):
+        raise ValueError("provider URL requires HTTPS (HTTP allowed only on loopback)")
+    return value.rstrip("/")
 
 
 class ConfigModeError(RuntimeError):

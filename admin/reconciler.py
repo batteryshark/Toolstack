@@ -39,7 +39,8 @@ def reconcile_running_tools(config, link, *, wait_timeout: float = 60.0) -> int:
             log.error("reconcile: SPS not up after %.0fs; not starting tools", wait_timeout)
             return 0
 
-        state = _load_state()
+        with toolyard_ops.state_lock():
+            state = _load_state()
         started = 0
         for tool_id, rec in state.items():
             if not isinstance(rec, dict):
@@ -68,9 +69,10 @@ def reconcile_running_tools(config, link, *, wait_timeout: float = 60.0) -> int:
                     # Re-read + merge rather than writing our stale snapshot, which would
                     # revert tools that were successfully restarted earlier in this pass.
                     log.exception("reconcile: failed to restart %s; restoring intent", tool_id)
-                    current = _load_state()
-                    current.setdefault(tool_id, rec)  # keep any newer record; restore intent if gone
-                    _save_state(current)
+                    with toolyard_ops.state_lock():
+                        current = _load_state()
+                        current.setdefault(tool_id, rec)  # keep newer record
+                        _save_state(current)
         return started
     except Exception:
         log.exception("reconcile pass failed")

@@ -1,0 +1,210 @@
+[
+  {
+    "class" : "NSHostingView<ModifiedContent<ModifiedContent<ModifiedContent<ModifiedContent<ModifiedContent<AnyView, _EnvironmentKeyWritingModifier<Optional<AppModel>>>, _EnvironmentKeyWritingModifier<ColorScheme>>, _EnvironmentKeyWritingModifier<ControlActiveState>>, _FrameLayout>, _BackgroundStyleModifier<Color>>>",
+    "frame" : "{{0, 0}, {1100, 900}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{146, 244}, {153, 28}}"
+  },
+  {
+    "class" : "AppKitPlatformViewHost<OutlineListRepresentable<SelectionManagerBox<Never>>>",
+    "frame" : "{{146, 284}, {808, 416}}"
+  },
+  {
+    "class" : "ListCoreScrollView",
+    "frame" : "{{146, 284}, {808, 416}}"
+  },
+  {
+    "class" : "_NSScrollViewContentBackgroundView",
+    "frame" : "{{146, 284}, {808, 416}}"
+  },
+  {
+    "class" : "NSVisualEffectView",
+    "frame" : "{{146, 284}, {808, 416}}"
+  },
+  {
+    "class" : "BackdropView",
+    "frame" : "{{146, 284}, {808, 28}}"
+  },
+  {
+    "class" : "ListCoreClipView",
+    "frame" : "{{146, 284}, {808, 416}}"
+  },
+  {
+    "class" : "SwiftUIOutlineListView",
+    "frame" : "{{146, 284}, {808, 416}}"
+  },
+  {
+    "class" : "ListTableRowView",
+    "frame" : "{{146, 322}, {808, 75}}"
+  },
+  {
+    "class" : "_NSTableRowSeparatorDrawingView",
+    "frame" : "{{146, 322}, {808, 75}}"
+  },
+  {
+    "class" : "ListTableCellView",
+    "frame" : "{{162, 322}, {776, 75}}"
+  },
+  {
+    "class" : "CellHostingView<ModifiedContent<_ViewList_View, CellContentModifier>>",
+    "frame" : "{{162, 322}, {776, 75}}"
+  },
+  {
+    "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<SystemSegmentedControl>>",
+    "frame" : "{{162, 363}, {213, 28}}"
+  },
+  {
+    "class" : "SwiftUISegmentedControl",
+    "frame" : "{{162, 363}, {213, 28}}"
+  },
+  {
+    "class" : "_NSCoreHostingView<AppKitSegmentedControl>",
+    "frame" : "{{162, 363}, {213, 28}}"
+  },
+  {
+    "class" : "ListTableRowView",
+    "frame" : "{{146, 397}, {808, 75}}"
+  },
+  {
+    "class" : "_NSTableRowSeparatorDrawingView",
+    "frame" : "{{146, 397}, {808, 75}}"
+  },
+  {
+    "class" : "ListTableCellView",
+    "frame" : "{{162, 397}, {776, 75}}"
+  },
+  {
+    "class" : "CellHostingView<ModifiedContent<_ViewList_View, CellContentModifier>>",
+    "frame" : "{{162, 397}, {776, 75}}"
+  },
+  {
+    "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<SystemSegmentedControl>>",
+    "frame" : "{{162, 438}, {213, 28}}"
+  },
+  {
+    "class" : "SwiftUISegmentedControl",
+    "frame" : "{{162, 438}, {213, 28}}"
+  },
+  {
+    "class" : "_NSCoreHostingView<AppKitSegmentedControl>",
+    "frame" : "{{162, 438}, {213, 28}}"
+  },
+  {
+    "class" : "NSScrollPocket",
+    "frame" : "{{146, 284}, {808, 28}}"
+  },
+  {
+    "class" : "PocketMask",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "NSView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "NSView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "PocketBlur",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "PortalView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "NSHardPocketView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "_NSLayerBasedFillColorView",
+    "frame" : "{{146, 311}, {0, 1}}"
+  },
+  {
+    "class" : "LuminanceAdjustment",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "NSView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "NSView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "BackdropView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "_NSScrollViewContentBackgroundView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "NSVisualEffectView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "NSView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "NSView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "NSView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "PortalView",
+    "frame" : "{{146, 312}, {0, 0}}"
+  },
+  {
+    "class" : "_NSScrollViewFloatingSubviewsContainerView",
+    "frame" : "{{146, 284}, {808, 416}}"
+  },
+  {
+    "class" : "ListTableRowView",
+    "frame" : "{{146, 284}, {808, 28}}"
+  },
+  {
+    "class" : "NSBannerView",
+    "frame" : "{{146, 284}, {808, 28}}"
+  },
+  {
+    "class" : "NSHardPocketView",
+    "frame" : "{{146, 284}, {808, 28}}"
+  },
+  {
+    "class" : "_NSBannerDecorationView",
+    "frame" : "{{146, 284}, {808, 28}}"
+  },
+  {
+    "class" : "_NSTableRowSeparatorDrawingView",
+    "frame" : "{{146, 284}, {808, 28}}"
+  },
+  {
+    "class" : "ListTableHeaderView",
+    "frame" : "{{162, 284}, {776, 28}}"
+  },
+  {
+    "class" : "NSHostingView<ModifiedContent<_ViewList_View, HeaderForSectionModifier>>",
+    "frame" : "{{162, 284}, {776, 28}}"
+  },
+  {
+    "class" : "NSScroller",
+    "frame" : "{{129, 284}, {17, 0}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{825, 714}, {63, 28}}"
+  },
+  {
+    "class" : "_FocusRingView",
+    "frame" : "{{896, 714}, {58, 28}}"
+  }
+]

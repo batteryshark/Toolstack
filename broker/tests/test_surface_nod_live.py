@@ -57,6 +57,7 @@ class NodSurfaceLive(unittest.TestCase):
             caller="tsr-selftest", tool="echo", op="ping", risk="read",
             reason="surface_nod live contract test",
             justification="automated open->poll->cancel cycle; safe to reject",
+            installation_id=__import__("uuid").uuid4().hex,
         )
         self.ref = None
 

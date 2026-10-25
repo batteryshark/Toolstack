@@ -55,6 +55,23 @@ class McpServer(unittest.TestCase):
         self.assertFalse(r["isError"])
         self.assertIn("echoed", r["content"][0]["text"])
 
+    def test_nested_tool_error_is_not_reported_as_success(self):
+        self.server.ctx.runtime.execute = lambda *args: {"isError": True, "content": []}
+        r = self.mcp.dispatch("tools/call", {"name": "echo__say", "arguments": {}})
+        self.assertTrue(r["isError"])
+
+    def test_idempotency_metadata_never_forwarded_and_conflict_is_error(self):
+        params = {"name": "echo__say", "arguments": {"m": "hi"}, "_meta": {"toolstack/idempotency-key": "same-key"}}
+        first = self.mcp.dispatch("tools/call", params)
+        repeat = self.mcp.dispatch("tools/call", params)
+        self.assertFalse(first["isError"])
+        self.assertFalse(repeat["isError"])
+        self.assertEqual(len(self.server.ctx.runtime.calls), 1)
+        self.assertEqual(self.server.ctx.runtime.calls[0][2], {"m": "hi"})
+        params["arguments"] = {"m": "different"}
+        self.assertTrue(self.mcp.dispatch("tools/call", params)["isError"])
+        self.assertEqual(len(self.server.ctx.runtime.calls), 1)
+
     def test_call_review_blocks_then_approves_with_note(self):
         self.surface.set(approval.APPROVED, approver="alice", note="ok by me")
         r = self.mcp.dispatch("tools/call", {"name": "echo__skip", "arguments": {}})
@@ -84,13 +101,13 @@ class McpServer(unittest.TestCase):
         # ...an allow op does not (no human reads it)
         self.assertNotIn("_reason", tools["echo__say"]["inputSchema"].get("properties", {}))
 
-    def test_review_call_forwards_reason_to_approver_and_strips_it(self):
+    def test_review_call_keeps_reason_private_and_strips_it(self):
         self.surface.set(approval.APPROVED, approver="alice", note="ok")
         r = self.mcp.dispatch("tools/call",
                               {"name": "echo__skip", "arguments": {"_reason": "skip the ad break"}})
         self.assertFalse(r["isError"])
-        # the justification rode to the human on the approval card (redacted)...
-        self.assertIn("skip the ad break", self.surface.opened[-1].justification)
+        # Free-text justification never rides to the approval card...
+        self.assertIsNone(self.surface.opened[-1].justification)
         # ...and _reason was NOT forwarded to the tool
         self.assertNotIn("_reason", r["content"][0]["text"])
 

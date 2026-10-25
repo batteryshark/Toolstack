@@ -1,0 +1,149 @@
+[
+  {
+    "case": "policy-1440",
+    "failures": [],
+    "assertions": 26,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "policy-1180",
+    "failures": [],
+    "assertions": 26,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "load-failure-1440",
+    "failures": [],
+    "assertions": 9,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "load-failure-1180",
+    "failures": [],
+    "assertions": 9,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "editor-1440",
+    "failures": [],
+    "assertions": 20,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "editor-1180",
+    "failures": [],
+    "assertions": 20,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "confirmation-1440",
+    "failures": [],
+    "assertions": 23,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "confirmation-1180",
+    "failures": [],
+    "assertions": 23,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "returned-unknown-1440",
+    "failures": [],
+    "assertions": 19,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "returned-unknown-1180",
+    "failures": [],
+    "assertions": 19,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "replacement-1440",
+    "failures": [],
+    "assertions": 19,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "replacement-1180",
+    "failures": [],
+    "assertions": 19,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "add-1440",
+    "failures": [],
+    "assertions": 9,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "add-1180",
+    "failures": [],
+    "assertions": 9,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "registered-1440",
+    "failures": [],
+    "assertions": 15,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "registered-1180",
+    "failures": [],
+    "assertions": 15,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "added-stopped-1440",
+    "failures": [],
+    "assertions": 16,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "added-stopped-1180",
+    "failures": [],
+    "assertions": 16,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "register-confirm-1440",
+    "failures": [],
+    "assertions": 18,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "register-confirm-1180",
+    "failures": [],
+    "assertions": 18,
+    "snapshot": "saved",
+    "window_visible": false
+  },
+  {
+    "case": "shell-startup-620",
+    "failures": [],
+    "assertions": 8,
+    "snapshot": "saved",
+    "window_visible": false
+  }
+]
