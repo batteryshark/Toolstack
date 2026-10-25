@@ -52,6 +52,8 @@ sudo -u "$SERVICE_USER" sh -c "cd '$REPO_ROOT' && '$VENV_PIP' install --quiet '.
 #    so set-password + the SPS audit logger land right instead of crashing on first write)
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 700 /var/lib/toolstack
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 700 /var/log/toolstack
+# SPS refuses group-writable ancestors; Ubuntu keeps /var/log 0775, so audit lives under the state dir.
+install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 700 /var/lib/toolstack/audit
 install -d -o root -g "$SERVICE_GROUP" -m 750 /etc/toolstack
 
 # 5. Admin password (the panel fails closed without one)
@@ -100,7 +102,7 @@ Toolstack admin is installed. SPS still requires config/vault provisioning if ne
   Status:  systemctl status toolstack-admin toolstack-sps
   Logs:    journalctl -u toolstack-admin -f
             journalctl -u toolstack-sps -f
-            tail -f /var/log/toolstack/sps.audit    (SPS secret-access audit log)
+            tail -f /var/lib/toolstack/audit/sps.audit    (SPS secret-access audit log)
 
   Provision an agent (its bearer token prints once):
     sudo -u $SERVICE_USER env XDG_CONFIG_HOME=/var/lib XDG_STATE_HOME=/var/lib \\

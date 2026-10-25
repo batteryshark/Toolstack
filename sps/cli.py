@@ -36,7 +36,7 @@ def init_runtime_paths(config: str | Path, *, state_dir: str | Path | None = Non
     state = Path(state_dir) if state_dir is not None else (
         Path("/var/lib/toolstack") if production else config.parent)
     audit_path = Path(audit_log) if audit_log is not None else (
-        Path("/var/log/toolstack/sps.audit") if production else config.parent / "sps-audit.jsonl")
+        Path("/var/lib/toolstack/audit/sps.audit") if production else config.parent / "sps-audit.jsonl")
     return state / "sps.vault.json", audit_path
 
 
@@ -113,7 +113,7 @@ def _cmd_serve(args) -> None:
     warn_certificate_expiry(cfg.sp_tls_cert)
     plugin = plugin_loader.load_plugin(cfg)
     plugin.connect()
-    audit_log_path = cfg.sp_audit_log or "/var/log/toolstack/sps.audit"
+    audit_log_path = cfg.sp_audit_log or "/var/lib/toolstack/audit/sps.audit"
     audit_log = audit.AuditLogger(audit_log_path)
     boot_id = secrets.token_hex(16)
     ctx = AppContext(
@@ -301,7 +301,7 @@ def main() -> None:
     p_init = sub.add_parser("init", help="write a starter sps.env (cert + key + CA)")
     p_init.add_argument("--config", default="/etc/toolstack/sps.env")
     p_init.add_argument("--state-dir", help="directory for sps.vault.json (default: /var/lib/toolstack for production config, otherwise beside config)")
-    p_init.add_argument("--audit-log", help="audit log file (default: /var/log/toolstack/sps.audit for production config, otherwise beside config)")
+    p_init.add_argument("--audit-log", help="audit log file (default: /var/lib/toolstack/audit/sps.audit for production config, otherwise beside config)")
     p_init.set_defaults(func=_cmd_init)
     p_iv = sub.add_parser("init-vault", help="create the localfile vault file (separate from init)")
     p_iv.add_argument("--config", default="/etc/toolstack/sps.env")
