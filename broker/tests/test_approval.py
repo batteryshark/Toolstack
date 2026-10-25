@@ -95,20 +95,22 @@ class ApprovalFlow(BrokerTestCase):
                  for e in ctx.store.audit_events(request_id=out.request_id)}
         self.assertIn(("approval", "surface_decision_received"), pairs)
 
-    def test_agent_reason_rides_to_the_card(self):
+    def test_agent_reason_is_not_disclosed_on_card(self):
         surface = FakeSurface(approval.PENDING)
         ctx, caller = self._setup(surface)
         lifecycle.submit(ctx, caller, "echo", "shout", {}, CID, reason="please skip")
-        self.assertEqual(surface.opened[0].justification, "please skip")
+        self.assertIsNone(surface.opened[0].justification)
+        self.assertNotIn("please skip", surface.opened[0].details)
 
     def test_request_details_ride_to_the_card_and_distinguish_calls(self):
         surface = FakeSurface(approval.PENDING)
         ctx, caller = self._setup(surface)
         lifecycle.submit(ctx, caller, "echo", "shout", {"body": {"dueDate": "2026-07-01"}}, CID)
         lifecycle.submit(ctx, caller, "echo", "shout", {"body": {"assignedTo": "bob"}}, "corr-2")
-        self.assertIn("2026-07-01", surface.opened[0].details)
-        self.assertIn("bob", surface.opened[1].details)
-        self.assertNotEqual(surface.opened[0].details, surface.opened[1].details)
+        self.assertNotIn("2026-07-01", surface.opened[0].details)
+        self.assertNotIn("bob", surface.opened[1].details)
+        self.assertIn("ALL arguments omitted", surface.opened[0].details)
+        self.assertNotEqual(surface.opened[0].request_digest, surface.opened[1].request_digest)
 
     def test_rest_review_card_carries_endpoint_template_not_values(self):
         surface = FakeSurface(approval.PENDING)

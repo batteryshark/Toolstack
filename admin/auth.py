@@ -1,7 +1,7 @@
 """Password hashing, signed browser sessions, and CSRF tokens.
 
-The password and session helpers are ported verbatim from the previous
-broker-panel (stdlib ``scrypt`` + HMAC, no external dependency). Passwords use
+The password and session helpers derive from the previous broker-panel
+(stdlib ``scrypt`` + HMAC, no external dependency). Passwords use
 ``scrypt`` because they are human-chosen and low-entropy; this is deliberately
 different from broker *tokens*, which are high-entropy random and only SHA-256
 hashed (see :mod:`broker.identity`).
@@ -9,6 +9,7 @@ hashed (see :mod:`broker.identity`).
 CSRF protection uses a synchronizer token derived from the session value. A
 cross-site attacker can drive the browser to POST but cannot read the session
 cookie, so cannot compute a matching token; this closes a gap the old panel had.
+Session and CSRF HMACs have distinct purpose prefixes; legacy tokens are rejected.
 """
 
 from __future__ import annotations
@@ -58,13 +59,13 @@ def verify_password(password: str, encoded: str) -> bool:
 def sign_session(username: str, secret: str, ttl_seconds: int) -> str:
     expires_at = int(time.time()) + ttl_seconds
     message = f"{username}|{expires_at}"
-    signature = hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+    signature = hmac.new(secret.encode("utf-8"), ("session|" + message).encode("utf-8"), hashlib.sha256).hexdigest()
     raw = f"{message}|{signature}".encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii")
 
 
 def verify_session(cookie: str | None, secret: str) -> str | None:
-    if not cookie:
+    if not isinstance(cookie, str) or not cookie:
         return None
     try:
         decoded = base64.urlsafe_b64decode(cookie.encode("ascii")).decode("utf-8")
@@ -75,8 +76,8 @@ def verify_session(cookie: str | None, secret: str) -> str | None:
     if expires_at < int(time.time()):
         return None
     message = f"{username}|{expires_at}"
-    expected = hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(signature, expected):
+    expected = hmac.new(secret.encode("utf-8"), ("session|" + message).encode("utf-8"), hashlib.sha256).hexdigest()
+    if not signature.isascii() or not hmac.compare_digest(signature, expected):
         return None
     return username
 
@@ -84,11 +85,16 @@ def verify_session(cookie: str | None, secret: str) -> str | None:
 def csrf_token(session_value: str, secret: str) -> str:
     """A CSRF token bound to one session, derived via HMAC over the session cookie."""
     return hmac.new(
-        secret.encode("utf-8"), ("csrf|" + session_value).encode("utf-8"), hashlib.sha256
+        secret.encode("utf-8"), ("csrf-v1|" + session_value).encode("utf-8"), hashlib.sha256
     ).hexdigest()
 
 
 def verify_csrf(token: str | None, session_value: str | None, secret: str) -> bool:
-    if not token or not session_value:
+    if (not isinstance(token, str) or not token or not token.isascii()
+            or not isinstance(session_value, str) or not session_value):
         return False
-    return hmac.compare_digest(token, csrf_token(session_value, secret))
+    try:
+        expected = csrf_token(session_value, secret)
+    except UnicodeEncodeError:
+        return False
+    return hmac.compare_digest(token, expected)

@@ -1,13 +1,4 @@
-# Packaging for Toolstack's stdlib components (broker, toolyard, client), so their
-# CLIs install as real commands (`toolstack`, `brokerctl`, `toolyard`) instead of
-# only `python3 -m <pkg>`. The agent skill and the docs use the bare commands.
-#
-#   pip install -e .        # editable: the commands track your checkout
-#   toolstack --help
-#
-# Runtime stays ZERO-dependency (these are stdlib-only); setuptools is a build-time
-# dep only. The admin web app is intentionally NOT packaged here; it carries the
-# project's only runtime deps (FastAPI/uvicorn), in admin/requirements.txt + its own venv.
+# Complete distribution; optional deployment dependencies are locked by uv.lock.
 
 [build-system]
 requires = ["setuptools>=61"]
@@ -18,21 +9,24 @@ name = "toolstack"
 version = "0.1.0"
 description = "Toolstack (TSR): a brokered, action-without-access tool layer for agents"
 requires-python = ">=3.11"   # tomllib (broker.registry / toolyard.config) is 3.11+
-dependencies = []            # stdlib only
+dependencies = []            # core CLIs are stdlib-only; deployment uses extras
 classifiers = [
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
 ]
 
 [project.optional-dependencies]
+admin = ["fastapi==0.137.1", "uvicorn==0.49.0", "PyYAML==6.0.3"]
+test = ["httpx==0.28.1"]
 # The SPS `localfile` plugin uses scrypt (stdlib) + Fernet AEAD. `cryptography` is
 # imported lazily so the SPS stays zero-dependency unless the localfile plugin is
 # actually configured; opt in with `pip install '.[vault]'`. Upper bound caps the major
 # so a future cryptography release can't silently break a deploy; widen it deliberately
 # after testing the plugin against the new major. (The original `[vault]` extra
 # applied to the historical `toolyard/secrets.py`; that module is now removed.)
-vault = ["cryptography>=42,<46"]
+vault = ["cryptography>=50.0.2,<51"]
 
 [project.scripts]
+admin = "admin.__main__:main"
 toolstack = "client.toolstack:main"        # the agent's generic tool client (CLI)
 toolstack-mcp = "client.mcp_server:main"   # the same client as an MCP stdio server
 brokerctl = "broker.brokerctl:main"        # operator CLI (callers/policies/tokens/sweep)
@@ -41,9 +35,8 @@ toolstack-forwarder = "toolstack_forwarder.__main__:main"  # generic rest forwar
 sps = "sps.cli:main"                       # the secrets procurement service
 
 [tool.setuptools]
-# Explicit list (not auto-discovery) so the board dirs (.ordna/, tasks/) and the
-# dep-carrying admin package are never swept into the distribution.
-packages = ["broker", "toolyard", "client", "toolstack_forwarder", "sps", "sps.plugins"]
+# Explicit list prevents tests and unrelated project directories entering wheels.
+packages = ["admin", "admin.views", "broker", "toolyard", "client", "toolstack_forwarder", "sps", "sps.plugins"]
 
-
-
+[tool.setuptools.package-data]
+client = ["SKILL.md"]

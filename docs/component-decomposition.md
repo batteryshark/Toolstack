@@ -4,7 +4,7 @@ How the system works, and why. Read [PROJECT.md](../PROJECT.md) for the summary
 and [plan.md](../plan.md) for the buildable, component-by-component plan.
 
 **Direction:** the system is *collapsed to deployment reality*, a few processes
-with hard physical boundaries, not a mesh of logical services. The detailed
+with trusted-host process seams, not enforced same-user isolation. The detailed
 ownership rules live as **module seams inside the broker** (second diagram).
 
 ## Physical picture (the boundary is the architecture)
@@ -29,7 +29,7 @@ flowchart TB
     end
 
     Nod["nod<br/>approval surface (external)"]
-    Vault["Secret backend<br/>Infisical / Hashicorp Vault / SOPS (external)"]
+    Vault["Secret backend<br/>Infisical / Hashicorp Vault / localfile"]
 
     Agent --> Ingress --> Broker
     Broker --> DB
@@ -38,18 +38,18 @@ flowchart TB
     Tools -->|TLS/TCP, get/update secrets| SPS
     SPS -->|one plugin| Vault
     Broker <-->|open approval / read decision| Nod
-    Broker -. never on the secret path .-> SPS
 ```
 
 Typically the broker, toolyard, SPS, and tool containers all run on **one host**,
-isolated by process and container boundaries and bound to `127.0.0.1`. The tailnet
+bound to `127.0.0.1`, not isolated from their shared OS account. The tailnet
 is the only way in; nod and the secret backend are the only things reached out to.
 
 The request path is broker → tool container **directly** on the tool's
 loopback port; the broker reads the per-tool `X-Toolstack-Secret` channel
-credential (the E_SECRET the runner minted) from the host-local toolyard
-state file. Tools do not see the broker or the backend — they see only
-SPS, over TLS/TCP.
+credential from dedicated `channels.json`, never E_SECRET/private-state fallback.
+Channel and SPS credentials are independently random. Tools retrieve through SPS;
+trusted same-account processes still have file/memory access. See
+[current security contracts](security-contracts.md) and its pending release gates.
 
 ## Inside the broker (module seams)
 
@@ -84,9 +84,9 @@ records to the Audit module.
 | From → To | Path | Auth |
 |---|---|---|
 | Agent → Broker | Tailscale Serve (tailnet-only) | Bearer token bound to one caller |
-| Broker → Tool container | localhost HTTP / JSON-RPC | Optional per-tool `X-Toolstack-Secret` (re-sourced from each tool's E_SECRET — Phase 4) |
+| Broker → Tool | localhost HTTP / JSON-RPC | Separate per-tool channel credential required by uplift; do not reuse SPS E_SECRET |
 | Toolyard → SPS | TLS/TCP, one JSON line per direction | In-body `spsecret` (mode 0600 enforced on `/etc/toolstack/sps.env`); server cert verified against `SP_TLS_CA` |
-| Tool → SPS | TLS/TCP, one JSON line per direction | In-body `esecret` (the runner-minted per-tool channel credential, hex ≥ 32 chars); same CA verify |
+| Tool → SPS | TLS/TCP, one JSON line per direction | In-body `esecret` (SPS capability, not broker channel credential); same CA verify |
 | SPS → Backend | per-plugin | plugin handles its own credential |
 | Broker → nod | HTTP over tailnet | nod issuer token (on the broker host) |
 | nod → Broker (callback), *not implemented, not planned* | - | No callback route exists; resolution is poll-only. Rejected on security grounds: nod posts callbacks unauthenticated, so a receiver would let anyone forge an approval. |
@@ -95,15 +95,15 @@ records to the Audit module.
 
 ## What holds the line
 
-The controls live in the [security-spine invariants in plan.md](../plan.md): fail
-closed; secrets never on the control plane; registry secret-unaware (physically);
-redact before any boundary; tokens hashed and revocation immediate; approval
-describes the operation; the broker owns approval truth; every decision audited.
+The broker authorizes actions and SPS authorizes secret mappings. These design
+roles do not prove secrets cannot reach the control plane: tool responses may
+contain them, and same-user processes share host authority. Redaction and local
+audit have limits. See [runtime matrix](runtime-matrix.md) for the release boundary.
 
 ## Why it's shaped this way
 
 The agent can reach only the broker, over one tunnel. The broker decides. The tool
-executes with its own secrets, which the broker never sees. Risky operations go to
-nod for a human. One host, localhost binding, and a tailnet keep the whole thing
-deployable on a laptop and auditable end to end, while the broker's internal
-module seams keep the roles from collapsing into one tangled blob.
+executes with its own secrets, which must be redacted from results if confidential.
+Review-policy operations go to nod for a human. Release support requires a dedicated
+Toolstack VM with trusted tools and external broker-only agents. Laptop/same-account
+agents are development-only, not secret isolation. Local audit is not tamper-proof.

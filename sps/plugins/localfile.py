@@ -15,9 +15,14 @@ import base64
 import hashlib
 import json
 import os
+import tempfile
+import fcntl
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from ..config import LocalFileBlock
+from ..paths import atomic_write, open_private, private_parent, read_private, validate
 from .base import SPSSecretsPlugin
 
 
@@ -52,15 +57,19 @@ def _vault_key(passphrase: str, salt: bytes, n: int = _SCRYPT_N,
 
 
 def _vault_passphrase() -> str:
-    """Read the passphrase from SP_VAULT_PASSPHRASE (or its _FILE variant)."""
+    """Read SP_VAULT_PASSPHRASE, or its owner-private _FILE variant.
+
+    Files must satisfy SPS private-file and canonical private-parent checks.
+    Unsafe permissions or links are refused, never repaired.
+    """
     direct = os.environ.get("SP_VAULT_PASSPHRASE")
     if direct:
         return direct
     path = os.environ.get("SP_VAULT_PASSPHRASE_FILE")
     if path:
-        value = Path(path).read_text(encoding="utf-8").strip()
+        value = read_private(path).strip()
         if not value:
-            raise ValueError(f"{path}: vault passphrase file is empty")
+            raise ValueError("vault passphrase file is empty")
         return value
     raise ValueError(
         "localfile SPS plugin needs SP_VAULT_PASSPHRASE or SP_VAULT_PASSPHRASE_FILE"
@@ -79,13 +88,19 @@ def _write_vault(path: Path, salt: bytes, key: bytes, data: dict,
         "ciphertext": token.decode("ascii"),
     }
     blob = json.dumps(envelope, indent=2).encode("utf-8")
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    atomic_write(path, blob)
+
+
+@contextmanager
+def _file_lock(path):
+    # A stable sidecar inode, never the atomically replaced vault inode.
+    validate(path)
+    fd = open_private(str(path) + ".lock", os.O_RDWR | os.O_CREAT)
     try:
-        os.write(fd, blob)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
     finally:
         os.close(fd)
-    os.replace(tmp, path)
 
 
 class _Vault:
@@ -95,11 +110,13 @@ class _Vault:
 
     def __init__(self, path: str | Path, passphrase: str) -> None:
         self._path = Path(path)
+        self._mutex = threading.RLock()
+        validate(str(self._path) + ".lock")
         if not self._path.exists():
             raise FileNotFoundError(
                 f"no vault at {self._path}: create one with `python3 -m sps.cli init`"
             )
-        envelope = json.loads(self._path.read_text(encoding="utf-8"))
+        envelope = json.loads(read_private(self._path))
         if envelope.get("version") != _VAULT_VERSION:
             raise RuntimeError(
                 f"vault {self._path}: unsupported version {envelope.get('version')!r} "
@@ -126,30 +143,52 @@ class _Vault:
     def _persist(self) -> None:
         _write_vault(self._path, self._salt, self._key, self._data, self._params)
 
+    def _reload(self):
+        envelope = json.loads(read_private(self._path))
+        if (base64.urlsafe_b64decode(envelope["salt"]) != self._salt or
+                envelope["version"] != _VAULT_VERSION or
+                tuple(int(envelope[k]) for k in ("n", "r", "p")) != self._params):
+            raise RuntimeError("vault encryption parameters changed; reconnect required")
+        self._data = self._decrypt(envelope["ciphertext"])
+
     def get(self, tool_id: str, field: str):
-        return self._data.get(tool_id, {}).get(field)
+        with self._mutex, _file_lock(self._path):
+            self._reload()
+            return self._data.get(tool_id, {}).get(field)
 
     def has(self, tool_id: str, field: str) -> bool:
-        return field in self._data.get(tool_id, {})
+        return field in self.list_fields(tool_id)
 
     def set(self, tool_id: str, field: str, value: str) -> None:
-        self._data.setdefault(tool_id, {})[field] = value
-        self._persist()
+        with self._mutex, _file_lock(self._path):
+            self._reload()
+            previous = self._data
+            candidate = {key: dict(fields) for key, fields in previous.items()}
+            candidate.setdefault(tool_id, {})[field] = value
+            self._data = candidate
+            try:
+                self._persist()
+            except BaseException:
+                self._data = previous
+                raise
 
     def list_fields(self, tool_id: str) -> tuple[str, ...]:
-        return tuple(self._data.get(tool_id, {}).keys())
+        with self._mutex, _file_lock(self._path):
+            self._reload()
+            return tuple(self._data.get(tool_id, {}).keys())
 
     @classmethod
     def init(cls, path: str | Path, passphrase: str) -> "_Vault":
         if not passphrase:
             raise ValueError("vault passphrase must not be empty")
         p = Path(path)
-        if p.exists():
-            raise FileExistsError(f"vault already exists at {p}")
-        p.parent.mkdir(parents=True, exist_ok=True)
+        private_parent(p)
         salt = os.urandom(16)
         params = (_SCRYPT_N, _SCRYPT_R, _SCRYPT_P)
-        _write_vault(p, salt, _vault_key(passphrase, salt, *params), {}, params)
+        with _file_lock(p):
+            if p.exists():
+                raise FileExistsError(f"vault already exists at {p}")
+            _write_vault(p, salt, _vault_key(passphrase, salt, *params), {}, params)
         return cls(p, passphrase)
 
 

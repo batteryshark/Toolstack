@@ -258,6 +258,11 @@ class IdValidation(unittest.TestCase):
             self._load('id = "my/tool"\ntype = "api"\n[entrypoint]\nport = 4700\n'
                        '[[operations]]\nname = "say"\nrisk = "read"\n')
 
+    def test_toml_escaped_trailing_newline_in_id_raises(self):
+        with self.assertRaises(ValueError):
+            self._load('id = "echo\\n"\ntype = "api"\n[entrypoint]\nport = 4700\n'
+                       '[[operations]]\nname = "say"\nrisk = "read"\n')
+
     def test_missing_id_raises(self):
         with self.assertRaises(ValueError):
             self._load('type = "api"\n[entrypoint]\nport = 4700\n'

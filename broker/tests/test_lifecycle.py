@@ -47,22 +47,22 @@ class Submit(BrokerTestCase):
         self.assertEqual(out.status, lifecycle.NOT_FOUND)
         self.assertIsNone(out.request_id)
 
-    def test_tool_failure_maps_to_failed(self):
+    def test_unproven_tool_failure_maps_to_unknown(self):
         # Registered, the tool ran but raised -> a generic tool_failed.
         ctx, caller = self._setup(catalog={"boom": {"now": "low"}}, allow=["boom.now"])
         out = lifecycle.submit(ctx, caller, "boom", "now", {}, CID)
-        self.assertEqual(out.status, lifecycle.FAILED)
-        self.assertEqual(out.error, "tool_failed")
+        self.assertEqual(out.status, lifecycle.UNKNOWN)
+        self.assertEqual(out.error, "execution_outcome_unknown")
         self.assertIn("RuntimeError", out.detail)
-        self.assertEqual(ctx.store.request(out.request_id)["status"], "failed")
+        self.assertEqual(ctx.store.request(out.request_id)["status"], "unknown")
 
     def test_unreachable_tool_maps_to_tool_unreachable(self):
         # The broker couldn't reach the tool (process not running) -> a distinct, diagnostic
         # error so the caller knows to start it, not a generic tool_failed.
         ctx, caller = self._setup(catalog={"down": {"now": "low"}}, allow=["down.now"])
         out = lifecycle.submit(ctx, caller, "down", "now", {}, CID)
-        self.assertEqual(out.status, lifecycle.FAILED)
-        self.assertEqual(out.error, "tool_unreachable")
+        self.assertEqual(out.status, lifecycle.UNKNOWN)
+        self.assertEqual(out.error, "execution_outcome_unknown")
         self.assertIn("ToolUnreachable", out.detail)
 
     def test_arguments_never_appear_in_audit(self):

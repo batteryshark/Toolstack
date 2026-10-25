@@ -6,11 +6,13 @@ Requires the admin venv (FastAPI + httpx):
     admin/.venv/bin/python -m unittest admin.tests.test_app
 """
 
+import base64
 import json
 import os
 import re
 import shutil
 import tempfile
+import time
 import tomllib
 import unittest
 from pathlib import Path
@@ -88,6 +90,18 @@ class AdminApp(unittest.TestCase):
         self.assertEqual(r.status_code, 200)  # followed the 303 to the dashboard
         self.assertIn("Toolstack Admin", r.text)
 
+    def test_password_reset_invalidates_cookie_and_csrf_without_restart(self):
+        self._login()
+        csrf = _csrf(self.client.get("/").text)
+        settings.write_password_hash(auth.hash_password("replacement-fake"))
+        settings.rotate_session_secret()
+        self.assertEqual(self.client.get("/", follow_redirects=False).headers["location"], "/login")
+        self.assertEqual(self.client.post("/config", data={"_csrf": csrf, "port": "9999"},
+                                          follow_redirects=False).headers["location"], "/login")
+        self.assertNotEqual(broker_config.load().port, 9999)
+        response = self.client.post("/login", data={"username": "admin", "password": "replacement-fake"})
+        self.assertIn("Toolstack Admin", response.text)
+
     def test_create_app_starts_reconciler_when_sps_unconfigured(self):
         with mock.patch.dict(os.environ, {"TOOLSTACK_SPS_ENV": "/nonexistent/sps.env"}), \
              mock.patch("admin.server.SPSLink") as link, \
@@ -130,6 +144,30 @@ class AdminApp(unittest.TestCase):
     def test_requires_login(self):
         r = self.client.get("/")
         self.assertIn("Sign in", r.text)
+
+    def test_malformed_and_wrong_purpose_cookie_redirect_to_login(self):
+        expiry = str(int(time.time()) + 60)
+        secret = settings.session_secret_file().read_text().strip()
+        for signature in ("é", auth.csrf_token(expiry, secret)):
+            cookie = base64.urlsafe_b64encode(f"csrf|{expiry}|{signature}".encode()).decode()
+            self.client.cookies.set("toolstack_admin_session", cookie)
+            response = self.client.get("/", follow_redirects=False)
+            self.assertEqual(response.status_code, 303)
+            self.assertEqual(response.headers["location"], "/login")
+        self.client.cookies.clear()
+        self._login()
+        self.assertIn('name="_csrf"', self.client.get("/").text)
+
+    def test_non_ascii_csrf_rejected_then_current_token_works(self):
+        self._login()
+        csrf = _csrf(self.client.get("/").text)
+        response = self.client.post("/callers", data={"name": "fake-new", "_csrf": "é"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Invalid CSRF token.", response.text)
+        self.assertIsNone(self._store().caller_by_name("fake-new"))
+        response = self.client.post("/callers", data={"name": "fake-new", "_csrf": csrf})
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(self._store().caller_by_name("fake-new"))
 
     def test_bad_password_rejected(self):
         r = self.client.post("/login", data={"username": "admin", "password": "wrong"})
@@ -187,6 +225,99 @@ class AdminApp(unittest.TestCase):
                          {"tools": {"echo": {"say": "review"}}, "enabled": ["echo"]})
         self.assertTrue(any(e["event_type"] == "policy_changed" for e in store.audit_events()))
         self.assertTrue(any(e["event_type"] == "tools_changed" for e in store.audit_events()))
+
+    def test_web_edits_preserve_unrendered_authority(self):
+        self._login()
+        csrf = _csrf(self.client.get('/').text)
+        self.client.post('/callers', data={'name': 'writer', '_csrf': csrf})
+        store = self._store()
+        caller = store.caller_by_name('writer')
+        store.set_policy(caller['id'], {'enabled': ['echo', 'offline'], 'tools': {
+            'echo': {'say': 'allow', 'hidden': 'review'}, 'offline': {'fetch': 'allow'}}})
+        response = self.client.post('/callers/writer/policy',
+            headers={'Accept': 'application/json'},
+            data={'_csrf': csrf, 'op__echo__say': 'deny'})
+        self.assertEqual(response.json()['outcome'], 'saved')
+        policy = store.policy_for(caller['id'])
+        self.assertEqual(policy['tools']['offline'], {'fetch': 'allow'})
+        self.assertEqual(policy['tools']['echo']['hidden'], 'review')
+        self.assertNotEqual(policy['tools']['echo'].get('say'), 'allow')
+        self.client.post('/callers/writer/tools', data={'_csrf': csrf})
+        self.assertEqual(store.policy_for(caller['id']), {
+            'enabled': ['offline'], 'tools': {'offline': {'fetch': 'allow'}}})
+
+    def test_policy_failed_load_disables_save(self):
+        self._login()
+        with mock.patch('admin.server.open_store', side_effect=OSError('private path')):
+            response = self.client.get('/callers/writer/policy')
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("type='submit' disabled", response.text)
+        self.assertIn('Retry load', response.text)
+        self.assertNotIn('private path', response.text)
+
+    def test_add_start_register_are_separate_named_decisions(self):
+        self._login()
+        csrf = _csrf(self.client.get('/').text)
+        source = Path(self.tmp, 'source')
+        source.mkdir()
+        (source/'toolyard.toml').write_text('id="localfake"\ntype="api"\n[entrypoint]\nport=43212\ncommand="python3 fake.py"\n[[operations]]\nname="read"\nrisk="read"\n')
+        with mock.patch('admin.server.toolyard_ops.start') as start, \
+             mock.patch('admin.server.supervisor.restart', return_value={'running': True}) as restart:
+            added = self.client.post('/tools/add-source', data={'_csrf': csrf, 'kind': 'path', 'source': str(source)})
+            self.assertIn('Added localfake', added.text)
+            self.assertIn('/toolyard/tools/localfake/start', added.text)
+            start.assert_not_called()
+            restart.assert_not_called()
+            started = self.client.post('/toolyard/tools/localfake/start', data={'_csrf': csrf}, follow_redirects=False)
+            self.assertEqual(started.headers['location'], '/tools?tool=localfake')
+            start.assert_called_once()
+            restart.assert_not_called()
+            with mock.patch('admin.catalog_observation.observe_catalog', return_value={'status': 'verified', 'observation_id': 'fake', 'tool_ids': ['localfake']}):
+                registered = self.client.post('/broker/restart', data={'_csrf': csrf, 'catalog_target': 'localfake'})
+            restart.assert_called_once()
+            self.assertIn('localfake · Catalog registration verified', registered.text)
+
+    def test_failed_recovery_retains_named_target_without_replay(self):
+        self._login()
+        csrf = _csrf(self.client.get('/').text)
+        with mock.patch('admin.server.toolyard_ops.restart', side_effect=RuntimeError('private diagnostic')) as restart:
+            response = self.client.post('/toolyard/tools/echo/restart', data={'_csrf': csrf})
+        restart.assert_called_once()
+        self.assertIn('echo · restart outcome unknown', response.text)
+        self.assertIn("data-mutation-outcome='unknown'", response.text)
+        self.assertIn('/tools?tool=echo', response.text)
+        self.assertNotIn('private diagnostic', response.text)
+
+    def test_registration_result_requires_membership_not_cached_listing(self):
+        self._login()
+        csrf = _csrf(self.client.get('/').text)
+        for receipt in ({'status':'verified'}, {'status':'verified','tool_ids':[]},
+                        {'status':'verified','tool_ids':['other']}, {'status':'verified','tool_ids':'echo'}):
+            with mock.patch('admin.server.supervisor.restart', return_value={'running':True}), \
+                 mock.patch('admin.catalog_observation.observe_catalog', return_value=receipt):
+                response = self.client.post('/broker/restart', data={'_csrf':csrf,'catalog_target':'echo'})
+            self.assertIn('Registration unknown', response.text)
+            self.assertNotIn('Catalog registration verified', response.text)
+            self.assertNotIn('Catalog verified', response.text)
+
+    def test_policy_after_effect_failure_is_unknown_and_read_does_not_replay(self):
+        from broker import operations
+        self._login()
+        csrf = _csrf(self.client.get('/').text)
+        self.client.post('/callers', data={'name': 'writer', '_csrf': csrf})
+        self.client.post('/callers/writer/tools', data={'_csrf': csrf, 'tool__echo': 'on'})
+        original = operations.set_policy
+        def after_effect(*args, **kwargs):
+            original(*args, **kwargs)
+            raise ValueError('lost completion audit')
+        with mock.patch('admin.server.operations.set_policy', side_effect=after_effect) as save:
+            response = self.client.post('/callers/writer/policy', headers={'Accept': 'application/json'},
+                data={'_csrf': csrf, 'op__echo__say': 'review'})
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.json()['outcome'], 'unknown')
+            comparison = self.client.get('/callers/writer/policy')
+            self.assertIn("value='review' selected", comparison.text)
+            save.assert_called_once()
 
     def test_revoke_token_via_panel(self):
         self._login()
@@ -403,7 +534,9 @@ class AdminApp(unittest.TestCase):
         self.assertTrue(store.recent_audit())
         r = self.client.post("/audit/clear", data={"_csrf": csrf})
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(store.recent_audit(), [])
+        events = store.recent_audit()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event_type"], "audit_cleared")
 
     def test_remove_root_tool_deletes_its_folder(self):
         self._login()

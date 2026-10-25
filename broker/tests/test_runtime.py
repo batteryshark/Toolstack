@@ -325,24 +325,24 @@ class EnvToolSecret(unittest.TestCase):
     """
 
     def test_reads_from_state_file(self):
-        fake = mock.Mock(e_secret_for=mock.Mock(return_value="sekret"))
+        fake = mock.Mock(channel_secret_for=mock.Mock(return_value="sekret"))
         with mock.patch("broker.tool_state.ToolState", return_value=fake):
             self.assertEqual(_env_tool_secret("echo"), "sekret")
-            fake.e_secret_for.assert_called_once_with("echo")
+            fake.channel_secret_for.assert_called_once_with("echo")
 
     def test_missing_tool_returns_none(self):
-        fake = mock.Mock(e_secret_for=mock.Mock(return_value=None))
+        fake = mock.Mock(channel_secret_for=mock.Mock(return_value=None))
         with mock.patch("broker.tool_state.ToolState", return_value=fake):
             self.assertIsNone(_env_tool_secret("absent"))
 
     def test_empty_value_is_none(self):
-        fake = mock.Mock(e_secret_for=mock.Mock(return_value=""))
+        fake = mock.Mock(channel_secret_for=mock.Mock(return_value=""))
         with mock.patch("broker.tool_state.ToolState", return_value=fake):
             self.assertIsNone(_env_tool_secret("ghost"))
 
     def test_strips_surrounding_whitespace(self):
         # the tool reads its copy through .strip(); the broker must match or every call 401s
-        fake = mock.Mock(e_secret_for=mock.Mock(return_value="  abc\n"))
+        fake = mock.Mock(channel_secret_for=mock.Mock(return_value="  abc\n"))
         with mock.patch("broker.tool_state.ToolState", return_value=fake):
             self.assertEqual(_env_tool_secret("echo"), "abc")
 
@@ -350,7 +350,7 @@ class EnvToolSecret(unittest.TestCase):
         # The retired TOOLSTACK_TOOL_SECRET_<TOOL> env var must NOT shadow the
         # state file. Pin this so a future change can't re-introduce the bug
         # (a stray /etc/toolstack/admin.env value producing channel_secret_mismatch).
-        fake = mock.Mock(e_secret_for=mock.Mock(return_value="from_state_file"))
+        fake = mock.Mock(channel_secret_for=mock.Mock(return_value="from_state_file"))
         with mock.patch.dict(os.environ, {"TOOLSTACK_TOOL_SECRET_ECHO": "from_env"}):
             with mock.patch("broker.tool_state.ToolState", return_value=fake):
                 self.assertEqual(_env_tool_secret("echo"), "from_state_file")

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import hmac
 import json
+import io
+import time
 from typing import Any
 
 # 1 MiB -- the wire spec's explicit cap.
@@ -38,7 +40,37 @@ class OversizedBodyError(ValueError):
 
 def constant_time_eq(a: str, b: str) -> bool:
     """Constant-time equality for auth secret comparisons."""
-    return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+    try:
+        return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+    except UnicodeError:
+        return False
+
+
+def read_socket_json(sock, *, timeout: float) -> dict[str, Any]:
+    """Read one capped JSON line with an absolute monotonic body deadline.
+
+    Do not use buffered readline here: it can hide unlimited successful
+    partial reads underneath a socket inactivity timeout. The caller owns
+    the handshake deadline and restores its reply inactivity timeout.
+    """
+    deadline = time.monotonic() + timeout
+    raw = bytearray()
+    while len(raw) <= MAX_BODY_BYTES:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("SPS body deadline exceeded")
+        sock.settimeout(remaining)
+        chunk = sock.recv(min(65536, READLINE_LIMIT - len(raw)))
+        if not chunk:
+            break
+        line, separator, _ = chunk.partition(b"\n")
+        raw.extend(line)
+        if separator:
+            raw.extend(b"\n")
+            break
+    if len(raw) > MAX_BODY_BYTES:
+        raise OversizedBodyError("SPS body too large")
+    return read_one_json(io.BytesIO(raw))
 
 
 def read_one_json(infile) -> dict[str, Any]:
@@ -47,10 +79,17 @@ def read_one_json(infile) -> dict[str, Any]:
     may use text). The wire format is UTF-8 bytes + `\\n` either way.
     Raises `OversizedBodyError` if the line exceeds MAX_BODY_BYTES; raises
     `ValueError` on invalid JSON or non-UTF-8 input. Returns `{}` on EOF.
+    The cap includes the required newline; nonempty EOF without newline is
+    invalid framing, even when the prefix is otherwise valid JSON.
     """
     raw = infile.readline(READLINE_LIMIT)
     if not raw:
         return {}
+    size = len(raw) if isinstance(raw, bytes) else len(raw.encode("utf-8"))
+    if size > MAX_BODY_BYTES:
+        raise OversizedBodyError("SPS body too large")
+    if not raw.endswith(b"\n" if isinstance(raw, bytes) else "\n"):
+        raise ValueError("SPS requires newline framing")
     if isinstance(raw, bytes):
         if raw.strip() == b"":
             return {}
@@ -84,28 +123,6 @@ def write_one_json(outfile, obj: dict) -> None:
         # Text-mode file: caller passed a non-binary. Fall back to str.
         outfile.write(json.dumps(obj) + "\n")
     outfile.flush()
-
-
-def read_one_json(infile) -> dict[str, Any]:
-    """Read one JSON line from `infile`. Raises `OversizedBodyError` if the
-    line exceeds MAX_BODY_BYTES; raises `ValueError` on invalid JSON.
-    Returns `{}` (sentinel) if the line is empty/EOF."""
-    raw = infile.readline(READLINE_LIMIT)
-    if not raw:
-        return {}
-    if isinstance(raw, bytes):
-        if len(raw) > MAX_BODY_BYTES:
-            raise OversizedBodyError(f"body exceeds {MAX_BODY_BYTES} bytes")
-        try:
-            return json.loads(raw.decode("utf-8"))
-        except UnicodeDecodeError as exc:
-            raise ValueError(f"body not UTF-8: {exc}") from exc
-    if len(raw) > MAX_BODY_BYTES:
-        raise OversizedBodyError(f"body exceeds {MAX_BODY_BYTES} bytes")
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"body not valid JSON: {exc}") from exc
 
 
 def err_envelope(message: str) -> dict[str, Any]:

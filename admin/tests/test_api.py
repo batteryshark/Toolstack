@@ -56,6 +56,97 @@ class JsonApi(unittest.TestCase):
             else:
                 os.environ[key] = prev
 
+    def test_reset_invalidates_live_bearer_without_restart(self):
+        authz = self._auth()
+        self.assertEqual(self.client.get("/api/config", headers=authz).status_code, 200)
+        settings.write_password_hash(auth.hash_password("replacement-fake"))
+        settings.rotate_session_secret()
+        self.assertEqual(self.client.get("/api/config", headers=authz).status_code, 401)
+        self.assertEqual(self.client.post("/api/login", json={"password": PASSWORD}).status_code, 401)
+        token = self.client.post("/api/login", json={"password": "replacement-fake"}).json()["token"]
+        self.assertEqual(self.client.get("/api/config", headers={"Authorization": f"Bearer {token}"}).status_code, 200)
+
+    def test_external_delete_unregisters_only_matching_source(self):
+        folder = Path(self.tmp, 'external')
+        folder.mkdir()
+        manifest = folder / 'toolyard.toml'
+        content = 'id="external"\ntype="api"\n[entrypoint]\nport=43211\n'
+        manifest.write_text(content)
+        config = broker_config.load()
+        config.tool_dirs = [str(folder), str(Path(self.tmp, 'other'))]
+        broker_config.save(config)
+        self.assertEqual(self.client.delete('/api/tools/external').status_code, 401)
+        with mock.patch('admin.tool_removal.toolyard_ops.stop') as stop:
+            response = self.client.delete('/api/tools/external', headers=self._auth())
+        self.assertEqual(response.json(), {'removed': 'external', 'deleted': False})
+        self.assertEqual(manifest.read_text(), content)
+        self.assertEqual(broker_config.load().tool_dirs, [str(Path(self.tmp, 'other'))])
+        stop.assert_called_once_with('external')
+
+    def test_catalog_requires_admin_and_legacy_observation_is_unknown(self):
+        self.assertEqual(self.client.get('/api/catalog').status_code, 401)
+        with mock.patch('admin.catalog_observation.urllib.request.urlopen', side_effect=OSError):
+            self.assertEqual(self.client.get('/api/catalog', headers=self._auth()).json(), {'status': 'unknown'})
+
+    def test_catalog_api_membership_is_same_verified_snapshot_after_delete(self):
+        import threading
+        import urllib.request
+        from broker.server import build_server
+        config = broker_config.load()
+        server = build_server(port=0, host='127.0.0.1', db_path=config.db_path,
+                              tools_root=config.tools_root, surface=mock.Mock())
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            config.port = server.server_address[1]
+            broker_config.save(config)
+            self.assertEqual(self.client.get('/api/catalog').status_code, 401)
+            headers = self._auth()
+            cached = self.client.get('/api/tools', headers=headers).json()['tools']
+            self.assertEqual([t['id'] for t in cached], ['echo'])
+            self.assertEqual(self.client.get('/api/catalog', headers=headers).json()['tool_ids'], ['echo'])
+            Path(config.tools_root, 'echo', 'toolyard.toml').unlink()
+            server.reload_registry()
+            receipt = self.client.get('/api/catalog', headers=headers).json()
+            self.assertEqual(receipt['status'], 'verified')
+            self.assertEqual(receipt['tool_ids'], [])
+            with urllib.request.urlopen(f'http://127.0.0.1:{config.port}/v1/health', timeout=2) as response:
+                public = json.load(response)
+            self.assertEqual(set(public), {'status', 'catalog_observation_id'})
+            self.assertEqual(public['catalog_observation_id'], receipt['observation_id'])
+        finally:
+            server.shutdown()
+            thread.join(3)
+            server.server_close()
+            server.ctx.store.close()
+
+    def test_native_backend_and_unknown_contract_fixture(self):
+        fixture = json.loads((Path(__file__).parent / "fixtures/native_api.json").read_text())
+        authz = self._auth()
+        with mock.patch("admin.settings.sps_info", return_value=fixture["backend"]):
+            self.assertEqual(self.client.get("/api/secret-backend", headers=authz).json(), fixture["backend"])
+            self.assertEqual(self.client.get("/api/tools/echo/secrets", headers=authz).json(), fixture["secret_status"])
+
+    def test_config_audit_contains_field_names_not_values(self):
+        authz = self._auth()
+        response = self.client.post("/api/config", headers=authz, json={"nod_token": "fake-sensitive-token", "port": 9999})
+        self.assertEqual(response.status_code, 200)
+        events = self.client.get("/api/audit", headers=authz).json()["audit"]
+        changed = next(e for e in events if e["event_type"] == "config_changed")
+        self.assertEqual(set(changed["details"]["fields"]), {"nod_token", "port"})
+        self.assertNotIn("fake-sensitive-token", json.dumps(events))
+
+    def test_missing_session_generation_fails_closed(self):
+        authz = self._auth()
+        settings.session_secret_file().unlink()
+        self.assertEqual(self.client.get("/api/config", headers=authz).status_code, 503)
+
+    def test_obsolete_native_provisioning_has_no_success_path(self):
+        response = self.client.post("/api/tools/echo/secrets", headers=self._auth(),
+                                    json={"field": "API_KEY", "value": "fake-only"})
+        self.assertEqual(response.status_code, 410)
+        self.assertNotIn("fake-only", response.text)
+
     def _token(self) -> str:
         r = self.client.post("/api/login", json={"password": PASSWORD})
         self.assertEqual(r.status_code, 200)
@@ -191,7 +282,9 @@ class JsonApi(unittest.TestCase):
         self.assertTrue(self.client.get("/api/audit", headers=authz).json()["audit"])
         r = self.client.delete("/api/audit", headers=authz)
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(self.client.get("/api/audit", headers=authz).json()["audit"], [])
+        audit = self.client.get("/api/audit", headers=authz).json()["audit"]
+        self.assertEqual(len(audit), 1)  # deletion itself remains attributable
+        self.assertEqual(audit[0]["event_type"], "audit_cleared")
 
     def test_edit_tool_updates_description_and_secrets(self):
         r = self.client.post("/api/tools/echo", headers=self._auth(), json={
@@ -205,7 +298,8 @@ class JsonApi(unittest.TestCase):
                     if t["id"] == "echo")
         self.assertEqual(echo["description"], "now with feeling")
         self.assertEqual({s["field"] for s in echo["secrets"]}, {"NEW_KEY", "TOKEN"})
-        self.assertEqual([op["op"] for op in echo["ops"]], ["say"])  # operations preserved
+        self.assertEqual([op["op"] for op in echo["ops"]],
+                         ["say", "refresh", "refresh_one"])  # declared + generated operations
 
     def test_edit_tool_description_only_keeps_secrets(self):
         # Omitting "secrets" leaves the existing declarations in place.

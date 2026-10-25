@@ -79,52 +79,83 @@ hands the values to the tool, never to the broker.
 
 ## Runners
 
-- **`process`** (default, zero infra): runs the tool as a local subprocess with its
-  secrets in a private `0700` dir pointed to by `$TOOLSTACK_SECRETS_DIR`. Binds
-  loopback only. No isolation.
-- **`docker`**: runs the tool in a container with its secrets mounted at
-  `/run/secrets`, publishing the port to host loopback (`-p 127.0.0.1:...`).
-- **`sandbox`** (OS-native, no container/VM): resolves to **`seatbelt`** on macOS and
-  **`bwrap`** on Linux. Both confine the tool's **network**: outbound is denied by default,
-  and a tool with an `egress` allowlist reaches the broker's loopback egress proxy on a
-  single port and nothing else (the proxy enforces the host allow/deny). The tool still
-  serves the broker on its loopback port. Filesystem/syscall confinement is the next step.
-  - `seatbelt`: wraps the launch in `sandbox-exec` with a per-tool SBPL profile.
-  - `bwrap`: confines egress with a per-tool cgroup v2 + nftables rule installed by the
-    small privileged **`netguard`** helper, and adds bubblewrap fs/pid/ipc isolation when the
-    host permits an unprivileged user namespace (otherwise it confines egress only and logs a
-    warning). `netguard` needs root for nftables/cgroups; keep the broker unprivileged with a
-    locked-down NOPASSWD sudoers rule for exactly that helper, e.g.:
+- **`process`** (default): trusted subprocesses retrieve workload values through
+  SPS using a scoped capability, separate from the API channel key. No isolation.
+- **`docker`**: experimental no-SPS lifecycle only, publishing to host loopback.
+  Docker+SPS and secret-bearing tool combinations are refused.
+- **`sandbox`** selects **`seatbelt`** on macOS (network-only development backend,
+  no SPS support) or **`bwrap`** on Linux (**disabled**). Do not authorize mutable
+  Python application code through sudo. Legacy Linux-native records produce an
+  operator-cleanup error rather than invoking an unsafe helper.
 
-    ```
-    # /etc/sudoers.d/toolyard-netguard
-    broker ALL=(root) NOPASSWD: /path/to/python -m toolyard.netguard run *, \
-                                /path/to/python -m toolyard.netguard teardown *
-    ```
+### Current supported boundary
+
+Process mode is **trusted tools only**. Private state is mode 0600 in a 0700
+directory, but unrestricted same-owner processes can still read it; this is not
+OS isolation. The independent `TOOLSTACK_CHANNEL_SECRET` authenticates tool API
+requests and is never an SPS credential. Tools refuse missing channel credentials.
+The broker reads only `TOOLSTACK_TOOLYARD_CHANNEL_STATE` (default `channels.json`
+beside private `state.json`), shaped as `toolid -> {channel_secret: value}`.
+Runner private state retains `e_secret`; do not give the broker that file.
+Docker and Seatbelt with SPS are refused pending complete lifecycle validation.
+
+Process tools declaring secrets refuse startup when SPS configuration is absent.
+`TOOLSTACK_SPS_SKIP=1` is an explicit, logged **trusted-process development/test**
+opt-out only; it does not enable secret-bearing Docker/Seatbelt/Bwrap tools.
+Invalid configured SPS settings raise a configuration error, not a secretless fallback.
+
+The egress proxy shares one 30-second socket deadline across request ingress,
+upstream send/headers/streamed body and CONNECT (5-second socket inactivity,
+1 MiB request, 4 MiB response/tunnel, 16 admitted handlers). Synchronous OS DNS
+is a trusted-host dependency and cannot be preempted: a resolver can retain an
+admitted handler until it returns. Late resolution is refused before connection;
+a late connection is closed before sending any request bytes. No hard real-time
+full-operation bound is claimed. Deadline aborts and partial responses **do not
+roll back upstream effects**. No resolver service or unbounded worker pool is used.
+Writeback operations must explicitly choose body and header response visibility;
+writeback alone does not redact a returned secret.
+
+The approved release boundary is a dedicated Toolstack VM with trusted tools
+sharing its account and agents outside using only the broker. Mac same-host/
+same-account use is development-only, not secret isolation. Enforced per-tool
+accounts/filesystems are future hardening, not this release's promise.
+
+`TOOLSTACK_TOOLYARD_STATE` overrides the private state path; absent a channel
+override, both broker and runner use its sibling `channels.json`. Existing
+destination directories must already be owner-private; linked, foreign-owned,
+or broadly accessible destinations are refused without chmod. Use canonical
+directory paths. Child environment is allowlisted to runtime plumbing; provider
+and registration-master credentials are not inherited. Workload-specific values
+should come through SPS, not ambient environment.
+
+Bundled echo Dockerfiles require repository-root build context, for example
+`docker build -f tools/echo_api/Dockerfile .` (substitute `echo_mcp` as needed).
+The Docker runner selects that context for bundled echo tools; custom tool
+Dockerfiles retain tool-directory context. Echo images copy their manifests and
+SDK source. This is a source packaging repair, not a validated Docker+SPS recipe;
+no image build or daemon check was performed.
 
 ## CLI
 
 ```bash
 # start one tool (or all, if no id) with the process backend
-python3 -m toolyard.cli up echo --secrets secrets.toml
+python3 -m toolyard.cli up echo
 
 # or the docker backend (builds the tool's Dockerfile)
-python3 -m toolyard.cli up echo --secrets secrets.toml --backend docker
+# Docker is experimental and refuses SPS/secret-bearing combinations.
 
 python3 -m toolyard.cli ls
 python3 -m toolyard.cli down echo
 python3 -m toolyard.cli reload echo
 ```
 
-Defaults: `--root` = `$TOOLSTACK_TOOLS_ROOT` or `tools`; `--secrets` =
-`$TOOLSTACK_SECRETS_FILE` or `secrets.toml`; `--backend` = `$TOOLSTACK_RUNNER` or
+Defaults: `--root` = `$TOOLSTACK_TOOLS_ROOT` or `tools`; `--backend` = `$TOOLSTACK_RUNNER` or
 `process`.
 
 ## End to end with the broker
 
 ```bash
-cp secrets.example.toml secrets.toml
-python3 -m toolyard.cli up echo --secrets secrets.toml          # start the tool
+python3 -m toolyard.cli up echo                               # configured SPS
 python3 -m broker.brokerctl create-caller --name hermes --allow echo.say
 TOOLSTACK_TOOLS_ROOT=tools python3 -m broker.server            # broker reads the registry
 # then POST /v1/actions/echo.say to the broker with the caller's token
@@ -134,7 +165,7 @@ TOOLSTACK_TOOLS_ROOT=tools python3 -m broker.server            # broker reads th
 
 ```bash
 python3 -m unittest discover -s toolyard/tests -t .
-TOOLSTACK_TEST_DOCKER=1 python3 -m unittest toolyard.tests.test_runner  # include docker e2e
+# Native and Docker integration checks are opt-in; neither was run for this tranche.
 ```
 
 ## Writable secrets

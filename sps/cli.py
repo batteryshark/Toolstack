@@ -11,6 +11,7 @@ The serve subcommand blocks (HTTPServer.serve_forever) until SIGTERM.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import secrets
 import subprocess
@@ -21,6 +22,29 @@ from . import audit, config as cfgmod
 from .plugins import loader as plugin_loader
 from .server import AppContext, build_server
 from .store import ToolRegistrationStore
+
+
+def init_runtime_paths(config: str | Path, *, state_dir: str | Path | None = None,
+                       audit_log: str | Path | None = None) -> tuple[Path, Path]:
+    """Pure bootstrap path selection: (vault file, audit log).
+
+    Production config separates read-only configuration from mutable state;
+    arbitrary config locations stay self-contained unless explicitly overridden.
+    """
+    config = Path(config)
+    production = config == Path("/etc/toolstack/sps.env")
+    state = Path(state_dir) if state_dir is not None else (
+        Path("/var/lib/toolstack") if production else config.parent)
+    audit_path = Path(audit_log) if audit_log is not None else (
+        Path("/var/log/toolstack/sps.audit") if production else config.parent / "sps-audit.jsonl")
+    return state / "sps.vault.json", audit_path
+
+
+def _mkdir_private(path: Path) -> None:
+    """Create missing directories privately; never chmod shared existing parents."""
+    if not path.exists():
+        _mkdir_private(path.parent)
+        path.mkdir(mode=0o700, exist_ok=True)
 
 
 # Where SPS writes its boot identity so long-running tools can detect a restart
@@ -39,14 +63,8 @@ def _write_boot_id(path: Path, boot_id: str | None = None) -> str:
     when it changes."""
     if boot_id is None:
         boot_id = secrets.token_hex(16)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(boot_id + "\n", encoding="utf-8")
-    try:
-        os.chmod(tmp, 0o644)
-    except OSError:
-        pass  # best-effort; not critical for the watchdog
-    os.replace(tmp, path)
+    from .paths import atomic_write
+    atomic_write(path, (boot_id + "\n").encode("utf-8"), public=True)
     return boot_id
 
 
@@ -66,10 +84,11 @@ def maybe_generate_tls_material(cert_path: str, key_path: str, ca_path: str, sub
         "-days", "365", "-subj", subj,
         "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost",
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    subprocess.run(cmd, check=True, capture_output=True, umask=0o077)
     # Copy the cert as the CA bundle (self-signed == own CA in dev).
     if not os.path.exists(ca_path):
-        with open(cert_path, "rb") as f, open(ca_path, "wb") as g:
+        fd = os.open(ca_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with open(cert_path, "rb") as f, os.fdopen(fd, "wb") as g:
             g.write(f.read())
     return True
 
@@ -78,6 +97,11 @@ def _cmd_serve(args) -> None:
     """Run the SPS server. Mode-0600 re-check fails closed."""
     cfg_path = args.config
     cfg = cfgmod.load_config(cfg_path)  # raises ConfigModeError or FileNotFoundError
+    import ssl as _ssl
+    if not cfg.sp_tls_cert or not cfg.sp_tls_key:
+        raise ValueError("SPS requires TLS certificate and key")
+    ssl_ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_SERVER)
+    ssl_ctx.load_cert_chain(certfile=cfg.sp_tls_cert, keyfile=cfg.sp_tls_key)
     plugin = plugin_loader.load_plugin(cfg)
     plugin.connect()
     audit_log_path = cfg.sp_audit_log or "/var/log/toolstack/sps.audit"
@@ -90,11 +114,6 @@ def _cmd_serve(args) -> None:
         plugin=plugin,
         boot_id=boot_id,
     )
-    import ssl as _ssl
-    ssl_ctx = None
-    if cfg.sp_tls_cert and cfg.sp_tls_key and os.path.exists(cfg.sp_tls_cert) and os.path.exists(cfg.sp_tls_key):
-        ssl_ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_SERVER)
-        ssl_ctx.load_cert_chain(certfile=cfg.sp_tls_cert, keyfile=cfg.sp_tls_key)
     server = build_server(ctx, host=cfg.sp_host, port=cfg.sp_port, ssl_ctx=ssl_ctx)
     # Announce a fresh boot_id so the toolyard watchdog (admin side) can detect
     # this restart and re-register every running tool. Without this, SPS's
@@ -153,7 +172,8 @@ def _cmd_init_vault(args) -> None:
     passphrase = os.environ.get("SP_VAULT_PASSPHRASE")
     file_path = os.environ.get("SP_VAULT_PASSPHRASE_FILE")
     if file_path:
-        passphrase = Path(file_path).read_text().strip()
+        from .paths import read_private
+        passphrase = read_private(file_path).strip()
     elif not passphrase and sys.stdin.isatty():
         passphrase = getpass.getpass("vault passphrase: ")
     elif not passphrase:
@@ -178,13 +198,18 @@ def _cmd_init(args) -> None:
     """Generate a starter sps.env + cert/key/CA. Idempotent on the env file."""
     import shutil
     cfg_path = args.config
-    if os.path.exists(cfg_path):
+    if os.path.lexists(cfg_path):
         print(f"{cfg_path}: already exists; not overwriting", file=sys.stderr)
         sys.exit(2)
     if shutil.which("openssl") is None:
         print("openssl is required for `sps init`", file=sys.stderr)
         sys.exit(3)
     base_dir = os.path.dirname(cfg_path) or "."
+    vault_file, audit_log = init_runtime_paths(
+        cfg_path, state_dir=getattr(args, "state_dir", None),
+        audit_log=getattr(args, "audit_log", None))
+    for directory in (Path(base_dir), vault_file.parent, audit_log.parent):
+        _mkdir_private(directory)
     cert = os.path.join(base_dir, "sps.crt")
     key = os.path.join(base_dir, "sps.key")
     ca = os.path.join(base_dir, "sps-ca.crt")
@@ -193,26 +218,23 @@ def _cmd_init(args) -> None:
     # SP_SECRET: 32 random bytes -> 64 hex chars (way above the 32-char lower
     # bound). SP_PLUGIN defaults to localfile for the dev path.
     secret = os.urandom(32).hex()
-    # Derive runtime paths from --config's directory so a test init --config /tmp/x.env
-    # never writes to the production /var/lib/toolstack or /var/log/toolstack paths.
-    # base_dir above is already this; the audit log + localfile vault file live next
-    # to sps.env so the env file is fully self-contained.
-    audit_log = os.path.join(base_dir, "sps-audit.jsonl")
-    vault_file = os.path.join(base_dir, "sps.vault.json")
     content = (
         'SP_HOST = "127.0.0.1"\n'
         'SP_PORT = "8743"\n'
-        f'SP_TLS_CERT = "{cert}"\n'
-        f'SP_TLS_KEY = "{key}"\n'
-        f'SP_TLS_CA = "{ca}"\n'
+        f'SP_TLS_CERT = {json.dumps(cert)}\n'
+        f'SP_TLS_KEY = {json.dumps(key)}\n'
+        f'SP_TLS_CA = {json.dumps(ca)}\n'
         f'SP_SECRET = "{secret}"\n'
-        f'SP_AUDIT_LOG = "{audit_log}"\n'
+        f'SP_AUDIT_LOG = {json.dumps(str(audit_log))}\n'
         'SP_PLUGIN = "localfile"\n'
         '\n'
         '[localfile]\n'
-        f'VAULT_FILE = "{vault_file}"\n'
+        f'VAULT_FILE = {json.dumps(str(vault_file))}\n'
     )
-    with open(cfg_path, "w") as f:
+    # Exclusive creation prevents a concurrent init (or dangling symlink) from
+    # overwriting existing configuration. Sensitive bytes are private at birth.
+    fd = os.open(cfg_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
         f.write(content)
     os.chmod(cfg_path, 0o600)
     # When the chosen plugin is localfile, `vault-set` / `vault-get` need the actual
@@ -273,6 +295,8 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_init = sub.add_parser("init", help="write a starter sps.env (cert + key + CA)")
     p_init.add_argument("--config", default="/etc/toolstack/sps.env")
+    p_init.add_argument("--state-dir", help="directory for sps.vault.json (default: /var/lib/toolstack for production config, otherwise beside config)")
+    p_init.add_argument("--audit-log", help="audit log file (default: /var/log/toolstack/sps.audit for production config, otherwise beside config)")
     p_init.set_defaults(func=_cmd_init)
     p_iv = sub.add_parser("init-vault", help="create the localfile vault file (separate from init)")
     p_iv.add_argument("--config", default="/etc/toolstack/sps.env")

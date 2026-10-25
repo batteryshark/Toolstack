@@ -1,81 +1,41 @@
-<p align="center">
-  <img src="macapp/packaging/AppIcon-source.png" alt="Toolstack logo" width="150" height="150">
-</p>
-
 # Toolstack
 
-**Trust agents with action, not access.** An agent can *ask*; the broker *decides*; tools
-*execute*; secrets stay with the tools. The agent can reach the broker, and nothing else.
+Brokered actions for agents: callers receive scoped action permissions, while
+authorized tools retrieve workload credentials through SPS. Web admin controls
+callers, policies and trusted tools. The broker and SPS make separate decisions.
 
-The security comes from physical boundaries (a single ingress, loopback binding, and
-secrets resolved at the workload), not from rules on paper. The agent carries only a
-low-power token to the broker; everything sensitive lives behind it.
+**Supported release boundary: a dedicated Toolstack VM containing only Toolstack
+and trusted tools under its OS account. Agents stay outside that host and reach
+only the broker.** No VM setup is performed by these source changes. Same-machine
+or same-account agents (including on a Mac) are local/development use only and
+do not isolate secrets. Process mode is not hostile-code isolation. Secrets
+exist as plaintext in endpoint memory and can be returned by tool responses.
+Private files and TLS do not isolate processes sharing the same unrestricted uid.
 
-## Components
+- [Runtime support matrix](docs/runtime-matrix.md)
+- [Integrated security contracts and remaining release gates](docs/security-contracts.md)
+- [Deployment and offline SPS provisioning](deploy/README.md)
+- [Fake-config walkthrough](docs/walkthrough.md)
+- [SPS architecture](docs/sps.md)
+- [Local Mac signing gate](docs/mac-local-signing.md)
+- [Release notes and pending validation](docs/release-notes.md)
 
-- **Broker**: the authority boundary and the only address the agent has: auth,
-  policy, request lifecycle, approval orchestration, and audit. One process, one
-  SQLite file. (Internally split into module seams; see the architecture doc.)
-- **Toolyard**: container lifecycle + per-tool secret resolution at container start.
-- **Tool template**: what a new tool needs (drop a `toolyard.toml`, run `toolyard up`).
-- **Approval adapter**: a broker module that talks to nod; pluggable via
-  [docs/approval-surface-adapter.md](docs/approval-surface-adapter.md).
-- **Agent client**: the generic `toolstack` CLI + skill (and an MCP adapter) an
-  agent uses to discover and call tools through the broker; see
-  [client/SKILL.md](client/SKILL.md).
-- **Admin web app**: the operator's control panel: run the broker, manage
-  callers/tokens/policies, author/edit tools (form → `toolyard.toml`), and watch
-  requests + audit. Local/homelab, loopback-only; see [admin/README.md](admin/README.md).
-- **Operator apps**: a cross-platform desktop shell ([desktop/](desktop/), an OS-WebKit window
-  around the admin) and a native macOS app ([macapp/](macapp/), SwiftUI over the JSON API).
+The Linux installer and systemd deployment are untested.
+The isolated retained-wheel full-stack check on this Mac **passed**, including admin
+restart/persisted recovery and independently verified owned cleanup. This closes
+the bounded clean-install check, using fake state and fake Nod, not real Nod,
+signature or human approval proof. No GUI checks ran. See the release notes for
+its scope. Manual hands checks have not run and remain OFF pending fresh
+principal go through chief; no release acceptance is implied.
 
-## You also run
+Python 3.11+ is required. Build with `uv build`; the wheel includes admin, broker,
+client, toolyard, SPS/plugins and forwarder. Admin dependencies and localfile crypto
+are optional extras (`.[admin,vault]`). Full deployment dependencies are resolved in
+`uv.lock` and exported to `admin/requirements-lock.txt`; deployment scripts consume
+that export consistently as requirements and constraints.
 
-- **nod**: self-hosted approval surface for human-in-the-loop decisions.
-- **Secret backend**: Infisical or SOPS.
-- **Tailnet**: Tailscale Serve (or any VPN); the ingress boundary.
-
-## Run it
-
-The fastest way to bring up the whole stack (broker + admin panel) is the one-box Docker setup:
-
-```bash
-cd deploy/docker
-cp .env.example .env       # set an admin password + vault passphrase
-docker compose up
-```
-
-Open the admin panel at http://127.0.0.1:8780 and drive everything from there. For a native
-single-host install under systemd, run `sudo deploy/install.sh` (it creates the service user,
-the virtualenv, the admin password, and the unit) or follow [deploy/README.md](deploy/README.md).
-
-## The CLIs
-
-The broker, toolyard, and client are stdlib-only Python (3.11+, for `tomllib`). `pip install -e .`
-puts the commands on your PATH:
-
-```bash
-pip install -e .
-toolstack --help
-```
-
-That installs `toolstack` (agent client), `brokerctl` (operator), `toolyard` (tool runner), and
-`toolstack-mcp` (the client as an MCP stdio server); each also runs uninstalled as
-`python3 -m client.toolstack`, and so on. **Installing the CLIs does not start anything**: they
-talk to a broker you run via one of the paths above. Only the admin app carries runtime deps
-(FastAPI/uvicorn), in its own venv; see [admin/README.md](admin/README.md).
-
-## Maturity
-
-The full path runs end to end (agent → broker → human approval → tool execution, with the
-broker never holding a secret) and it's hardened for a single-host deployment: a systemd
-state directory and sandbox, login throttling, bind and SSRF guards, runtime timeouts with
-partial-failure cleanup, pinned dependencies, and database backups. It binds loopback by
-default; reach it over a tunnel that terminates TLS. A few things are deliberately deferred:
-tmpfs secret injection, just-in-time grants, and a background approval-expiry sweeper.
-
-## Docs
-
-- [docs/walkthrough.md](docs/walkthrough.md), the system end to end: how it runs, the security properties, and the evidence.
-- [docs/component-decomposition.md](docs/component-decomposition.md): architecture, broker internals, and trust boundaries.
-- [admin/README.md](admin/README.md) · [broker/README.md](broker/README.md) · [toolyard/README.md](toolyard/README.md): per-component detail.
+Run `uv run --no-project --python 3.11 python tests/release/check_release.py` for
+isolated packaging verification. Release workflow checks/builds only: no tags,
+publishing, GHCR, signing or release creation. Full fake-secret E2E is a separate
+integration gate. Docker/Seatbelt with SPS and mutable Linux privileged helpers
+are unsupported. Source build/sign scripts do not establish distribution readiness.

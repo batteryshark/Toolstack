@@ -1,6 +1,7 @@
 FROM python:3.12-slim
 WORKDIR /app
-COPY app.py .
-# Secrets arrive at /run/secrets (tmpfs or mount); the port comes via TOOLSTACK_PORT.
-# The tool holds no broker or secret-backend credential. Stdlib-only MCP server.
+# Build from repository root: docker build -f tools/echo_mcp/Dockerfile .
+COPY tools/echo_mcp/app.py tools/echo_mcp/toolyard.toml ./
+COPY sps /app/sps
+# API channel credential is independent of SPS. Docker+SPS remains unsupported.
 CMD ["python3", "app.py"]

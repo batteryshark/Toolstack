@@ -18,9 +18,11 @@ Setup: a venv with the stack + admin deps + pywebview (see desktop/README.md); s
 from __future__ import annotations
 
 import os
+import html
 import subprocess
 import sys
 import time
+import threading
 import urllib.request
 
 DEFAULT_URL = "http://127.0.0.1:8780"
@@ -78,11 +80,12 @@ class Stack:
         self._proc = subprocess.Popen(self._serve_cmd)
         for _ in range(tries):
             if self._proc.poll() is not None:  # exited before it served
+                code = self._proc.returncode
                 self._proc = None
                 raise RuntimeError(
-                    "the admin exited before it became healthy. Run `python3 -m admin serve` "
-                    "to see why; most often no password is set yet "
-                    "(`python3 -m admin set-password`)."
+                    f"Admin exited with status {code} before /login responded. "
+                    "Diagnostics: run `python3 -m admin serve` to inspect the cause. "
+                    "If it reports an unset password, use `python3 -m admin set-password`."
                 )
             if admin_healthy(self.url):
                 return
@@ -105,13 +108,7 @@ class Stack:
 
 def main() -> None:
     stack = Stack(_admin_url())
-    try:
-        stack.ensure_up()
-    except RuntimeError as exc:
-        # A double-clicked app has no terminal, but still print for the CLI case. The usual
-        # cause is "no admin password set"; that message says exactly what to run.
-        print(f"toolstack-desktop: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+    bridge = None
     try:
         import webview  # lazy: the one place the GUI dependency is needed
     except ModuleNotFoundError:
@@ -120,10 +117,71 @@ def main() -> None:
     # create_window is inside the finally too: if opening the window fails (e.g. no GUI
     # session), still stop the admin we started rather than orphaning it.
     try:
-        webview.create_window(WINDOW_TITLE, stack.url, width=1180, height=820)
+        try:
+            stack.ensure_up()
+        except (RuntimeError, OSError) as exc:
+            bridge = StartupRecovery(stack)
+            bridge.window = webview.create_window(
+                "Toolstack · Startup", html=startup_error(stack.url, str(exc)),
+                js_api=bridge, width=620, height=360)
+        else:
+            webview.create_window(WINDOW_TITLE, stack.url, width=1180, height=820)
         webview.start()  # blocks until the window is closed
     finally:
-        stack.stop()  # stop the admin we started; an already-running one is untouched
+        if bridge is not None:
+            bridge.shutdown()
+        else:
+            stack.stop()  # an already-running admin is untouched
+
+
+def startup_error(url: str, cause: str) -> str:
+    """Local error surface; no admin or policy backend is needed to render it."""
+    return f"""<!doctype html><html><meta charset="utf-8"><title>Startup unavailable</title>
+    <style>body{{font:14px system-ui;background:#f6f7f9;color:#18202a;padding:20px}}
+    button{{min-height:38px;padding:6px 18px;background:white;border:1px solid #d9dee7;border-radius:6px}}
+    #retry{{background:#0d6efd;color:white}}p{{overflow-wrap:anywhere}}</style>
+    <h1>Admin unavailable</h1><p>{html.escape(url)}</p>
+    <p role="alert">{html.escape(cause)}</p>
+    <p>Diagnostics: run <code>python3 -m admin serve</code> to inspect startup output.</p>
+    <button autofocus onclick="window.pywebview.api.close()">Close</button>
+    <button id="retry" onclick="this.disabled=true;this.textContent='Retrying…';window.pywebview.api.retry()">Retry</button>
+    </html>"""
+
+
+class StartupRecovery:
+    def __init__(self, stack: Stack) -> None:
+        self.stack = stack
+        self.window = None
+        self._retry_lock = threading.Lock()
+        self._closed = threading.Event()
+
+    def close(self) -> None:
+        self._closed.set()
+        self.window.destroy()
+
+    def shutdown(self) -> None:
+        self._closed.set()
+        # A retry owns startup until it completes; never stop concurrently with its spawn.
+        with self._retry_lock:
+            self.stack.stop()
+
+    def retry(self) -> None:
+        if not self._retry_lock.acquire(blocking=False):
+            return
+        try:
+            if self._closed.is_set():
+                return
+            try:
+                self.stack.ensure_up()
+            except (RuntimeError, OSError) as exc:
+                if not self._closed.is_set():
+                    self.window.load_html(startup_error(self.stack.url, str(exc)))
+            else:
+                if not self._closed.is_set():
+                    self.window.resize(1180, 820)
+                    self.window.load_url(self.stack.url)
+        finally:
+            self._retry_lock.release()
 
 
 if __name__ == "__main__":

@@ -6,11 +6,13 @@ secret-update-rule writeback.
 """
 
 import json
+import os
 import shutil
 import socket
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -43,6 +45,9 @@ class _Upstream(BaseHTTPRequestHandler):
         payload = json.dumps(obj).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        if self.path == "/login":
+            self.send_header("X-Session", "rotated-token")
         self.end_headers()
         self.wfile.write(payload)
 
@@ -92,6 +97,9 @@ def _free_port() -> int:
 
 class RestE2E(unittest.TestCase):
     def setUp(self):
+        channel_env = patch.dict(os.environ, {"TOOLSTACK_CHANNEL_SECRET": "chan"})
+        channel_env.start()
+        self.addCleanup(channel_env.stop)
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.root = Path(self.tmp)
@@ -102,13 +110,19 @@ class RestE2E(unittest.TestCase):
         _Upstream.seen = []
         self.upstream = HTTPServer(("127.0.0.1", 0), _Upstream)
         self._start(self.upstream)
-        self.addCleanup(self.upstream.server_close)
         self.upstream_port = self.upstream.server_address[1]
 
     def _start(self, server):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        self.addCleanup(server.shutdown)
+        def stop():
+            try:
+                server.shutdown()
+            finally:
+                server.server_close()
+                thread.join(3)
+            self.assertFalse(thread.is_alive(), "fixture server thread did not stop")
+        self.addCleanup(stop)
         return thread
 
     def _forwarder(self, base_url=None, secrets=None):
@@ -136,6 +150,8 @@ risk = "write"
 verb = "POST"
 path = "/login"
 body_kind = "text"
+redact_response_body = true
+redact_response_headers = true
 secret_update_rules = [
   {{ secret_name = "auth_token", response_type = "json", extract_path = "session.token", match_status = "200" }},
 ]
@@ -149,13 +165,12 @@ writable = true
                        secrets if secrets is not None else self.secrets,
                        timeout=2, max_body=1024 * 1024)
         self._start(server)
-        self.addCleanup(server.server_close)
         return port
 
     def _runtime(self):
-        # Channel secret shared with the forwarder set via $TOOLSTACK_E_SECRET
+        # Fake channel secret shared via scoped $TOOLSTACK_CHANNEL_SECRET
         # (the broker runtime sends it as X-Toolstack-Secret; the forwarder
-        # verifies the header matches). Same key tests use everywhere.
+        # verifies the header matches), separate from the fake SDK credentials.
         return HttpRuntime(timeout=3, tool_secret=lambda tool_id: "chan")
 
     def _op(self, port, name="get_item", verb="GET", path="/items/{item_id}", body_kind="none"):
@@ -201,6 +216,9 @@ writable = true
         self.assertEqual(result["status"], 200)
         self.assertEqual(secrets.writes, [("auth_token", "rotated-token")])
         self.assertEqual(secrets.table["auth_token"], "rotated-token")
+        self.assertNotIn("rotated-token", result["body"])
+        self.assertNotIn("rotated-token", json.dumps(result["headers"]))
+        self.assertNotIn("x-session", {name.lower() for name in result["headers"]})
 
     def test_upstream_unreachable_maps_to_tool_unreachable(self):
         port = self._forwarder(base_url="http://127.0.0.1:1")

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "kdf": "scrypt",
+  "salt": "Su7gAKY5c7lxeDbRwLqR7A==",
+  "n": 16384,
+  "r": 8,
+  "p": 1,
+  "ciphertext": "gAAAAABq3IOUjzddhrZdPmkJUEpJE8LR2ZXZkGphZBFX46LIJP4GeepD0IfZ2DM16fIeWcCXiKTr3Mfi7WzokRCln8mBMr76Hc4we6crVM-h6EcY-0sENzBZRL5vlfRv0kFJ6Ihpoyv45vUGcvk-ZvzzMgbliMFES8KZvjmoa0-Jqh__XZLqIJg="
+}

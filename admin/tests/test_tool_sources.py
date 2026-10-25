@@ -340,7 +340,9 @@ class Update(unittest.TestCase):
                         '[[operations]]\nname = "changed"\nrisk = "read"\n')
         real_replace = tool_sources.os.replace
         calls = {"n": 0}
-        def flaky(a, b):
+        def flaky(a, b, **kwargs):
+            if kwargs:  # manifest publication is separate from directory swapping
+                return real_replace(a, b, **kwargs)
             calls["n"] += 1
             if calls["n"] == 2:           # fail moving the NEW version into place
                 raise OSError("boom")

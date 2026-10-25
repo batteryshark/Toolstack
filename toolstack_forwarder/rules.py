@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import re
@@ -63,7 +62,7 @@ def apply_secret_update_rules(op: Operation, response: dict,
     except Exception as exc:
         raise RuleError("rule_extraction_failed", type(exc).__name__) from exc
 
-    written: list[tuple[str, str]] = []
+    written: list[str] = []
     for name, value, rule in extracted:
         try:
             secrets.writeback(name, value)
@@ -72,11 +71,10 @@ def apply_secret_update_rules(op: Operation, response: dict,
             raise RuleError(
                 "secret_update_failed", type(exc).__name__, secret=name
             ) from exc
-        fingerprint = hashlib.sha256(value.encode("utf-8")).hexdigest()
-        written.append((name, fingerprint))
+        written.append(name)
         log.info(
-            "updated secret via SPS: %s sha256=%s rule=%s",
-            name, fingerprint, rule.response_type,
+            "updated secret via SPS: %s rule=%s",
+            name, rule.response_type,
         )
 
 
@@ -160,6 +158,6 @@ def _extract_xml(body: str, path: str, secret_name: str) -> str:
     return found[0].text
 
 
-def _log_partial(written: list[tuple[str, str]]) -> None:
+def _log_partial(written: list[str]) -> None:
     if written:
         log.warning("secret update failed after partial writes: %s", written)
