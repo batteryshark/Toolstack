@@ -65,7 +65,7 @@ class Write(unittest.TestCase):
 
     def test_unknown_tool(self):
         ctx = _ctx()
-        with self.assertRaises(ToolNotFound):
+        with self.assertRaises(AuthError):
             handle_write_secret(ctx, {
                 "op": "write_secret", "toolid": "nope", "esecret": ESECRET,
                 "name": "api_key", "value": "x",

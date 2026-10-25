@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import stat
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 import ipaddress
@@ -62,13 +62,13 @@ class InfisicalBlock:
     environment: str = "prod"
     organization_slug: str | None = None
     client_id: str = ""
-    client_secret: str = ""
+    client_secret: str = field(default="", repr=False)
 
 
 @dataclass(frozen=True)
 class VaultBlock:
     url: str
-    token: str
+    token: str = field(repr=False)
     mount: str = "secret"
 
 
@@ -81,7 +81,7 @@ class LocalFileBlock:
 class Config:
     sp_host: str
     sp_port: int
-    sp_secret: str
+    sp_secret: str = field(repr=False)
     sp_tls_cert: str
     sp_tls_key: str
     sp_tls_ca: str
@@ -90,6 +90,19 @@ class Config:
     infisical: InfisicalBlock | None
     vault: VaultBlock | None
     localfile: LocalFileBlock | None
+    grants: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    sp_max_value_bytes: int = 65536
+    sp_allow_nonloopback: bool = False
+
+
+def validate_listener(host: str, allow_nonloopback: bool = False) -> None:
+    local = host == "localhost"
+    try:
+        local = local or ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        pass
+    if not local and not allow_nonloopback:
+        raise ValueError("non-loopback SP_HOST requires SP_ALLOW_NONLOOPBACK")
 
 
 _ALLOWED_PLUGINS = ("infisical", "hashicorp_vault", "localfile")
@@ -121,6 +134,17 @@ def load_config(path: str | Path) -> Config:
         return v
 
     sp_host = _need("SP_HOST")
+    allow_nonloopback = strict_bool(data.get("SP_ALLOW_NONLOOPBACK", False))
+    validate_listener(sp_host, allow_nonloopback)
+    grants = data.get("grants", {})
+    if not isinstance(grants, dict) or any(
+        not isinstance(items, list) or any(not isinstance(item, str) or not item for item in items)
+        for items in grants.values()
+    ):
+        raise ValueError("grants must map tool ids to arrays of non-empty items")
+    max_value = data.get("SP_MAX_VALUE_BYTES", 65536)
+    if isinstance(max_value, bool) or not isinstance(max_value, int) or max_value < 1:
+        raise ValueError("SP_MAX_VALUE_BYTES must be a positive integer")
     sp_port = int(_need("SP_PORT"))
     sp_secret = _need("SP_SECRET")
     sp_tls_cert = data.get("SP_TLS_CERT", "")
@@ -178,4 +202,7 @@ def load_config(path: str | Path) -> Config:
         infisical=infisical,
         vault=vault,
         localfile=localfile,
+        grants={tool: tuple(items) for tool, items in grants.items()},
+        sp_max_value_bytes=max_value,
+        sp_allow_nonloopback=allow_nonloopback,
     )
