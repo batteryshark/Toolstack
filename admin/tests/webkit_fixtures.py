@@ -69,11 +69,13 @@ check(document.querySelector('form[data-confirm] a').getAttribute('href').includ
 UNKNOWN_HTML = r"""
 const form=document.querySelector('form[data-mutation]');let posts=0;
 window.fetch=async()=>{posts++;return {ok:true,status:200,url:form.action,text:async()=>window.RETURNED_PAGE};};
-form.requestSubmit();await wait(150);
+// Start now confirms first (host-credential warning); accept it to send the one mutation.
+form.requestSubmit();document.querySelector('dialog[open]').querySelectorAll('button')[1].click();await wait(150);
 check(document.body.textContent.includes('outcome unknown')||document.body.textContent.includes('Outcome unknown'),'returned unknown stage remains visible');
 const retry=document.querySelector('form[data-mutation]');
 check(!!retry&&retry.querySelector('button').disabled,'200 unknown stage cannot immediately retry without observation');
 if(retry)retry.requestSubmit();await wait();check(posts===1,'returned unknown stage sends no duplicate mutation');
+document.querySelectorAll('dialog[open]').forEach(d=>d.close());
 const alternate=document.querySelector('form[action$="/restart"]');
 alternate.requestSubmit();const dialog=document.querySelector('dialog[open]');
 if(dialog)dialog.querySelectorAll('button')[1].click();await wait();
@@ -84,7 +86,7 @@ if(dialog)dialog.close();
 REPLACEMENT = r"""
 let posts=0;
 window.fetch=async()=>{posts++;return {ok:true,status:200,url:'https://fixture.invalid/tools?tool=notes-demo',text:async()=>window.RETURNED_PAGE};};
-document.querySelector('form[data-mutation]').requestSubmit();await wait(150);
+document.querySelector('form[data-mutation]').requestSubmit();document.querySelector('dialog[open]').querySelectorAll('button')[1].click();await wait(150);
 const form=document.querySelector('form[data-confirm]');
 check(!!form,'replacement keeps focused recovery form');
 form.requestSubmit();check(!!document.querySelector('dialog[open]'),'document.write replacement initializes production scripts');

@@ -45,7 +45,10 @@ class Readiness(unittest.TestCase):
         for text in ("1", "true", "yes", "on", " TRUE "):
             self.assertIs(parse_verify(text), True)
         for text in ("0", "false", "no", "off"):
-            self.assertIs(parse_verify(text), False)
+            with mock.patch.dict(os.environ, {"TOOLSTACK_SPS_DEV": "1"}):
+                self.assertIs(parse_verify(text), False)
+            with mock.patch.dict(os.environ, {"TOOLSTACK_SPS_DEV": "0"}), self.assertRaises(ValueError):
+                parse_verify(text)
         for text in ("", "typo", "2"):
             with self.assertRaises(ValueError):
                 parse_verify(text)
@@ -125,7 +128,7 @@ class Lifecycle(unittest.TestCase):
 class NativeLiveness(unittest.TestCase):
     def test_recorded_state_is_not_health_evidence(self):
         fixture = json.loads((Path(__file__).parent / "fixtures/native_api.json").read_text())
-        definition = SimpleNamespace(id="fake", type="api", port=9999, path=Path("/fake"))
+        definition = SimpleNamespace(id="fake", type="api", port=9999, path=Path("/fake"), secrets=[])
         running = RunningTool("fake", 9999, "process", "fake")
         for expected in fixture["tool_states"]:
             record = {"fake": asdict(running)} if expected["running"] else {}

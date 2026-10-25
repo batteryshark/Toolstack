@@ -132,7 +132,7 @@ class PartialCleanup(unittest.TestCase):
 
     def start_fixture(self):
         directory = self.stack.enter_context(tempfile.TemporaryDirectory())
-        tool = SimpleNamespace(id="fake", port=123, path=Path(directory).resolve(), command="fake", secrets=[])
+        tool = SimpleNamespace(id="fake", port=123, path=Path(directory).resolve(), command="fake", secrets=[], manifest_digest="recorded")
         sps_env = tool.path / "fake.env"
         sps_env.touch()
         self.stack.enter_context(patch.dict(os.environ, {"TOOLSTACK_SPS_SKIP": "0", "TOOLSTACK_SPS_ENV": str(sps_env)}))
@@ -261,6 +261,9 @@ class PartialCleanup(unittest.TestCase):
     def test_docker_log_close_failure_still_retains_spawned_helper(self):
         tool, _ = self.start_fixture()
         tool.type, tool.image = "rest", "fake-image"
+        log_path = runner._tool_log_path(tool)
+        self.enterContext(patch.object(runner, "_tool_log_path", return_value=log_path))
+        self.enterContext(patch.object(runner, "_open_tool_log", return_value=99))
         with patch.dict(os.environ, {"TOOLSTACK_SPS_SKIP": "1", "TOOLSTACK_E_SECRET": ""}), patch.object(runner.DockerRunner, "_docker"), patch.object(runner.os, "open", return_value=99), patch.object(runner.os, "fchmod"), patch.object(runner.os, "close", side_effect=OSError("close failed")), patch.object(runner.subprocess, "run", return_value=SimpleNamespace(returncode=0)), patch.object(runner, "_terminate", side_effect=RuntimeError()) as terminate:
             with self.assertRaises(runner.RunnerStartCleanupError) as error:
                 runner.DockerRunner().start(tool)

@@ -30,6 +30,7 @@ from pathlib import Path
 from .audit import AuditLog, stderr_sink
 from .context import BrokerContext
 from .gateway import handle
+from .identity import authenticate
 from .ratelimit import RateLimiter
 from .registry import Registry
 from .runtime import HttpRuntime
@@ -242,6 +243,8 @@ class _Handler(BaseHTTPRequestHandler):
         cap = self._body_cap()
         if length > cap:
             return _TooLarge(cap)
+        if length > MAX_BODY_BYTES and authenticate(self._ctx().store, self.headers.get("Authorization")) is None:
+            raise PermissionError("unauthorized")
         raw = self.rfile.read(length)
         if len(raw) != length:
             raise ValueError("incomplete body")
@@ -255,6 +258,10 @@ class _Handler(BaseHTTPRequestHandler):
     def _respond(self) -> None:
         try:
             body = self._read_body()
+        except PermissionError:
+            self.close_connection = True
+            self._send_json(401, b'{"error":"unauthorized"}', uuid.uuid4().hex)
+            return
         except ValueError:
             self.send_error(400)
             return

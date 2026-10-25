@@ -20,16 +20,11 @@ import os
 import time
 
 from sps.client import SPSError, SPSClient
-from sps.config import load_config, parse_bool
+from toolyard.sps_config import load_registration_config as load_config, parse_verify
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_SPS_ENV = "/etc/toolstack/sps.env"
-
-
-def parse_verify(value: str) -> bool:
-    """Use the integrated shared TLS verification contract."""
-    return parse_bool(value, name="TOOLSTACK_SPS_VERIFY")
 
 
 class SPSLink:

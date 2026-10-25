@@ -82,6 +82,34 @@ class RoundTrip(unittest.TestCase):
         self.assertNotIn("proxy", parsed)
         self.assertEqual(parsed["entrypoint"]["command"], "python3 -m toolstack_forwarder")
         self.assertEqual(parsed["secrets"][0]["name"], "api_token")
+        for op in parsed["operations"]:
+            self.assertEqual(op["headers"], {"Authorization": "Bearer {{secret:api_token}}"})
+            self.assertEqual(op["allowed_secrets"], ["api_token"])
+            self.assertNotIn("Authorization", op.get("allowed_headers", []))
+            self.assertNotIn("headers", [a["name"] for a in op.get("args", [])])
+
+    def test_imported_auth_builds_without_caller_header_hints(self):
+        from toolstack_forwarder.request_builder import build_request
+        from unittest.mock import Mock
+        _, tool_dir = self._write_generated()
+        cfg = load_rest_config(tool_dir / "toolyard.toml")
+        secrets = Mock()
+        secrets.get.return_value = "fake-token"
+        req = build_request(cfg, "listMessages", {}, secrets, 1024)
+        self.assertEqual(req.headers, {"Authorization": "Bearer fake-token"})
+        secrets.get.assert_called_once_with("api_token")
+
+    def test_header_auth_kinds_are_stored_in_each_operation(self):
+        for scheme, header, secret in (
+            ({"type": "oauth2"}, "Authorization", "access_token"),
+            ({"type": "apiKey", "in": "header", "name": "X-Api-Key"}, "X-Api-Key", "api_key"),
+        ):
+            with self.subTest(scheme=scheme):
+                spec = {**SPEC, "components": {"securitySchemes": {"auth": scheme}}}
+                parsed = tomllib.loads(openapi_import.build_toolyard_toml(spec, tool_id="demo", port=4640))
+                for op in parsed["operations"]:
+                    self.assertIn(header, op["headers"])
+                    self.assertEqual(op["allowed_secrets"], [secret])
 
     def test_generated_tool_loads_in_registry_and_forwarder(self):
         _, tool_dir = self._write_generated()

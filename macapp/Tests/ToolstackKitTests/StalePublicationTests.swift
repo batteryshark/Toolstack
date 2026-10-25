@@ -168,7 +168,7 @@ final class StalePublicationTests: XCTestCase {
             let oldTask = Task { await model.refreshTools() }
             await fulfillment(of: [first], timeout: 2)
             let old = try XCTUnwrap(PendingTransport.pending)
-            let actionTask = Task { await model.toolAction(id: "demo", action: "start") }
+            let actionTask = Task { await model.toolAction(id: "demo", action: "start", confirmed: true) }
             await fulfillment(of: [action], timeout: 2)
             PendingTransport.pending?.respond(200, #"{"id":"demo"}"#)
             await fulfillment(of: [listing], timeout: 2)

@@ -58,7 +58,7 @@ def reconcile_running_tools(config, link, *, wait_timeout: float = 60.0) -> int:
                     continue
                 try:
                     toolyard_ops.start(tool_id, config.tools_root, config.tool_dirs,
-                                       backend=running.backend)
+                                       backend=running.backend, recovery=True)
                     started += 1
                     log.info("reconcile: restarted %s", tool_id)
                 except LookupError:

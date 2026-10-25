@@ -49,6 +49,8 @@ class SignOut(unittest.TestCase):
         self.assertEqual(response.headers['location'], '/login')
         self.assertIn('Max-Age=0', response.headers['set-cookie'])
         self.assertIsNone(self.client.cookies.get(SESSION_COOKIE))
+        from admin import auth, settings
+        self.assertIsNone(auth.verify_session(cookie, settings.load_or_create_session_secret()))
         response = self.client.get('/', follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers['location'], '/login')

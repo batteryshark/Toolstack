@@ -1,6 +1,6 @@
 """Per-caller fixed-window rate limiter (in-memory, single process).
 
-Bounds how many action submissions a caller can make per minute. Disabled when
+Bounds action submissions and request-status polls per caller per minute. Disabled when
 the limit is <= 0. `now` is injectable for testing. Single-threaded dev server, so
 a plain dict is fine; revisit with locking under concurrent serving.
 """

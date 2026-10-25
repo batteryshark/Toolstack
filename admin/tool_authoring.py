@@ -18,6 +18,7 @@ import tomllib
 from pathlib import Path
 from urllib.parse import urlsplit
 from broker.approval_summary import validate_fields
+from toolstack_forwarder.config import ConfigError, validate_secret_placement
 from . import manifest_files
 
 # The risk taxonomy: read / write / destructive. (One vocabulary, no low/medium/high.)
@@ -81,13 +82,16 @@ def normalize(data: dict) -> dict:
                 "verb": verb,
                 "path": path_template,
                 "allowed_headers": allowed_headers,
+                "headers": o.get("headers", {}),
+                "allowed_secrets": o.get("allowed_secrets", []),
+                "body_template": o.get("body_template"),
                 "body_kind": body_kind,
                 "body_content_type": s(o.get("body_content_type")),
-                "body_substitution": bool(o.get("body_substitution", body_kind == "text")),
+                "body_substitution": o.get("body_substitution", False),
                 "redact_response_body": o.get("redact_response_body"),
                 "redact_response_headers": o.get("redact_response_headers"),
                 "secret_update_rules": _norm_secret_update_rules(o.get("secret_update_rules")),
-                "args": _rest_envelope_args(path_template, allowed_headers, body_kind),
+                "args": _rest_envelope_args(path_template, allowed_headers, "none" if o.get("body_template") is not None else body_kind),
             })
             continue
         args = []
@@ -206,7 +210,7 @@ def _rest_envelope_args(path_template: str, allowed_headers: list[str], body_kin
     return args
 
 
-def validate(data: dict) -> list[str]:
+def validate(data: dict, *, confirm_secret_items: bool = False) -> list[str]:
     """Return a list of human-readable problems (empty == valid). Uniqueness of the
     id across other tools is the caller's job (it needs the registry)."""
     errors: list[str] = []
@@ -270,6 +274,8 @@ def validate(data: dict) -> list[str]:
                 errors.append(f"argument '{a['name']}' in '{o['name']}' may contain only letters, digits and _")
     writable = {sec["name"] for sec in data["secrets"] if sec.get("writable")}
     for sec in data["secrets"]:
+        if sec.get("item") and sec["item"] != data["id"] and not confirm_secret_items:
+            errors.append(f"secret '{sec['name']}' uses another item; explicitly confirm secret items")
         if not _SECRET_RE.match(sec["name"]):
             errors.append(f"secret name '{sec['name']}' has invalid characters")
         if not sec["field"]:
@@ -278,6 +284,14 @@ def validate(data: dict) -> list[str]:
             errors.append(f"secret '{sec['name']}' path has invalid characters")
     if data["type"] == "rest":
         for o in data["operations"]:
+            if o.get("body_substitution", False) is not False:
+                errors.append("body_substitution is no longer supported; move secret references to operator headers or body_template and declare allowed_secrets")
+            try:
+                headers, _, _ = validate_secret_placement(o, {s["name"] for s in data["secrets"]}, o.get("body_kind"))
+                if {h.lower() for h in headers} & {h.lower() for h in o.get("allowed_headers", [])}:
+                    errors.append("operator headers must not also appear in allowed_headers")
+            except ConfigError as exc:
+                errors.append(str(exc))
             for flag in ("redact_response_body", "redact_response_headers"):
                 if o.get("secret_update_rules") and not isinstance(o.get(flag), bool):
                     errors.append(f"rest operation '{o['name']}' writeback needs explicit {flag} decision")
@@ -390,8 +404,14 @@ def to_toml(data: dict) -> str:
             out.append(f"body_kind = {_s(o.get('body_kind', 'none'))}")
             if o.get("body_content_type"):
                 out.append(f"body_content_type = {_s(o['body_content_type'])}")
-            if bool(o.get("body_substitution", o.get("body_kind") == "text")) != (o.get("body_kind") == "text"):
-                out.append(f"body_substitution = {str(bool(o.get('body_substitution'))).lower()}")
+            if o.get("headers"):
+                out.append("headers = { " + ", ".join(_s(k) + " = " + _s(v) for k, v in o["headers"].items()) + " }")
+            if o.get("allowed_secrets"):
+                out.append("allowed_secrets = [ " + ", ".join(_s(s) for s in o["allowed_secrets"]) + " ]")
+            if o.get("body_template") is not None:
+                out.append(f"body_template = {_s(o['body_template'])}")
+            if o.get("body_substitution"):
+                out.append("body_substitution = true")
             for flag in ("redact_response_body", "redact_response_headers"):
                 if isinstance(o.get(flag), bool):
                     out.append(f"{flag} = {str(o[flag]).lower()}")
@@ -424,11 +444,11 @@ def read(dir_path: str | Path) -> dict:
     })
 
 
-def write(dir_path: str | Path, data: dict, runner: str | None = None) -> Path:
+def write(dir_path: str | Path, data: dict, runner: str | None = None, *, confirm_secret_items=False) -> Path:
     """Validate and write ``<dir_path>/toolyard.toml``. Raises ValueError on invalid
     input, a missing directory, or an entrypoint the ``runner`` can't start; only ever
     writes a file named toolyard.toml. ``runner`` defaults to the deployment's runner."""
-    errors = validate(data)
+    errors = validate(data, confirm_secret_items=confirm_secret_items)
     if errors:
         raise ValueError("; ".join(errors))
     path = Path(dir_path)

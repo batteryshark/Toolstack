@@ -48,6 +48,23 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Toolstack Admin", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.middleware("http")
+    async def trusted_host(request: Request, call_next):
+        # Parse IPv6 authorities correctly (including brackets and optional port).
+        from urllib.parse import urlsplit
+        try:
+            authority = urlsplit("//" + request.headers.get("host", ""))
+            host = authority.hostname
+            if (len(request.headers.getlist("host")) != 1 or authority.username is not None
+                    or authority.password is not None or authority.path or authority.query or authority.fragment):
+                host = None
+        except ValueError:
+            host = None
+        allowed = {"localhost", "127.0.0.1", "::1", settings.admin_host().lower()}
+        if host not in allowed:
+            return JSONResponse({"detail": "Invalid host"}, status_code=400)
+        return await call_next(request)
+
+    @app.middleware("http")
     async def session_generation(request: Request, call_next):
         # Snapshot once per request; never use the startup key after reset.
         # Missing/unreadable key fails closed, rather than recreating authority.
@@ -227,6 +244,7 @@ def create_app() -> FastAPI:
         data = await read_form(request)
         if not csrf_ok(request, data):
             return redirect("/")
+        auth.revoke_session(request.cookies.get(SESSION_COOKIE, ""), request.state.session_secret)
         resp = redirect("/login")
         resp.delete_cookie(SESSION_COOKIE)
         return resp
@@ -608,7 +626,7 @@ def create_app() -> FastAPI:
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.sps_info(), mode="new", tool=tool,
                 dir_value=dir_path, error="Invalid CSRF token."))
-        errors = list(tool_authoring.validate(tool))
+        errors = list(tool_authoring.validate(tool, confirm_secret_items=data.get("confirm_secret_items") == "1"))
         if not os.path.isabs(dir_path):
             errors.append("tool directory must be an absolute path")
         elif not Path(dir_path).is_dir():
@@ -622,7 +640,7 @@ def create_app() -> FastAPI:
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.sps_info(), mode="new", tool=tool,
                 dir_value=dir_path, error="; ".join(errors)))
-        tool_authoring.write(dir_path, tool)
+        tool_authoring.write(dir_path, tool, confirm_secret_items=data.get("confirm_secret_items") == "1")
         norm_dir = str(Path(dir_path))  # normalize so the later removable check matches
         if norm_dir not in config.tool_dirs:
             previous = replace(config)
@@ -675,12 +693,13 @@ def create_app() -> FastAPI:
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.sps_info(), mode="edit", tool=tool,
                 dir_value=dir_path, error="Invalid CSRF token."))
-        errors = tool_authoring.validate(tool)
+        errors = tool_authoring.validate(tool, confirm_secret_items=data.get("confirm_secret_items") == "1")
         if errors:
             return HTMLResponse(views.tool_editor_view(
                 user=user, csrf=csrf_for(request), backend=settings.sps_info(), mode="edit", tool=tool,
                 dir_value=dir_path, error="; ".join(errors)))
-        tool_authoring.write(dir_path, tool)
+        tool_authoring.write(dir_path, tool, confirm_secret_items=data.get("confirm_secret_items") == "1")
+        toolyard_ops.record_edited_declarations(tool)
         with open_store(config) as store:
             operations.record_admin_event(store, user, "tool_edited", {"tool": tool["id"], "dir": dir_path})
         return render_dashboard(request, user, banner=(
@@ -735,9 +754,11 @@ def create_app() -> FastAPI:
             if data.get("kind") == "github":
                 tool = await work.run(tool_sources.add_from_github,
                     repo_val, config.tools_root, existing_ids,
-                    subdir=(data.get("subdir") or "").strip(), ref=(data.get("ref") or "").strip())
+                    subdir=(data.get("subdir") or "").strip(), ref=(data.get("ref") or "").strip(),
+                    confirm_secret_items=data.get("confirm_secret_items") == "1")
             else:
-                tool = await work.run(tool_sources.add_from_path, src_val, config.tools_root, existing_ids)
+                tool = await work.run(tool_sources.add_from_path, src_val, config.tools_root, existing_ids,
+                                      confirm_secret_items=data.get("confirm_secret_items") == "1")
         except tool_sources.NoManifest:
             return again("No toolyard.toml at that location; use “Author a tool” to create one.")
         except ValueError as exc:
@@ -775,7 +796,8 @@ def create_app() -> FastAPI:
             operations.record_admin_event(store, user, "tool_updated", {"tool": tool_id, "dir": tool["path"]})
         return render_dashboard(request, user, banner=(
             f"Updated tool {views.esc(tool_id)} from its source. Restart the broker if its entrypoint "
-            "or operations changed."))
+            "or operations changed." + (" Upstream secret declarations differ; local declarations were kept. Review them in Edit."
+                                       if tool.get("secret_declarations_changed") else "")))
 
     # JSON operator API (bearer-token auth) for native / automation clients: same ops,
     # JSON face. See admin/api.py (T-029).

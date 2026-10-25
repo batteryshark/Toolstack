@@ -45,7 +45,7 @@ def _resolved_dir(source: str) -> Path:
     return src
 
 
-def add_from_path(source: str, tools_root: str, existing_ids=()) -> dict:
+def add_from_path(source: str, tools_root: str, existing_ids=(), *, confirm_secret_items=False) -> dict:
     """Copy a ready tool folder (one containing toolyard.toml) into ``tools_root/<id>`` and record
     its source. Returns ``{id, type, description, path}``. Raises ``NoManifest`` if the folder has
     no manifest, or ``ValueError`` on a bad source / id clash / unwritable destination."""
@@ -56,11 +56,12 @@ def add_from_path(source: str, tools_root: str, existing_ids=()) -> dict:
     if src.resolve() == root.resolve() or root.resolve() in src.resolve().parents:
         # otherwise discover() could list both the source and the copy as the same tool
         raise ValueError("source folder is inside the tools dir; choose a folder outside it")
-    return _ingest(src, root, existing_ids, {"type": "path", "source": str(src.resolve())})
+    return _ingest(src, root, existing_ids, {"type": "path", "source": str(src.resolve())},
+                   confirm_secret_items=confirm_secret_items)
 
 
 def add_from_github(repo: str, tools_root: str, existing_ids=(), *,
-                    subdir: str = "", ref: str = "") -> dict:
+                    subdir: str = "", ref: str = "", confirm_secret_items=False) -> dict:
     """Shallow-clone a git repo and copy its tool folder (the repo root, or ``subdir`` within it)
     into ``tools_root/<id>``, recording the repo for a later Update. Returns ``{id, type,
     description, path}``. Raises ``NoManifest`` (no toolyard.toml) or ``ValueError`` (bad URL /
@@ -74,7 +75,8 @@ def add_from_github(repo: str, tools_root: str, existing_ids=(), *,
     with tempfile.TemporaryDirectory(prefix="tsr-clone-") as tmp:
         tool_dir = _clone_into(Path(tmp), url, branch, sub)
         return _ingest(tool_dir, Path(tools_root), existing_ids,
-                       {"type": "github", "url": url, "subdir": sub, "ref": branch})
+                       {"type": "github", "url": url, "subdir": sub, "ref": branch},
+                       confirm_secret_items=confirm_secret_items)
 
 
 def _clone_into(tmp: Path, url: str, branch: str, sub: str) -> Path:
@@ -148,11 +150,10 @@ def update(dir_path: str | Path) -> dict:
         if merged["id"] != tool_id:
             raise ValueError(f"the source now declares id '{merged['id']}', not '{tool_id}'; "
                              "remove the tool and add it again")
-        # operator's wiring wins WHEN they set it; otherwise fall through to the source's (so a tool
-        # the operator never customized still picks up upstream's new description / required secrets).
+        upstream_secrets = merged["secrets"]
         merged["description"] = local["description"] or merged["description"]
-        merged["secrets"] = local["secrets"] or merged["secrets"]
-        errors = list(tool_authoring.validate(merged))
+        merged["secrets"] = local["secrets"]
+        errors = list(tool_authoring.validate(merged, confirm_secret_items=True))
         ep = tool_authoring.entrypoint_error(merged, new_dir)
         if ep:
             errors.append(ep)
@@ -160,7 +161,9 @@ def update(dir_path: str | Path) -> dict:
             raise ValueError("; ".join(errors))
         _swap_in_place(dest, new_dir, merged, source)
     td = load_tool(dest / "toolyard.toml")
-    return {"id": td.id, "type": td.type, "description": td.description, "path": str(dest)}
+    return {"id": td.id, "type": td.type, "description": td.description, "path": str(dest),
+            "secret_declarations_changed": upstream_secrets != local["secrets"],
+            "secret_declarations": {"kept": local["secrets"], "upstream": upstream_secrets}}
 
 
 def _swap_in_place(dest: Path, new_dir: Path, merged: dict, source: dict) -> None:
@@ -178,7 +181,7 @@ def _swap_in_place(dest: Path, new_dir: Path, merged: dict, source: dict) -> Non
     backup = work / (dest.name + ".old")
     try:
         shutil.copytree(new_dir, staging, ignore=_IGNORE, symlinks=True)
-        tool_authoring.write(staging, merged)   # merged toolyard.toml (upstream ops + operator wiring)
+        tool_authoring.write(staging, merged, confirm_secret_items=True)  # retain local wiring
         write_source(staging, source)           # keep the source record for the next Update
     except Exception:
         shutil.rmtree(work, ignore_errors=True)
@@ -208,7 +211,7 @@ def _clone_error(exc: subprocess.CalledProcessError) -> str:
     return (lines[-1].strip()[:200] if lines else f"exit {exc.returncode}")
 
 
-def _ingest(tool_dir: Path, root: Path, existing_ids, meta: dict) -> dict:
+def _ingest(tool_dir: Path, root: Path, existing_ids, meta: dict, *, confirm_secret_items=False) -> dict:
     """Validate the tool at ``tool_dir`` and copy it into ``root/<id>`` with a source sidecar.
     Shared by add_from_path / add_from_github. Raises ``NoManifest`` / ``ValueError``."""
     manifest_files.validate(tool_dir)
@@ -217,7 +220,7 @@ def _ingest(tool_dir: Path, root: Path, existing_ids, meta: dict) -> dict:
     tool = tool_authoring.read(tool_dir)        # normalized dict (id/description/ops/secrets/...)
     # validate() rejects a broken tool now (not at broker start) AND bounds the id to a safe single
     # path component (no separators, length-capped): that's what makes `root / id` safe.
-    errors = list(tool_authoring.validate(tool))
+    errors = list(tool_authoring.validate(tool, confirm_secret_items=confirm_secret_items))
     ep = tool_authoring.entrypoint_error(tool, tool_dir)
     if ep:
         errors.append(ep)
@@ -232,7 +235,7 @@ def _ingest(tool_dir: Path, root: Path, existing_ids, meta: dict) -> dict:
     return {"id": td.id, "type": td.type, "description": td.description, "path": str(dest)}
 
 
-def add_with_manifest(source: str, tools_root: str, existing_ids, manifest: dict) -> dict:
+def add_with_manifest(source: str, tools_root: str, existing_ids, manifest: dict, *, confirm_secret_items=False) -> dict:
     """The 'point at code, author the tool in-app' flow: copy a folder that need NOT contain a
     toolyard.toml into ``tools_root/<id>`` and write the authored manifest into the copy. Returns
     ``{id, type, description, path}``. Raises ``ValueError`` on a bad source / invalid manifest / id
@@ -245,7 +248,7 @@ def add_with_manifest(source: str, tools_root: str, existing_ids, manifest: dict
     if src.resolve() == root.resolve() or root.resolve() in src.resolve().parents:
         raise ValueError("source folder is inside the tools dir; choose a folder outside it")
     tool = tool_authoring.normalize(manifest)
-    errors = list(tool_authoring.validate(tool))   # also bounds the id to a safe single path component
+    errors = list(tool_authoring.validate(tool, confirm_secret_items=confirm_secret_items))
     ep = tool_authoring.entrypoint_error(tool, src)
     if ep:
         errors.append(ep)
@@ -255,7 +258,7 @@ def add_with_manifest(source: str, tools_root: str, existing_ids, manifest: dict
     if tool_id in set(existing_ids):
         raise ValueError(f"a tool named '{tool_id}' already exists")
     dest = _copy_tool_dir(src, root, tool_id)
-    tool_authoring.write(dest, tool)   # write the authored toolyard.toml into the copied code
+    tool_authoring.write(dest, tool, confirm_secret_items=confirm_secret_items)
     td = load_tool(dest / "toolyard.toml")
     return {"id": td.id, "type": td.type, "description": td.description, "path": str(dest)}
 

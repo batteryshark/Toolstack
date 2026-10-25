@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import tomllib
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,7 @@ class ConfigError(ValueError):
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _HEADER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 _SECRET_RE = re.compile(r"^[A-Za-z0-9_-]+\Z")
+_SECRET_REF = re.compile(r"\{\{secret:([A-Za-z0-9_-]+)\}\}")
 _TEMPLATE_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _PATH_PRINTABLE = frozenset(chr(c) for c in range(0x21, 0x7F))
 _QUERY_PRINTABLE = _PATH_PRINTABLE | {" ", "'"}
@@ -60,6 +61,9 @@ class Operation:
     redact_response_body: bool = False
     redact_response_headers: bool = False
     secret_update_rules: tuple[SecretUpdateRule, ...] = ()
+    headers: dict[str, str] = field(default_factory=dict)
+    allowed_secrets: frozenset[str] = frozenset()
+    body_template: str | None = None
 
 
 @dataclass(frozen=True)
@@ -169,15 +173,14 @@ def _load_operations(path: Path, raw: Any, secrets: dict[str, SecretDecl]) -> di
         elif not body_content_type:
             body_content_type = "application/json" if body_kind == "text" else "application/octet-stream"
 
-        body_substitution = item.get("body_substitution")
-        if body_substitution is None:
-            body_substitution = body_kind == "text"
+        body_substitution = item.get("body_substitution", False)
         if not isinstance(body_substitution, bool):
             raise _err(path, f"{field}.body_substitution", "must be a boolean")
-        if body_kind == "binary":
-            body_substitution = False
-        if body_kind == "none":
-            body_substitution = False
+        if body_substitution:
+            raise _err(path, field, "body_substitution is no longer supported; move secret references to operator headers or body_template and declare allowed_secrets")
+        headers, allowed_secrets, body_template = validate_secret_placement(item, set(secrets), body_kind)
+        if allowed & {h.lower() for h in headers}:
+            raise _err(path, field, "operator headers must not also appear in allowed_headers")
 
         redact_body = item.get("redact_response_body", False)
         if not isinstance(redact_body, bool):
@@ -202,8 +205,37 @@ def _load_operations(path: Path, raw: Any, secrets: dict[str, SecretDecl]) -> di
             redact_response_body=redact_body,
             redact_response_headers=redact_headers,
             secret_update_rules=rules,
+            headers=headers,
+            allowed_secrets=allowed_secrets,
+            body_template=body_template,
         )
     return operations
+
+
+def validate_secret_placement(item: dict, declared: set[str], body_kind: str) -> tuple[dict[str, str], frozenset[str], str | None]:
+    """Validate operator-owned templates; shared with manifest authoring."""
+    allowed = item.get("allowed_secrets", [])
+    if not isinstance(allowed, list) or not all(isinstance(s, str) and s in declared for s in allowed):
+        raise ConfigError("allowed_secrets must be a list of declared tool secret names")
+    headers = item.get("headers", {})
+    if not isinstance(headers, dict):
+        raise ConfigError("headers must be an operator-owned table of strings")
+    seen = set()
+    for name, value in headers.items():
+        if not isinstance(name, str) or not _HEADER_RE.fullmatch(name) or name.lower() in seen:
+            raise ConfigError("operator header names must be valid and case-insensitively unique")
+        seen.add(name.lower())
+        if not isinstance(value, str) or any(ord(c) < 32 or ord(c) == 127 for c in value):
+            raise ConfigError("operator header values must be strings without control characters")
+    template = item.get("body_template")
+    if template is not None and (not isinstance(template, str) or body_kind != "text"):
+        raise ConfigError("body_template requires body_kind = text and a string template")
+    for text in [*headers.values(), *([template] if template is not None else [])]:
+        if "{{secret:" in _SECRET_REF.sub("", text):
+            raise ConfigError("operator template contains an invalid secret reference")
+        if not set(_SECRET_REF.findall(text)) <= set(allowed):
+            raise ConfigError("operator template references must be declared in allowed_secrets")
+    return dict(headers), frozenset(allowed), template
 
 
 def _load_rules(path: Path, op_field: str, raw: Any, writable: set[str]) -> tuple[SecretUpdateRule, ...]:

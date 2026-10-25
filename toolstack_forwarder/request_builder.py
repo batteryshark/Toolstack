@@ -67,8 +67,8 @@ def read_secret(secrets: SecretClient, name: str) -> str:
         return secrets.get(name)
     except KeyError:
         raise RequestBuildError(
-            "missing_secret", "configured secret is unavailable", secret=name
-        )
+            "missing_secret", "configured secret is unavailable"
+        ) from None
 
 
 def _hydrate_path(op: Operation, arguments: dict) -> str:
@@ -192,16 +192,29 @@ def _build_headers(op: Operation, arguments: dict, secrets: SecretClient) -> dic
             raise RequestBuildError("header_not_allowed", "header is not allowed for this operation", name=name)
         if not isinstance(value, str):
             raise RequestBuildError("invalid_header", "header value must be a string", name=name)
-        substituted = _substitute_secrets(value, secrets)
-        if any(ord(c) < 0x20 or ord(c) == 0x7f for c in substituted):
+        _refuse_caller_refs(value)
+        if name.lower() in {h.lower() for h in op.headers}:
+            raise RequestBuildError("header_not_allowed", "operator-owned headers cannot be overridden")
+        if any(ord(c) < 0x20 or ord(c) == 0x7f for c in value):
             raise RequestBuildError("invalid_header", "header value contains a control character", name=name)
-        headers[name] = substituted
+        headers[name] = value
+    for name, template in op.headers.items():
+        value = _substitute_secrets(template, secrets, op.allowed_secrets)
+        if any(ord(c) < 0x20 or ord(c) == 0x7f for c in value):
+            raise RequestBuildError("invalid_header", "configured header contains a control character")
+        headers[name] = value
     return headers
 
 
 def _build_body(op: Operation, arguments: dict, secrets: SecretClient, max_body: int) -> bytes | None:
     present = "body" in arguments
     body = arguments.get("body")
+    if isinstance(body, str):
+        _refuse_caller_refs(body)
+    if op.body_template is not None:
+        if present:
+            raise RequestBuildError("body_not_allowed", "operator-owned body cannot be overridden")
+        body = _substitute_secrets(op.body_template, secrets, op.allowed_secrets)
     if op.body_kind == "none":
         if present:
             raise RequestBuildError("body_not_allowed", "this operation does not accept a body")
@@ -209,21 +222,28 @@ def _build_body(op: Operation, arguments: dict, secrets: SecretClient, max_body:
     if not isinstance(body, str):
         raise RequestBuildError("missing_body", "this operation requires body as a string")
     if op.body_kind == "text":
-        if op.body_substitution:
-            body = _substitute_secrets(body, secrets)
         data = body.encode("utf-8")
     else:
         try:
             data = base64.b64decode(body, validate=True)
         except (binascii.Error, ValueError):
             raise RequestBuildError("invalid_body", "binary body must be base64")
+        _refuse_caller_refs(data)
     if len(data) > max_body:
         raise RequestBuildError("body_too_large", "body exceeds configured limit", limit_bytes=max_body)
     return data
 
 
-def _substitute_secrets(text: str, secrets: SecretClient) -> str:
+def _refuse_caller_refs(text: str | bytes) -> None:
+    marker = b"{{secret:" if isinstance(text, bytes) else "{{secret:"
+    if marker in text:
+        raise RequestBuildError("caller_secret_reference", "caller secret references are not supported; configure operator headers or body_template with allowed_secrets")
+
+
+def _substitute_secrets(text: str, secrets: SecretClient, allowed: frozenset[str]) -> str:
     def fill(match: re.Match[str]) -> str:
+        if match.group(1) not in allowed:
+            raise RequestBuildError("secret_not_allowed", "configured secret is not allowed for this operation")
         return read_secret(secrets, match.group(1))
 
     out = _SECRET_REF.sub(fill, text)

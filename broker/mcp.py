@@ -128,7 +128,8 @@ def _resolve_name(ctx, name: str):
     if name in registered:
         return registered[name]
     tool, sep, op = name.partition("__")
-    if sep and tool and op:
+    from .registry import _ID_RE
+    if sep and _ID_RE.fullmatch(tool) and _ID_RE.fullmatch(op):
         return tool, op
     return None, None
 
