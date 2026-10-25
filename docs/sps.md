@@ -41,7 +41,7 @@ See [matrix](runtime-matrix.md) for unsupported Docker/Seatbelt/native-helper pa
 
 Use [deployment bootstrap](../deploy/README.md): `/etc/toolstack/sps.env` is private
 TOML, not a shell/systemd env file. The deployment wrapper passes `sps init`
-`--state-dir /var/lib/toolstack --audit-log /var/log/toolstack/sps.audit`.
+`--state-dir /var/lib/toolstack --audit-log /var/lib/toolstack/audit/sps.audit`.
 Choose dedicated private immediate parents for vault, audit and boot identity;
 unsafe existing paths are refused, never repaired by blind chmod. New nested
 parents are 0700, vault/audit/lock 0600, nonsecret boot identity 0644 under its
