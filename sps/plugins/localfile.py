@@ -29,10 +29,10 @@ from .base import SPSSecretsPlugin
 # --- Encryption layer (lifted from toolyard/secrets.py:90-176) ----------------
 
 _VAULT_VERSION = 1
-_SCRYPT_N = 2 ** 14            # ~16 MB, tens of ms: interactive-grade stretching
+_SCRYPT_N = 2 ** 16            # New vaults use ~64 MiB of memory.
 _SCRYPT_R = 8
 _SCRYPT_P = 1
-_SCRYPT_MAXMEM = 64 * 1024 * 1024  # headroom for the params above (else scrypt errors)
+_SCRYPT_MAXMEM = 128 * 1024 * 1024  # Includes implementation overhead.
 
 
 def _fernet():

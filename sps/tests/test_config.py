@@ -67,7 +67,7 @@ class PluginBlocks(unittest.TestCase):
     def test_infisical_block(self):
         f = tempfile.NamedTemporaryFile("w", delete=False)
         f.write(
-            'SP_HOST = "h"\nSP_PORT = "1"\nSP_SECRET = "s"\n'
+            'SP_HOST = "127.0.0.1"\nSP_PORT = "1"\nSP_SECRET = "s"\n'
             'SP_TLS_CERT = "c"\nSP_TLS_KEY = "k"\nSP_TLS_CA = "a"\n'
             'SP_PLUGIN = "infisical"\n\n'
             '[infisical]\n'
@@ -84,7 +84,7 @@ class PluginBlocks(unittest.TestCase):
     def test_vault_block(self):
         f = tempfile.NamedTemporaryFile("w", delete=False)
         f.write(
-            'SP_HOST = "h"\nSP_PORT = "1"\nSP_SECRET = "s"\n'
+            'SP_HOST = "127.0.0.1"\nSP_PORT = "1"\nSP_SECRET = "s"\n'
             'SP_TLS_CERT = "c"\nSP_TLS_KEY = "k"\nSP_TLS_CA = "a"\n'
             'SP_PLUGIN = "hashicorp_vault"\n\n'
             '[hashicorp_vault]\nURL = "https://v"\nTOKEN = "t"\nMOUNT = "kv"\n'
@@ -99,7 +99,7 @@ class PluginBlocks(unittest.TestCase):
     def test_localfile_block(self):
         f = tempfile.NamedTemporaryFile("w", delete=False)
         f.write(
-            'SP_HOST = "h"\nSP_PORT = "1"\nSP_SECRET = "s"\n'
+            'SP_HOST = "127.0.0.1"\nSP_PORT = "1"\nSP_SECRET = "s"\n'
             'SP_TLS_CERT = "c"\nSP_TLS_KEY = "k"\nSP_TLS_CA = "a"\n'
             'SP_PLUGIN = "localfile"\n\n'
             '[localfile]\nVAULT_FILE = "/var/lib/sps.vault.json"\n'
