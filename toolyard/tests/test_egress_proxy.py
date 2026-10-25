@@ -71,7 +71,7 @@ class EgressProxyTest(unittest.TestCase):
         echo_thread.start()
         self.addCleanup(self._stop_echo, echo_thread)
 
-        self.proxy = serve(_free_port(), ["127.0.0.1"])
+        self.proxy = serve(_free_port(), ["127.0.0.1", f"127.0.0.1:{self.echo_port}"])
         self.proxy.daemon_threads = False
         proxy_thread = threading.Thread(target=self.proxy.serve_forever)
         proxy_thread.start()
@@ -245,6 +245,11 @@ class EgressProxyTest(unittest.TestCase):
 
     def test_connect_to_denied_host_is_403(self):
         s, status = self._connect("blocked.invalid:443")
+        self.addCleanup(s.close)
+        self.assertIn(b"403", status)
+
+    def test_connect_to_unlisted_port_is_403(self):
+        s, status = self._connect(f"127.0.0.1:{self.origin_port}")
         self.addCleanup(s.close)
         self.assertIn(b"403", status)
 

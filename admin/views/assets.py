@@ -289,7 +289,7 @@ _TOOL_EDITOR_JS = """
   var REST_BODY_KINDS = ["none","text","binary"];
   var REST_RULE_RESPONSE_TYPES = ["json","xml","form","plaintext"];
   function mk(html){var t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild;}
-  function opts(values, sel){return values.map(function(v){return '<option'+(v===sel?' selected':'')+'>'+v+'</option>';}).join('');}
+  function opts(values, sel){return values.map(function(v){var o=document.createElement('option');o.textContent=v;if(v===sel)o.setAttribute('selected','');return o.outerHTML;}).join('');}
   function riskOpts(sel){return RISK_CHOICES.indexOf(sel)<0 ? [sel].concat(RISK_CHOICES) : RISK_CHOICES;}
   function currentSecretNames(){
     return [].map.call(document.querySelectorAll('#secrets .sec-name'), function(n){return n.value.trim();}).filter(Boolean);

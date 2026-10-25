@@ -168,6 +168,17 @@ Password reset rotates the session generation atomically. Running admin instance
 reject old browser cookies and bearer tokens on their next request, without a
 restart. An already-authorized in-flight action is not cancelled by reset.
 
+Browser sign-out and `POST /api/logout` revoke the presented session on the server.
+Sessions have independent random identifiers; revocations persist until expiry.
+At the bounded revocation capacity, the signing generation rotates to invalidate
+all sessions. Upgrading from the older session format requires signing in again.
+The native app calls logout before discarding its client token; an unreachable
+server cannot confirm revocation. Accepted HTTP hosts are localhost, loopback
+addresses, and the configured admin host.
+
+`GET /api/audit` includes request metadata only, never stored action arguments or
+result payloads. Correlation identifiers remain available to native clients.
+
 Configuration audit records changed schema field names, never values, tokens,
 paths or destinations. An intent audit must succeed before saving. If completion
 auditing fails after saving, the operation fails with an explicit already-saved

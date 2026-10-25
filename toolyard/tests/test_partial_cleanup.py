@@ -261,6 +261,9 @@ class PartialCleanup(unittest.TestCase):
     def test_docker_log_close_failure_still_retains_spawned_helper(self):
         tool, _ = self.start_fixture()
         tool.type, tool.image = "rest", "fake-image"
+        log_path = runner._tool_log_path(tool)
+        self.enterContext(patch.object(runner, "_tool_log_path", return_value=log_path))
+        self.enterContext(patch.object(runner, "_open_tool_log", return_value=99))
         with patch.dict(os.environ, {"TOOLSTACK_SPS_SKIP": "1", "TOOLSTACK_E_SECRET": ""}), patch.object(runner.DockerRunner, "_docker"), patch.object(runner.os, "open", return_value=99), patch.object(runner.os, "fchmod"), patch.object(runner.os, "close", side_effect=OSError("close failed")), patch.object(runner.subprocess, "run", return_value=SimpleNamespace(returncode=0)), patch.object(runner, "_terminate", side_effect=RuntimeError()) as terminate:
             with self.assertRaises(runner.RunnerStartCleanupError) as error:
                 runner.DockerRunner().start(tool)

@@ -30,7 +30,7 @@ from broker.identity import hash_token
 from broker.registry import Registry, ToolOp
 from broker.runtime import HttpRuntime
 from broker.server import build_server
-from toolyard.config import load
+from toolyard.config import load as _load
 from toolyard.egress_proxy import serve as _serve_egress_proxy
 from toolyard.runner import (BwrapRunner, DockerRunner, ProcessRunner, RunningTool, SeatbeltRunner, RunnerConfigError,
                              _SANDBOX_EXEC, _netguard_argv, _seatbelt_profile)
@@ -47,7 +47,7 @@ def setUpModule():
     _boot_id()  # Resolve before any subprocess/spawn mocks can pollute the cache.
     _fixture_dir = tempfile.TemporaryDirectory()
     _fixture_env = mock.patch.dict(os.environ, {
-        "TOOLSTACK_SPS_SKIP": "1", "TOOLSTACK_SPS_FAKE": "1",
+        "TOOLSTACK_SPS_SKIP": "1",
         "PYTHONPATH": str(REPO),
         "TOOLSTACK_SPS_ENV": str(Path(_fixture_dir.name) / "absent.env"),
         "TOOLSTACK_TOOLYARD_STATE": str(Path(_fixture_dir.name) / "state.json"),
@@ -56,14 +56,8 @@ def setUpModule():
     _fixture_env.start()
     # Foreign SPS credentials must never become channel credentials.
     os.environ.setdefault('TOOLSTACK_E_SECRET', 'foreign-sps-key')
-    # Phase 5: tool boot pulls secrets from SPS. The 12 tool-starting tests
-    # don't exercise the SPS wire (that's covered in sps/tests); they only
-    # need the tool subprocess to come up. TOOLSTACK_SPS_FAKE=1 makes the
-    # SDK's from_env() return a fake client whose cache is empty and whose
-    # _cli is None, so the tool boots without ever dialing SPS. The SpsRegistration
-    # tests reset os.environ under their own mock.patch.dict, so this flag never
-    # leaks into assertions there. Production never sets this env var.
-    os.environ.setdefault('TOOLSTACK_SPS_FAKE', '1')
+    # Echo subprocess fixtures explicitly enable their fake SDK in the test
+    # command below; no test-only switch is inherited through the runner.
     # Channel fixtures use only runner-minted independent keys.
 
 
@@ -82,6 +76,14 @@ def _remember_running(running):
 TOOL_TOML = REPO / "tools" / "echo_api" / "toolyard.toml"
 TOOL_MCP_TOML = REPO / "tools" / "echo_mcp" / "toolyard.toml"
 SECRET = "dev-secret-123"
+
+
+def load(path):
+    tool = _load(path)
+    if path in (TOOL_TOML, TOOL_MCP_TOML):
+        bootstrap = "import os, runpy; os.environ['TOOLSTACK_SPS_FAKE']='1'; runpy.run_path('app.py', run_name='__main__')"
+        tool = dataclasses.replace(tool, command=f"{shlex.quote(sys.executable)} -B -c {shlex.quote(bootstrap)}")
+    return tool
 
 # A pid value used as a mock-return value in tests that simulate `posix_spawn`. Why
 # this high: if a future refactor accidentally lets the value reach `os.killpg` / `os.kill`

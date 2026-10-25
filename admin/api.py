@@ -111,6 +111,11 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         token = auth.sign_session(username, request.state.session_secret, settings.session_ttl_seconds())
         return {"token": token, "username": username}
 
+    @app.post("/api/logout")
+    async def api_logout(request: Request, user: str = Depends(require_user)):
+        auth.revoke_session(request.headers["authorization"][7:].strip(), request.state.session_secret)
+        return {"ok": True}
+
     @app.get("/api/broker")
     async def api_broker_status(user: str = Depends(require_user)):
         return supervisor.status()
@@ -224,7 +229,10 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         limit = max(1, min(limit, 500))
         with open_store(broker_config.load()) as store:
             return {"audit": store.recent_audit(limit=limit),
-                    "requests": _rows(store.list_requests(limit=limit))}
+                    "requests": [{key: row[key] for key in (
+                        "id", "correlation_id", "caller_id", "tool", "op", "status", "error",
+                        "created_at", "updated_at", "idempotency_key", "pruned_at")}
+                        for row in store.list_requests(limit=limit)]}
 
     @app.delete("/api/audit")
     async def api_clear_audit(user: str = Depends(require_user)):

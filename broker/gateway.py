@@ -21,6 +21,7 @@ from . import policy as policy_rules
 from . import request_lifecycle as lifecycle
 import re
 from .identity import authenticate, token_fingerprint
+from .registry import _ID_RE
 
 # lifecycle terminal status -> (request.* audit event_type, audit outcome word). A single
 # terminal request.* event per request makes "what was the outcome" directly queryable,
@@ -90,9 +91,14 @@ def handle(method: str, path: str, headers: dict, body, ctx) -> Response:
     audited = not (method == "GET" and path == HEALTH_PATH)
 
     if audited:
+        audit_path = path
+        if path.startswith(ACTIONS_PREFIX):
+            parts = path[len(ACTIONS_PREFIX):].split(".")
+            if len(parts) != 2 or not all(_ID_RE.fullmatch(part) for part in parts):
+                audit_path = ACTIONS_PREFIX + "<invalid>"
         ctx.audit.record(
             "gateway", "request_received", "accepted", correlation_id,
-            details={"method": method, "path": path, "has_bearer": "authorization" in headers},
+            details={"method": method, "path": audit_path, "has_bearer": "authorization" in headers},
         )
     response = _route(method, path, headers, body, ctx, correlation_id)
     if audited:
@@ -145,6 +151,8 @@ def _route(method, path, headers, body, ctx, correlation_id) -> Response:
         return _describe_tool(path, ctx, caller, correlation_id)
 
     if method == "GET" and path.startswith(REQUESTS_PREFIX):
+        if ctx.rate_limiter is not None and not ctx.rate_limiter.allow(caller.id):
+            return Response(429, {"error": "rate_limited"}, correlation_id)
         return _request_status(path, ctx, caller, correlation_id)
 
     return Response(404, {"error": "not_found"}, correlation_id)
@@ -206,7 +214,7 @@ def _request_status(path, ctx, caller, correlation_id) -> Response:
 def _action(path, body, ctx, caller, correlation_id, idempotency_key=None) -> Response:
     spec = path[len(ACTIONS_PREFIX):]
     parts = spec.split(".")
-    if len(parts) != 2 or not all(parts):
+    if len(parts) != 2 or not all(_ID_RE.fullmatch(p) for p in parts):
         return Response(400, {"error": "invalid",
                               "detail": "expected /v1/actions/<tool>.<op>"}, correlation_id)
     tool, op = parts

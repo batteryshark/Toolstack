@@ -116,7 +116,7 @@ struct ContentView: View {
         .alert(model.confirmation?.title ?? "Confirm", isPresented: Binding(
             get: { model.confirmation != nil }, set: { if !$0 { model.confirmation = nil } }
         ), presenting: model.confirmation) { confirmation in
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) {}.keyboardShortcut(.defaultAction)
             Button(confirmation.title.replacingOccurrences(of: "?", with: ""), role: .destructive) {
                 Task { await confirmation.action() }
             }
