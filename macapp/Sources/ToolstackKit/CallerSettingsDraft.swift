@@ -112,7 +112,8 @@ public struct CallerSettingsDraft: Codable, Equatable, Sendable {
             let local = values.enabled.contains(tool), saved = remote.enabled.contains(tool)
             if local != saved { rows.append(.init(id: "\(tool) / whole tool", draft: String(local), latest: String(saved))) }
             for op in Set(snapshot.catalog[tool, default: []].map(\.op)).union(latest.catalog[tool, default: []].map(\.op)).sorted() {
-                let a = "\(values.active(tool, op) ? "Enabled" : "Disabled") / \(values.effect(tool, op))"
+                let a = snapshot.catalog[tool]?.contains(where: { $0.op == op }) == true ?
+                    "\(values.active(tool, op) ? "Enabled" : "Disabled") / \(values.effect(tool, op))" : "Not in draft"
                 let b = latest.catalog[tool]?.contains(where: { $0.op == op }) == true ?
                     "\(remote.active(tool, op) ? "Enabled" : "Disabled") / \(remote.effect(tool, op))" : "No longer available"
                 if a != b { rows.append(.init(id: "\(tool) / \(op)", draft: a, latest: b)) }

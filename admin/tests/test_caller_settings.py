@@ -2,6 +2,7 @@
 import copy
 import json
 import sqlite3
+import time
 import unittest
 from contextlib import closing
 from pathlib import Path
@@ -110,11 +111,29 @@ class CallerSettingsTests(unittest.TestCase):
         self.seed()
         with closing(Store(self.db_path)) as store:
             caller = store.caller_by_name("writer-demo")["id"]; before = store.policy_for(caller)
+            request = store.create_request("fake-approval", caller, "echo", "say", "pending_approval")
+            store.create_approval(request, "fake-card", time.time() + 300)
             store._conn.execute("CREATE TRIGGER fail_settings BEFORE INSERT ON audit_events BEGIN SELECT RAISE(ABORT, 'fake full disk'); END")
             store._conn.commit()
             with self.assertRaises(sqlite3.IntegrityError):
                 store.compare_and_set_policy(caller, before, {"enabled": [], "tools": {}}, "operator")
             self.assertEqual(store.policy_for(caller), before)
+            self.assertEqual(store.request(request)["status"], "pending_approval")
+            self.assertEqual(store.approval_for_request(request)["status"], "pending")
+
+    def test_combined_save_invalidates_pending_approval_in_the_same_commit(self):
+        state = self.seed(); draft = self.edit(state)
+        with closing(Store(self.db_path)) as store:
+            caller = store.caller_by_name("writer-demo")["id"]
+            request = store.create_request("fake-approval", caller, "echo", "say", "pending_approval")
+            store.create_approval(request, "fake-card", time.time() + 300)
+        draft["tools"]["echo"]["say"] = "allow"
+        self.assertEqual(self.client.put(self.url, headers=self.headers, json=draft).status_code, 200)
+        with closing(Store(self.db_path)) as store:
+            self.assertEqual(store.policy_for(caller)["tools"]["echo"]["say"], "allow")
+            self.assertEqual(store.request(request)["status"], "denied")
+            self.assertEqual(store.approval_for_request(request)["status"], "cancelled")
+            self.assertEqual(len(store.recent_audit(500)), 1)
 
     def test_legacy_mutations_keep_function_exclusions(self):
         self.seed({"enabled": ["echo"], "tools": {"echo": {"say": "allow"}}, "disabled_functions": {"echo": ["say"]}})

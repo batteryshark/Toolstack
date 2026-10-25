@@ -38,7 +38,7 @@ struct CallerSettingsEditor: View {
                 Spacer()
             }
             HStack(spacing: 20) {
-                Text(saving ? "Saving both tabs…" : draft?.dirty == true ? "Unsaved changes · Both tabs · Draft kept on this device" : "No unsaved changes")
+                Text(saving ? "Saving both tabs…" : draft?.dirty == true ? "Unsaved changes · Both tabs · \(storageError ? "Not stored" : "Draft kept on this device")" : "No unsaved changes")
                     .font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") { leave() }.keyboardShortcut(.cancelAction).disabled(saving)
@@ -87,7 +87,7 @@ struct CallerSettingsEditor: View {
                 Text("Policy" + (current.values.tools != current.baseline.tools ? " · Unsaved changes" : "")).tag("policy")
             }.pickerStyle(.segmented)
             HStack {
-                TextField("Search tools and functions", text: binding(\.search)).textFieldStyle(.roundedBorder)
+                TextField("Search tools and functions", text: Binding(get: { draft?.search ?? "" }, set: { query in edit { $0.search = query; $0.collapsedSearch.removeAll() } })).textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Search tools and functions").focused($searchFocused)
                 Toggle("Enabled only", isOn: binding(\.enabledOnly))
                 Toggle("Needs review", isOn: binding(\.needsReview))
@@ -136,18 +136,20 @@ struct CallerSettingsEditor: View {
                         if expanded { $0.expanded.remove(tool); $0.collapsedSearch.insert(tool) }
                         else { $0.expanded.insert(tool); $0.collapsedSearch.remove(tool) }
                     }
-                } label: { Label(tool, systemImage: expanded ? "chevron.down" : "chevron.right").fontWeight(.semibold) }
-                    .buttonStyle(.plain).frame(minHeight: 32).accessibilityLabel("\(tool) functions")
+                } label: { Label(tool, systemImage: expanded ? "chevron.down" : "chevron.right").fontWeight(.semibold).frame(minHeight: 32).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).accessibilityLabel("\(tool) functions")
                     .accessibilityValue(expanded ? "Expanded" : "Collapsed")
                 Text("\(count)/\(all.count) enabled" + (current.filtering ? " · \(ops.count) matches" : ""))
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if tab == "enabled" {
-                    Toggle("Whole tool", isOn: Binding(get: { count == all.count }, set: { enabled in edit { $0.setTool(tool, enabled: enabled) } }))
+                    Toggle("Whole tool", isOn: Binding(get: { count == all.count }, set: { enabled in
+                        edit { $0.setTool(tool, enabled: enabled) }; if draft?.matches(tool).isEmpty == true { searchFocused = true }
+                    }))
                         .accessibilityLabel("Enable whole tool \(tool)")
-                    Button(current.filtering ? "All matches" : "All") { edit { $0.bulk(tool, enabled: true) } }
+                    Button(current.filtering ? "All matches" : "All") { edit { $0.bulk(tool, enabled: true) }; if draft?.matches(tool).isEmpty == true { searchFocused = true } }
                         .accessibilityLabel("Enable \(current.filtering ? "matched" : "all") \(tool) functions")
-                    Button(current.filtering ? "None matches" : "None") { edit { $0.bulk(tool, enabled: false) } }
+                    Button(current.filtering ? "None matches" : "None") { edit { $0.bulk(tool, enabled: false) }; if draft?.matches(tool).isEmpty == true { searchFocused = true } }
                         .accessibilityLabel("Disable \(current.filtering ? "matched" : "all") \(tool) functions")
                 }
             }

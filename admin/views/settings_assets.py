@@ -126,7 +126,7 @@ window.ToolstackSettings=(()=>{
      persist();
    }
    function switchTab(id){scroll[tab]=list.scrollTop;tab=id;render();list.scrollTop=scroll[tab]||0;tabs.querySelector('[aria-selected=true]').focus();persist();}
-   search.oninput=()=>{query=search.value;render();};
+   search.oninput=()=>{query=search.value;expanded=new Set([...expanded].filter(k=>!k.startsWith('closed:')));render();};
    list.onscroll=()=>{scroll[tab]=list.scrollTop;persist();};
    function close(){persist();dialog.close();dialog.remove();document.removeEventListener('visibilitychange',visible);window.removeEventListener('pagehide',persist);clearInterval(poll);onClose();}
    function leave(){if(busy)return;if(!dirty()&&!unknown){close();return;}
@@ -147,6 +147,10 @@ window.ToolstackSettings=(()=>{
      const table=node('table'),thead=node('thead'),tr=node('tr');['Setting','Your draft','Latest saved'].forEach(s=>tr.append(node('th',s)));thead.append(tr);table.append(thead);const tbody=node('tbody');table.append(tbody);let removed=false,rows=0;
      const merged=clone(latest);
      function diff(label,a,b){if(a===b)return;rows++;const row=node('tr');[label,a,b].forEach(x=>row.append(node('td',String(x))));tbody.append(row);}
+     Object.keys(remote.catalog).filter(t=>!(t in state.catalog)).forEach(t=>{
+       diff(t,'Not in draft',latest.enabled.includes(t));
+       remote.catalog[t].forEach(o=>diff(t+' / '+o.op,'Not in draft',active(latest,t,o.op)+' / '+effect(latest,t,o.op)));
+     });
      Object.keys(state.catalog).forEach(t=>{
        if(!(t in remote.catalog)){removed=true;diff(t,'Draft retained','Tool no longer available');return;}
        diff(t+' / whole tool',draft.enabled.includes(t),latest.enabled.includes(t));
@@ -158,6 +162,7 @@ window.ToolstackSettings=(()=>{
          const excluded=s=>s.disabled_functions[t]?.includes(o.op)||false;
          if(excluded(base)!==excluded(draft)){merged.disabled_functions[t]=merged.disabled_functions[t].filter(x=>x!==o.op);if(excluded(draft))merged.disabled_functions[t].push(o.op);}
        });
+       remote.catalog[t].filter(o=>!(o.op in draft.tools[t])).forEach(o=>diff(t+' / '+o.op,'Not in draft',active(latest,t,o.op)+' / '+effect(latest,t,o.op)));
      });
      if(!rows)d.append(node('p','Both tabs match the saved settings. No write is needed.'));else d.append(table);
      if(removed)d.append(node('p','The function set changed. Your original draft is retained; discard it explicitly and reopen to edit the new catalog.'));
