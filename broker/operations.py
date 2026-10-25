@@ -37,10 +37,11 @@ def build_policy(allow, review, deny=None) -> dict:
 
 
 def enabled_tools(policy: dict) -> list[str]:
-    """The tools a caller may manage policy for: the explicit ``enabled`` list (set via the
-    web "Enabled tools" toggle) plus any tool that already carries granted ops, so a policy
-    authored by ``brokerctl set-policy`` (which grants ops but never sets ``enabled``) still
-    surfaces its tools in the editor. Sorted, de-duplicated."""
+    """Managed settings have authoritative enablement, even when empty. Legacy
+    policies also surface tools carrying rules (e.g. a CLI-authored policy).
+    """
+    if "disabled_functions" in policy and "enabled" in policy:
+        return sorted(set(policy["enabled"]))
     granted = policy.get("tools", {})
     return sorted(set(policy.get("enabled", [])) | set(granted.keys()))
 
@@ -57,6 +58,9 @@ def set_enabled_tools(store: Store, name: str, enabled, operator: str) -> None:
     policy: dict = {"tools": tools}
     if enabled:
         policy["enabled"] = enabled
+    if "disabled_functions" in store.policy_for(caller["id"]):
+        policy["enabled"] = enabled
+        policy["disabled_functions"] = store.policy_for(caller["id"])["disabled_functions"]
     store.set_policy(caller["id"], policy)
     record_admin_event(store, operator, "tools_changed", {"name": name, "enabled": enabled})
 
@@ -134,8 +138,10 @@ def set_policy(store: Store, name: str, allow, review, operator: str, deny=None)
     policy = build_policy(allow, review, deny)
     before = store.policy_for(caller["id"])
     enabled = before.get("enabled")  # preserve tool-enablement
-    if enabled:
+    if "enabled" in before:
         policy["enabled"] = enabled
+    if "disabled_functions" in before:
+        policy["disabled_functions"] = before["disabled_functions"]
     store.set_policy(caller["id"], policy)
     def grants(value):
         return {f"{tool}.{op}": effect

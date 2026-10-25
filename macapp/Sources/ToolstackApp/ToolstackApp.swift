@@ -271,8 +271,7 @@ struct CallersPane: View {
                 TableColumn("") { caller in
                     if caller.isActive {
                         Menu {
-                            Button("Enabled tools...") { enablingTools = caller }
-                            Button(model.policyDrafts[caller.name] == nil ? "Edit policy…" : "Resume policy draft · \(caller.name)") { editing = caller }
+                            Button("Caller settings…") { editing = caller }
                             Button("Rotate token") { Task { await model.rotateToken(caller: caller.name) } }
                             Divider()
                             Button("Revoke caller", role: .destructive) { Task {
@@ -286,20 +285,20 @@ struct CallersPane: View {
             // Native table primary actions handle double-click and Return, excluding controls.
             .contextMenu(forSelectionType: Int.self) { ids in
                 if let caller = Caller.policyTarget(in: model.callers, selection: ids) {
-                    Button(model.policyDrafts[caller.name] == nil ? "Edit policy…" : "Resume policy draft · \(caller.name)") { editing = caller }
+                    Button("Caller settings…") { editing = caller }
                 }
             } primaryAction: { ids in
                 editing = Caller.policyTarget(in: model.callers, selection: ids)
             }
-            .help("Double-click an active caller or press Return to open policy settings")
+            .help("Double-click an active caller or press Return to open caller settings")
         }
         .padding()
         .navigationTitle("Callers")
         .sheet(item: $editing) { caller in
-            PolicyEditor(caller: caller.name).environmentObject(model)
+            CallerSettingsEditor(caller: caller.name).environmentObject(model)
         }
         .sheet(item: $enablingTools) { caller in
-            EnabledToolsEditor(caller: caller.name).environmentObject(model)
+            CallerSettingsEditor(caller: caller.name).environmentObject(model)
         }
         .confirmationDialog("Revoke caller?", isPresented: revokingBinding, presenting: revoking) { caller in
             Button("Revoke \(caller.name)", role: .destructive) {

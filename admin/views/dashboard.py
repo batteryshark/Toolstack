@@ -64,13 +64,12 @@ def token_reveal_banner(lead: str, token: str) -> str:
 
 def _callers_section(callers, csrf: str) -> str:
     rows = "".join(
-        f"<tr data-caller-policy tabindex='0' aria-label='{esc('Open policy settings for ' + c['name'])}' "
-        "title='Double-click or press Enter to open policy settings'>"
+        f"<tr data-caller-policy tabindex='0' aria-label='{esc('Open caller settings for ' + c['name'])}' "
+        "title='Double-click or press Enter to open caller settings'>"
         f"<td>{esc(c['name'])}</td>"
         f"<td>{'revoked' if c['revoked_at'] else 'active'}</td>"
         "<td class='actions'>"
-        f"<a class='button' data-policy-link href='/callers/{esc(c['name'])}/policy'>Policy</a>"
-        f"<a class='button' href='/callers/{esc(c['name'])}/tools'>Tools</a>"
+        f"<a class='button' data-policy-link data-settings-link href='/callers/{esc(c['name'])}/settings'>Settings</a>"
         f"<form method='post' action='/callers/refresh-token' class='inline-form' "
         f"data-confirm='{esc('Rotate token for ' + c['name'] + '? Existing token stops working; update clients using this caller. The new token is shown once.')}'>"
         f"{_csrf_field(csrf)}"

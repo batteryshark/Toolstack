@@ -159,6 +159,9 @@ class StartupSurface(unittest.TestCase):
         self.assertIn("Diagnostics", kwargs["html"])
         self.assertIn("Retry", kwargs["html"])
         webview.start.assert_called_once()
+        self.assertFalse(webview.start.call_args.kwargs["private_mode"])
+        storage = webview.start.call_args.kwargs["storage_path"]
+        self.assertEqual(os.stat(storage).st_mode & 0o777, 0o700)
         stack.stop.assert_called_once()
 
     def test_retry_failure_stays_local_then_success_opens_admin(self):
