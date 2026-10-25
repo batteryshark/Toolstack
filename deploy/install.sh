@@ -51,7 +51,7 @@ sudo -u "$SERVICE_USER" sh -c "cd '$REPO_ROOT' && '$VENV_PIP' install --quiet '.
 # 4. State + log dirs (the unit's StateDirectory/ReadWritePaths keep them; pre-create
 #    so set-password + the SPS audit logger land right instead of crashing on first write)
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 700 /var/lib/toolstack
-install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 750 /var/log/toolstack
+install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 700 /var/log/toolstack
 install -d -o root -g "$SERVICE_GROUP" -m 750 /etc/toolstack
 
 # 5. Admin password (the panel fails closed without one)

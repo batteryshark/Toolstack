@@ -190,9 +190,7 @@ def _warn_if_suspect(cfg: BrokerRunConfig) -> None:
 
 def save(config: BrokerRunConfig) -> None:
     path = config_file()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_to_toml(asdict(config)), encoding="utf-8")
-    path.chmod(0o600)  # holds the nod token
+    settings._write_private(path, _to_toml(asdict(config)))
 
 
 def _toml_str(value) -> str:

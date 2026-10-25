@@ -48,6 +48,23 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Toolstack Admin", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.middleware("http")
+    async def trusted_host(request: Request, call_next):
+        # Parse IPv6 authorities correctly (including brackets and optional port).
+        from urllib.parse import urlsplit
+        try:
+            authority = urlsplit("//" + request.headers.get("host", ""))
+            host = authority.hostname
+            if (len(request.headers.getlist("host")) != 1 or authority.username is not None
+                    or authority.password is not None or authority.path or authority.query or authority.fragment):
+                host = None
+        except ValueError:
+            host = None
+        allowed = {"localhost", "127.0.0.1", "::1", settings.admin_host().lower()}
+        if host not in allowed:
+            return JSONResponse({"detail": "Invalid host"}, status_code=400)
+        return await call_next(request)
+
+    @app.middleware("http")
     async def session_generation(request: Request, call_next):
         # Snapshot once per request; never use the startup key after reset.
         # Missing/unreadable key fails closed, rather than recreating authority.
@@ -227,6 +244,7 @@ def create_app() -> FastAPI:
         data = await read_form(request)
         if not csrf_ok(request, data):
             return redirect("/")
+        auth.revoke_session(request.cookies.get(SESSION_COOKIE, ""), request.state.session_secret)
         resp = redirect("/login")
         resp.delete_cookie(SESSION_COOKIE)
         return resp

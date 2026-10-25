@@ -9,6 +9,10 @@ does not provide proven runner registration/recovery. Do not use it for the supp
 release. See [runtime matrix](../../docs/runtime-matrix.md) and native deployment.
 The image's process runner does not isolate hostile tools.
 
+The one-box service must be the only container on its Docker network. Admin and
+broker bind all container interfaces: loopback-only published ports do not prevent
+another container on the same network from connecting directly.
+
 Before any future Docker/SPS support claim, prove: SPS lifecycle, TLS server name/CA
 matching the reachable service, explicit runner config and passphrase wiring, private
 state/log volumes, offline vault provisioning, separate broker channel credentials,

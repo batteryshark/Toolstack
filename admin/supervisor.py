@@ -74,7 +74,7 @@ def _read_state() -> dict | None:
 
 def _write_state(state: dict) -> None:
     path = _state_file()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    settings._private_directory(path.parent)
     path.write_text(json.dumps(state), encoding="utf-8")
 
 
@@ -141,7 +141,7 @@ def start(config: BrokerRunConfig) -> dict:
     if current["running"]:
         return current
     state_dir = settings.state_dir()
-    state_dir.mkdir(parents=True, exist_ok=True)
+    settings._private_directory(state_dir)
     env = {**os.environ, **config.to_env()}
     # os.open/os.close (not open()) so the parent leaves no Python file object to
     # warn about; the child keeps its own dup'd copies of fds 1 and 2.

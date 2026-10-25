@@ -109,7 +109,7 @@ def sps_info() -> dict:
 
 
 def _write_private(path: Path, data: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _private_directory(path.parent)
     fd, name = tempfile.mkstemp(prefix=".admin-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
@@ -120,6 +120,15 @@ def _write_private(path: Path, data: str) -> None:
     finally:
         if os.path.exists(name):
             os.unlink(name)
+
+
+def _private_directory(path: Path) -> None:
+    """Create missing ancestors privately; reject an unsafe immediate state parent."""
+    if not path.exists():
+        _private_directory(path.parent)
+        path.mkdir(mode=0o700, exist_ok=True)
+    if path.is_symlink() or not path.is_dir() or path.stat().st_mode & 0o022:
+        raise PermissionError("admin state directory must not be group/world writable")
 
 
 def read_password_hash() -> str | None:

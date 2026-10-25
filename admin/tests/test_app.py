@@ -71,7 +71,7 @@ class AdminApp(unittest.TestCase):
         self.db_path = str(Path(self.tmp, "broker.sqlite3"))
         broker_config.save(BrokerRunConfig(db_path=self.db_path, tools_root=str(Path(self.tmp, "tools"))))
 
-        self.client = TestClient(create_app())
+        self.client = TestClient(create_app(), base_url="http://127.0.0.1")
 
     def _restore_env(self):
         for key, prev in self._env.items():

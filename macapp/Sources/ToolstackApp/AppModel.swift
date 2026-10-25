@@ -185,7 +185,7 @@ final class AppModel: ObservableObject {
         clearAdminState()
         restoring = false
         tokenStorage.delete(account)
-        await oldClient.setToken(nil)
+        try? await oldClient.logout()
     }
 
     func refreshAll() async {
@@ -241,9 +241,12 @@ final class AppModel: ObservableObject {
     /// Start / stop / restart a tool, then refresh so its row reflects the new run state.
     func toolAction(id: String, action: String, confirmed: Bool = false) async {
         guard uncertainMutation == nil, !effectInFlight else { return }
-        if action == "restart", !confirmed {
+        if (action == "start" || action == "restart"), !confirmed {
             let epoch = generation
-            confirmation = Confirmation(title: "Restart \(id)?", effect: "Stops and starts \(id), interrupting active calls. Requests will not be replayed.") {
+            let title = action == "start" ? "Start \(id)?" : "Restart \(id)?"
+            let effect = "A started tool runs with this host's credentials. Only start tools you trust."
+                + (action == "restart" ? " Stops and starts \(id), interrupting active calls. Requests will not be replayed." : "")
+            confirmation = Confirmation(title: title, effect: effect) {
                 guard epoch == self.generation else { return }
                 await self.toolAction(id: id, action: action, confirmed: true)
             }

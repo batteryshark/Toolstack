@@ -61,7 +61,7 @@ def _child_environment() -> dict[str, str]:
     """
     allowed = {"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "TZ",
                "PYTHONPATH", "VIRTUAL_ENV", "PYTHONUNBUFFERED", "SSL_CERT_FILE",
-               "SSL_CERT_DIR", "TOOLSTACK_SPS_FAKE"}
+               "SSL_CERT_DIR"}
     return {key: value for key, value in os.environ.items()
             if key in allowed or key.startswith("LC_")}
 
@@ -71,8 +71,21 @@ def _tool_log_path(tool_def: ToolDef) -> Path:
     the tool, not an opaque global state directory."""
     d = tool_def.path / "logs"
     d.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(d, 0o700)
+    fd = os.open(d, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fchmod(fd, 0o700)
+    finally:
+        os.close(fd)
     return d / "tool.log"
+
+
+def _open_tool_log(path: Path) -> int:
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        return os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
+                       0o600, dir_fd=directory)
+    finally:
+        os.close(directory)
 
 
 def _check_port_free(port: int) -> None:
@@ -505,7 +518,7 @@ def _stop_egress_proxy(running: RunningTool) -> None:
 
 
 def _start_docker_log_follower(container: str, log_path: Path, *, _on_spawn=None) -> str:
-    fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+    fd = _open_tool_log(log_path)
     os.fchmod(fd, 0o600)
     try:
         pid = os.posix_spawn(
@@ -670,7 +683,7 @@ class ProcessRunner:
             # warn about; setpgroup=0 gives it its own group so stop() can killpg it.
             inner_script = f"cd {shlex.quote(str(tool_def.path))} && exec {_bind_interpreter(tool_def.command)}"
             executable, argv = self._spawn_argv(tool_def, inner_script, None, egress_port)
-            log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+            log_fd = _open_tool_log(log_path)
             os.fchmod(log_fd, 0o600)
             try:
                 pid = os.posix_spawn(

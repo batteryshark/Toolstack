@@ -6,8 +6,12 @@ import hashlib
 import hmac
 import time
 import unittest
+import json
+import os
+import tempfile
+from unittest.mock import patch
 
-from admin import auth
+from admin import auth, settings
 
 
 class Password(unittest.TestCase):
@@ -25,6 +29,30 @@ class Password(unittest.TestCase):
 
 class Session(unittest.TestCase):
     SECRET = "session-secret"
+
+    def test_revocation_prunes_expired_entries_and_corrupt_state_fails_closed(self):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"XDG_CONFIG_HOME": root}):
+            path = settings.config_dir() / "revoked-sessions.json"
+            settings._write_private(path, json.dumps({"expired": 1}))
+            token = auth.sign_session("admin", self.SECRET, 60)
+            auth.revoke_session(token, self.SECRET)
+            self.assertNotIn("expired", json.loads(path.read_text()))
+            self.assertIsNone(auth.verify_session(token, self.SECRET))
+            fresh = auth.sign_session("admin", self.SECRET, 60)
+            settings._write_private(path, "invalid json")
+            self.assertIsNone(auth.verify_session(fresh, self.SECRET))
+
+    def test_revocation_capacity_rotates_authority_instead_of_resurrecting_tokens(self):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"XDG_CONFIG_HOME": root}):
+            key = settings.load_or_create_session_secret()
+            token = auth.sign_session("admin", key, 60)
+            path = settings.config_dir() / "revoked-sessions.json"
+            settings._write_private(path, json.dumps({str(i): int(time.time()) + 60 for i in range(4096)}))
+            auth.revoke_session(token, key)
+            new_key = settings.load_or_create_session_secret()
+            self.assertNotEqual(new_key, key)
+            self.assertIsNone(auth.verify_session(token, new_key))
+            self.assertLessEqual(len(json.loads(path.read_text())), 4096)
 
     def test_roundtrip(self):
         cookie = auth.sign_session("admin", self.SECRET, ttl_seconds=60)
