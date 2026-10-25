@@ -11,7 +11,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--config', default='/etc/toolstack/sps.env')
     p.add_argument('--state-dir', default='/var/lib/toolstack')
-    p.add_argument('--log-dir', default='/var/log/toolstack')
+    p.add_argument('--log-dir', default='/var/lib/toolstack/audit')
     args = p.parse_args()
     os.umask(0o077)
     config = Path(args.config).resolve()

@@ -42,7 +42,7 @@ chown toolstack:toolstack /etc/toolstack/sps.crt /etc/toolstack/sps-ca.crt
 
 Adjust account and install root to match the installer. Bootstrap creates only TLS
 material/config, not a vault. Vault lives in `/var/lib/toolstack/sps.vault.json`,
-audit in `/var/log/toolstack/sps.audit`; `/etc` remains read-only in the services.
+audit in `/var/lib/toolstack/audit/sps.audit` (not under `/var/log`: SPS refuses group-writable ancestors and Ubuntu keeps `/var/log` group-writable; existing installs should point `SP_AUDIT_LOG` there); `/etc` remains read-only in the services.
 Provision `sps init-vault` and `sps vault-set` as the service user with the venv,
 explicit `--config /etc/toolstack/sps.env`, and the same passphrase as the SPS
 runtime file. Keep SPS **stopped during all direct provisioning**. Never put real

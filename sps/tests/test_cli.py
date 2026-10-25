@@ -15,7 +15,7 @@ class Bootstrap(unittest.TestCase):
     def test_production_and_temporary_path_selection_is_pure(self):
         # No filesystem operations: production paths must never be created here.
         self.assertEqual(init_runtime_paths("/etc/toolstack/sps.env"), (
-            Path("/var/lib/toolstack/sps.vault.json"), Path("/var/log/toolstack/sps.audit")))
+            Path("/var/lib/toolstack/sps.vault.json"), Path("/var/lib/toolstack/audit/sps.audit")))
         self.assertEqual(init_runtime_paths("/temporary/config/sps.env"), (
             Path("/temporary/config/sps.vault.json"), Path("/temporary/config/sps-audit.jsonl")))
         self.assertEqual(init_runtime_paths("local.env"), (
@@ -24,7 +24,7 @@ class Bootstrap(unittest.TestCase):
             self.assertEqual(init_runtime_paths(config, state_dir="/explicit/state", audit_log="/explicit/log/audit"), (
                 Path("/explicit/state/sps.vault.json"), Path("/explicit/log/audit")))
         self.assertEqual(init_runtime_paths("/etc/toolstack/sps.env", state_dir="/explicit/state")[1],
-                         Path("/var/log/toolstack/sps.audit"))
+                         Path("/var/lib/toolstack/audit/sps.audit"))
         self.assertEqual(init_runtime_paths("/temporary/config/sps.env", audit_log="/explicit/audit")[0],
                          Path("/temporary/config/sps.vault.json"))
 
