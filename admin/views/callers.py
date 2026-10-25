@@ -10,6 +10,7 @@ def caller_tools_view(*, user, csrf, caller, all_tools, enabled, error=None) -> 
     rows = "".join(
         "<tr>"
         f"<td><input type='checkbox' name='tool__{esc(tool)}'"
+        f" aria-label='{esc('Enable ' + tool + ' for ' + caller)}'"
         f"{' checked' if tool in enabled else ''}></td>"
         f"<td>{esc(tool)}</td>"
         f"<td class='muted'>{len(ops)} operation{'' if len(ops) == 1 else 's'}</td>"
@@ -23,7 +24,7 @@ def caller_tools_view(*, user, csrf, caller, all_tools, enabled, error=None) -> 
         "<a class='button' href='/'>Back</a>"
         f"<strong>Tools for {esc(caller)}</strong>"
         f"<a class='button' href='/callers/{esc(caller)}/policy'>Edit policy</a>"
-        "<button type='submit'>Save tools</button>"
+        "<button type='submit' class='primary'>Save tools</button>"
         "</section>"
         "<section><p class='muted'>Enabling a tool lets you grant its operations on the "
         "policy page. Disabling a tool revokes the caller's access (its granted operations "
@@ -35,22 +36,22 @@ def caller_tools_view(*, user, csrf, caller, all_tools, enabled, error=None) -> 
     return page(f"Tools · {caller}", body, user=user, csrf=csrf)
 
 
-def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, error=None) -> str:
+def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, error=None, loaded=True) -> str:
     err = f"<div class='error'>{esc(error)}</div>" if error else ""
     tool_policies = current.get("tools", {})
     sections = [
-        f"{err}<form id='policy-form' method='post' action='/callers/{esc(caller)}/policy'>",
+        f"{err}<form id='policy-form' data-target='{esc(caller)}' data-loaded='{str(loaded).lower()}' method='post' action='/callers/{esc(caller)}/policy'>",
         _csrf_field(csrf),
         "<section class='row'>"
         f"<a class='button' href='/'>Back</a>"
         f"<strong>Policy for {esc(caller)}</strong>"
-        "<button type='button' onclick=\"setAll('allow')\">Allow all</button>"
-        "<button type='button' onclick=\"setAll('review')\">Review all</button>"
-        "<button type='button' onclick=\"setAll('deny')\">Deny all</button>"
-        "<button type='submit'>Save policy</button>"
+        f"<button type='submit'{' disabled' if not loaded else ''} class='{'primary' if loaded else ''}'>Save policy</button>"
         "</section>",
     ]
-    if not ops_by_tool:
+    if not loaded:
+        sections.append(f"<section role='alert'>Policy unavailable · {esc(caller)}. "
+                        f"<a class='button primary' href='/callers/{esc(caller)}/policy'>Retry load</a></section>")
+    if loaded and not ops_by_tool:
         if has_tools:
             msg = ("No tools enabled for this caller yet. "
                    f"<a href='/callers/{esc(caller)}/tools'>Enable tools</a> first, "
@@ -65,7 +66,7 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, err
         for op in ops:
             name = op["op"]
             effect = current_ops.get(name, "deny")
-            select = (f"<select name='op__{esc(tool)}__{esc(name)}'>"
+            select = (f"<select name='op__{esc(tool)}__{esc(name)}' aria-label='{esc('Effect for ' + caller + ' / ' + tool + ' / ' + name)}'>"
                       + "".join(
                           f"<option value='{v}'{' selected' if effect == v else ''}>{v.title()}</option>"
                           for v in ("allow", "review", "deny"))
@@ -81,9 +82,6 @@ def policy_view(*, user, csrf, caller, ops_by_tool, current, has_tools=True, err
         sections.append(
             "<section><div class='row'>"
             f"<h2>{esc(tool)}</h2>"
-            f"<button type='button' onclick=\"setTool('{esc(tool)}','allow')\">Allow all</button>"
-            f"<button type='button' onclick=\"setTool('{esc(tool)}','review')\">Review all</button>"
-            f"<button type='button' onclick=\"setTool('{esc(tool)}','deny')\">Deny all</button>"
             "</div>"
             "<table><thead><tr><th>Operation</th><th>Risk</th><th>Description</th><th>Effect</th></tr></thead>"
             f"<tbody>{''.join(op_rows)}</tbody></table></section>"

@@ -23,9 +23,11 @@ _NAV_LINKS = (("/", "Dashboard", "dashboard"),
 
 def page(title: str, body: str, *, user: str | None, csrf: str = "", nav: str = "") -> str:
     if user:
-        links = "".join(
-            f"<a href='{href}'{' class=\"active\"' if nav == key else ''}>{esc(label)}</a>"
-            for href, label, key in _NAV_LINKS)
+        nav_links = []
+        for href, label, key in _NAV_LINKS:
+            active = ' class="active"' if nav == key else ""
+            nav_links.append(f"<a href='{href}'{active}>{esc(label)}</a>")
+        links = "".join(nav_links)
         header = (
             f"<div class='brand'><h1>Toolstack Admin</h1><nav class='appnav'>{links}</nav></div>"
             f"<form method='post' action='/logout'>{_csrf_field(csrf)}"

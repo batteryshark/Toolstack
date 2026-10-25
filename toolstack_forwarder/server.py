@@ -111,18 +111,16 @@ def _handler(config: RestConfig, secrets: SecretClient, timeout: float, max_body
         do_PUT = do_PATCH = do_DELETE = do_GET
 
         def _verify_channel_secret(self) -> tuple[bool, str]:
-            # The channel credential is the E_SECRET the runner minted for
-            # this tool. It arrives as `X-Toolstack-Secret` from the broker,
-            # sourced from the toolyard state file (Phase 4). The tool
-            # compares the header against $TOOLSTACK_E_SECRET (set by the
-            # runner at start); absent -> feature off (Phase 5: no more
-            # FS-fallback `broker_secret` file).
+            # Independently minted channel credential, never the SPS key.
+            # Missing configuration fails closed. This does not isolate
+            # unrestricted processes belonging to the same OS owner.
             import os as _os
-            expected = _os.environ.get("TOOLSTACK_E_SECRET") or ""
+            expected = _os.environ.get("TOOLSTACK_CHANNEL_SECRET") or ""
             if not expected:
-                return True, ""
+                return False, "channel_secret_missing"
             presented = (self.headers.get("X-Toolstack-Secret") or "").strip()
-            if not hmac.compare_digest(presented, expected):
+            if (not presented.isascii() or not expected.isascii()
+                    or not hmac.compare_digest(presented, expected)):
                 return False, "channel_secret_mismatch"
             return True, ""
 

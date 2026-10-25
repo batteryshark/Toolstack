@@ -56,7 +56,7 @@ class _FakePlugin:
 
 
 class _FakeAudit:
-    def event(self, action, *, tool_id="", secret_name=""):
+    def event(self, action, *, tool_id="", secret_name="", outcome="ok"):
         pass
 
 

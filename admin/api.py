@@ -9,7 +9,7 @@ only, like the rest of the admin.
 
 Split out of ``server.create_app`` so the JSON surface stays separate from the HTML server.
 Covers the full operator surface: auth, broker status/control, callers/policies/tokens, tools
-(add/author/update + secret declarations), secret values, and the request + audit log.
+(add/author/update + secret declarations), unknown-safe secret status, and the request + audit log.
 """
 
 from __future__ import annotations
@@ -26,6 +26,8 @@ from toolyard import openapi_import
 from . import (auth, broker_config, secret_values, settings, supervisor,
                tool_authoring, tool_sources, toolyard_ops)
 from .store_access import open_store
+from . import operator_audit
+from .blocking import work
 
 # broker lifecycle action -> the admin.* audit event it records (shared with the HTML handler)
 _BROKER_EVENTS = {"start": "broker_started", "stop": "broker_stopped", "restart": "broker_restarted"}
@@ -77,14 +79,14 @@ async def _json_object(request: Request) -> dict:
 
 
 def add_api_routes(app: FastAPI, secret: str, guard) -> None:
-    """Register the ``/api/*`` JSON routes on the admin app. ``secret`` is the session-signing
-    secret (same one the cookie uses), so a token minted here is interchangeable with the panel's.
+    """Register JSON routes. The startup secret argument is retained for compatibility;
+    requests use the generation snapshot set by the shared middleware instead.
     ``guard`` is the shared :class:`loginguard.LoginGuard` so /api/login and /login throttle as one."""
 
     def require_user(request: Request) -> str:
         authz = request.headers.get("authorization", "")
         token = authz[7:].strip() if authz[:7].lower() == "bearer " else ""
-        user = auth.verify_session(token, secret)
+        user = auth.verify_session(token, request.state.session_secret)
         if not user:
             raise HTTPException(status_code=401, detail="unauthorized")
         return user
@@ -106,7 +108,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             # same fail-closed message for bad user OR bad password; don't reveal which
             raise HTTPException(status_code=401, detail="invalid credentials")
         guard.record_success(ip)
-        token = auth.sign_session(username, secret, settings.session_ttl_seconds())
+        token = auth.sign_session(username, request.state.session_secret, settings.session_ttl_seconds())
         return {"token": token, "username": username}
 
     @app.get("/api/broker")
@@ -119,7 +121,9 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             raise HTTPException(status_code=400, detail=f"unknown broker action: {action}")
         config = broker_config.load()
         try:
-            result = supervisor.stop() if action == "stop" else getattr(supervisor, action)(config)
+            result = await work.run(supervisor.stop) if action == "stop" else await work.run(getattr(supervisor, action), config)
+        except HTTPException:
+            raise
         except Exception as exc:  # a failed spawn is a 502, not a 500
             raise HTTPException(status_code=502, detail=f"broker {action} failed: {exc}")
         with open_store(config) as store:
@@ -224,8 +228,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
 
     @app.delete("/api/audit")
     async def api_clear_audit(user: str = Depends(require_user)):
-        with open_store(broker_config.load()) as store:
-            store.clear_audit()
+        operator_audit.clear_audit(broker_config.load(), user)
         return {"ok": True}
 
     @app.get("/api/tools")
@@ -263,6 +266,11 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             tool["source"] = tool_sources.read_source(tool["path"])  # sidecar (path/github) or null
         return {"tools": tools}
 
+    @app.get("/api/catalog")
+    async def api_catalog(user: str = Depends(require_user)):
+        from .catalog_observation import observe_catalog
+        return await work.run(observe_catalog, broker_config.load())
+
     @app.post("/api/tools")
     async def api_add_tool(request: Request, user: str = Depends(require_user)):
         """Add a tool by COPYING it into the broker's tools dir (where it's auto-discovered). The
@@ -285,14 +293,14 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             existing = []  # can't confirm uniqueness while some tool fails to load; _ingest still guards the dir
         try:
             if repo:
-                tool = tool_sources.add_from_github(
+                tool = await work.run(tool_sources.add_from_github,
                     repo, config.tools_root, existing,
                     subdir=data.get("subdir", ""), ref=data.get("ref", ""))
             elif manifest is not None:
                 # author-from-code-only: copy the folder + write the supplied manifest (no toolyard.toml needed)
-                tool = tool_sources.add_with_manifest(source, config.tools_root, existing, manifest)
+                tool = await work.run(tool_sources.add_with_manifest, source, config.tools_root, existing, manifest)
             else:
-                tool = tool_sources.add_from_path(source, config.tools_root, existing)
+                tool = await work.run(tool_sources.add_from_path, source, config.tools_root, existing)
         except tool_sources.NoManifest:
             raise HTTPException(status_code=422, detail="no toolyard.toml at that location; author one to add it")
         except ValueError as exc:
@@ -371,7 +379,7 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         if tool_id not in by_id:
             raise HTTPException(status_code=404, detail=f"no such tool: {tool_id}")
         try:
-            tool = tool_sources.update(by_id[tool_id]["path"])
+            tool = await work.run(tool_sources.update, by_id[tool_id]["path"])
         except tool_sources.NoManifest:
             raise HTTPException(status_code=422, detail="the tool's source no longer has a toolyard.toml")
         except ValueError as exc:
@@ -382,19 +390,16 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
 
     @app.delete("/api/tools/{tool_id}")
     async def api_remove_tool(tool_id: str, user: str = Depends(require_user)):
-        """Remove a TSR-managed tool: stop it if running and delete its folder under the tools
-        root. A tool referenced from an external tool_dir is not deleted (a 400 explains how to
-        unregister it)."""
+        """Delete a managed folder, or unregister an external source while retaining files."""
         config = broker_config.load()
+        from .tool_removal import remove_tool
         try:
-            toolyard_ops.remove(tool_id, config.tools_root, config.tool_dirs)
+            result = await work.run(remove_tool, config, tool_id, user)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        with open_store(config) as store:
-            operations.record_admin_event(store, user, "tool_removed", {"tool": tool_id})
-        return {"removed": tool_id}
+        return result
 
     def _declared_fields(config, tool_id: str) -> list[str]:
         """The secret FIELDS a tool declares (or None if there's no such tool)."""
@@ -408,9 +413,10 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
 
     @app.get("/api/tools/{tool_id}/secrets")
     async def api_tool_secret_status(tool_id: str, user: str = Depends(require_user)):
-        """Which of a tool's declared secret fields currently have a value, and whether the operator
-        can set them here. Provisioning is supported only for the local 'vault' backend; values are
-        NEVER returned, only set/unset status."""
+        """Declared fields and inspection status; values are never fetched.
+        Unknown inspection is null, not evidence that fields are absent.
+        Provisioning remains host-side only.
+        """
         config = broker_config.load()
         declared = _declared_fields(config, tool_id)
         if declared is None:
@@ -422,7 +428,14 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         return {"backend": settings.sps_info()["plugin"],
                 "settable": secret_values.is_settable(),
                 "fields": declared,
-                "provisioned": provisioned}
+                "provisioned": provisioned,
+                "status": "UNKNOWN" if provisioned is None else "KNOWN"}
+
+    @app.post("/api/tools/{tool_id}/secrets")
+    async def api_obsolete_provisioning(tool_id: str, user: str = Depends(require_user)):
+        # Explicit tombstone for old native clients. Do not parse or persist
+        # their value body, and never manufacture a successful provisioning.
+        raise HTTPException(status_code=410, detail="Secret provisioning is host-side only; this API has been removed")
 
     # Per-tool lifecycle. Declared AFTER the literal /update route so that matches
     # first; this catches start | stop | restart. Mirrors the HTML panel's /toolyard/tools/{id}/{action}.
@@ -442,11 +455,13 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
             raise HTTPException(status_code=404, detail=f"no such tool: {tool_id}")
         try:
             if action == "stop":
-                toolyard_ops.stop(tool_id)
+                await work.run(toolyard_ops.stop, tool_id)
             else:
-                getattr(toolyard_ops, action)(
+                await work.run(getattr(toolyard_ops, action),
                     tool_id, config.tools_root, config.tool_dirs,
                     settings.tool_runner_backend())
+        except HTTPException:
+            raise
         except Exception as exc:  # a failed spawn/build is a 502, not a 500
             raise HTTPException(status_code=502, detail=f"tool {action} failed: {exc}")
         with open_store(config) as store:
@@ -464,41 +479,11 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         data = await _json_object(request)
         current = broker_config.load()
 
-        def _int(key: str, default: int) -> int:
-            if key not in data:
-                return default
-            try:
-                return int(data[key])
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=400, detail=f"{key} must be an integer")
-
-        port = _int("port", current.port)
-        approval_ttl = _int("approval_ttl", current.approval_ttl)
-        rate_limit = _int("rate_limit", current.rate_limit)
-        if not 1 <= port <= 65535:
-            raise HTTPException(status_code=400, detail="port must be 1..65535")
-        if approval_ttl < 1:
-            raise HTTPException(status_code=400, detail="approval_ttl must be >= 1")
-        if rate_limit < 0:
-            raise HTTPException(status_code=400, detail="rate_limit must be >= 0")
-        # nod token is write-only: keep the stored value unless a new non-empty one is given.
-        nod_token = (data.get("nod_token") or "").strip() or current.nod_token
-        updated = broker_config.BrokerRunConfig(
-            port=port,
-            db_path=current.db_path,  # not editable here: changing it would orphan the DB
-            tools_root=(data.get("tools_root") or current.tools_root).strip() or current.tools_root,
-            nod_url=data.get("nod_url", current.nod_url).strip(),
-            nod_token=nod_token,
-            nod_channel=data.get("nod_channel", current.nod_channel).strip(),
-            approval_ttl=approval_ttl,
-            rate_limit=rate_limit,
-            tool_dirs=current.tool_dirs,
-        )
         try:
-            broker_config.validate_nod_url(updated.nod_url)  # SSRF guard (carries the nod token)
+            updated = broker_config.merge_update(current, data)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        broker_config.save(updated)  # the operator restarts the broker to apply (like the HTML panel)
+        operator_audit.save_config(current, updated, user)
         return updated.masked()
 
     @app.get("/api/secret-backend")

@@ -90,7 +90,7 @@ def check_sp(ctx: HandlerContext, msg: dict[str, Any]) -> None:
         raise AuthError(f"{_SP_PREFIX} mismatch")
 
 
-def check_es(ctx: HandlerContext, tool_id: str, msg: dict[str, Any]) -> None:
+def check_es(ctx: HandlerContext, tool_id: str, msg: dict[str, Any]) -> Registration:
     """Verify the E_SECRET matches the registered tool. Raises AuthError /
     ToolNotFound on any failure."""
     val = msg.get(_ES_PREFIX)
@@ -101,6 +101,7 @@ def check_es(ctx: HandlerContext, tool_id: str, msg: dict[str, Any]) -> None:
         raise ToolNotFound(tool_id)
     if not constant_time_eq(val, rec.esecret):
         raise AuthError(f"{_ES_PREFIX} mismatch")
+    return rec
 
 
 # ---- helpers ----------------------------------------------------------------
@@ -111,6 +112,7 @@ def parse_cs_tuples(entries: Any) -> tuple[dict, ...]:
     if not isinstance(entries, list):
         raise BadRegistration("secrets must be a JSON array")
     out: list[dict] = []
+    names = set()
     for e in entries:
         if not isinstance(e, dict):
             raise BadRegistration("each secret entry must be an object")
@@ -118,10 +120,13 @@ def parse_cs_tuples(entries: Any) -> tuple[dict, ...]:
         field = e.get("field")
         if not isinstance(name, str) or not name:
             raise BadRegistration("secret name must be a non-empty string")
+        if name in names:
+            raise BadRegistration("duplicate secret name")
+        names.add(name)
         if not isinstance(field, str) or not field:
             raise BadRegistration("secret field must be a non-empty string")
         item = e.get("item")
-        if item is not None and not isinstance(item, str):
+        if item is not None and (not isinstance(item, str) or not item):
             raise BadRegistration("secret item must be a string or null")
         writable = e.get("writable", False)
         if not isinstance(writable, bool):
@@ -146,11 +151,10 @@ def handle_register(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any]:
     check_sp(ctx, msg)
     tool_id = _field(msg, "toolid")
     esecret = msg.get("esecret")
-    if not isinstance(esecret, str) or not _HEX_RE.match(esecret) or len(esecret) < 32:
+    if not isinstance(esecret, str) or not _HEX_RE.fullmatch(esecret) or len(esecret) < 32:
         raise BadRegistration("esecret must be a hex string of at least 32 chars")
     entries = parse_cs_tuples(msg.get("secrets"))
     ctx.store.register(tool_id, Registration(esecret=esecret, secret_entries=entries))
-    ctx.audit.event("register", tool_id=tool_id)
     return {"status": "ok"}
 
 
@@ -158,14 +162,21 @@ def handle_unregister(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any
     check_sp(ctx, msg)
     tool_id = _field(msg, "toolid")
     ctx.store.unregister(tool_id)
-    ctx.audit.event("unregister", tool_id=tool_id)
     return {"status": "ok"}
 
 
 def handle_get_secrets(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any]:
+    from .transport import _active, Budget
+    token = _active.set(Budget(getattr(ctx.plugin, "timeout", 15.0)))
+    try:
+        return _get_secrets_bounded(ctx, msg)
+    finally:
+        _active.reset(token)
+
+
+def _get_secrets_bounded(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any]:
     tool_id = _field(msg, "toolid")
-    check_es(ctx, tool_id, msg)
-    rec = ctx.store.get(tool_id)
+    rec = check_es(ctx, tool_id, msg)
     if rec is None:  # belt-and-suspenders; check_es already raised
         raise ToolNotFound(tool_id)
     body: dict[str, str] = {}
@@ -182,8 +193,7 @@ def handle_get_secrets(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, An
 def handle_get_secret(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any]:
     tool_id = _field(msg, "toolid")
     name = _field(msg, "name")
-    check_es(ctx, tool_id, msg)
-    rec = ctx.store.get(tool_id)
+    rec = check_es(ctx, tool_id, msg)
     if rec is None:
         raise ToolNotFound(tool_id)
     match = next((e for e in rec.secret_entries if e.get("name") == name), None)
@@ -200,8 +210,7 @@ def handle_get_secret(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any
 def handle_write_secret(ctx: HandlerContext, msg: dict[str, Any]) -> dict[str, Any]:
     tool_id = _field(msg, "toolid")
     name = _field(msg, "name")
-    check_es(ctx, tool_id, msg)
-    rec = ctx.store.get(tool_id)
+    rec = check_es(ctx, tool_id, msg)
     if rec is None:
         raise ToolNotFound(tool_id)
     match = next((e for e in rec.secret_entries if e.get("name") == name), None)

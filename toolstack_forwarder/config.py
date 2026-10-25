@@ -135,6 +135,8 @@ def _load_operations(path: Path, raw: Any, secrets: dict[str, SecretDecl]) -> di
         name = _string(item, "name", path, field)
         if not _ID_RE.match(name):
             raise _err(path, f"{field}.name", "must match [A-Za-z0-9][A-Za-z0-9_-]*")
+        if name in {"refresh", "refresh_one"}:
+            raise _err(path, f"{field}.name", f"reserved operation {name!r}")
         if name in operations:
             raise _err(path, f"{field}.name", f"duplicate operation {name!r}")
 
@@ -185,6 +187,8 @@ def _load_operations(path: Path, raw: Any, secrets: dict[str, SecretDecl]) -> di
             raise _err(path, f"{field}.redact_response_headers", "must be a boolean")
 
         rules = _load_rules(path, field, item.get("secret_update_rules", []), writable)
+        if rules and not {"redact_response_body", "redact_response_headers"} <= item.keys():
+            raise _err(path, field, "writeback requires explicit redact_response_body and redact_response_headers decisions")
         operations[name] = Operation(
             name=name,
             risk=item.get("risk", "unknown") if isinstance(item.get("risk", "unknown"), str) else "unknown",

@@ -1,74 +1,52 @@
-# Packaging the Toolstack operator app
+# Local development packaging
 
-Turns the SwiftPM executable into a distributable, signed, notarized macOS `.app`.
+The approved path is **LOCAL Apple Development signing**, not distribution.
+The approved Clear desk UI is built. A parent local build, Apple Development signing
+and separate strict/deep verification passed; see [bounded evidence](../../docs/mac-local-signing.md).
+An existing approved identity is required on the machine performing the recipe.
+Current evidence binds the product to `78ea904` (unchanged at `8e4bb2e`). The
+isolated-copy fixture's codesign-only HOME repair also passed real signing and
+separate verification while OFF; this does not establish live app acceptance.
+See the linked evidence for the first failed hands attempt and fresh readiness gate.
 
-## 1. Build the bundle (no credentials needed)
-
-```sh
-./packaging/build-app.sh        # → "build/Toolstack Operator.app" (unsigned)
-open "build/Toolstack Operator.app"     # run it
-```
-
-`build-app.sh` does `swift build -c release`, then assembles `Toolstack Operator.app/Contents/`
-(`MacOS/ToolstackApp` + `Info.plist`). Because it's a real bundle, the app activates as a normal
-windowed app; the `AppDelegate` activation-policy shim only mattered for `swift run`.
-
-## 2. Sign + notarize (one command)
-
-Notarization uses an **App Store Connect API key**: no Apple ID or app-specific password, so it
-can't trip the account lock that `notarytool store-credentials` password auth sometimes does.
-
-Two gitignored files supply the config (both already set up on this Mac):
-
-- **`packaging/signing.env`**: `DEVELOPER_ID_APP` (the "Developer ID Application: ..." identity) + `TEAM_ID`.
-- **`secrets/secrets.env`**: `APP_STORE_CONNECT_API_ISSUER_ID` + `APP_STORE_CONNECT_API_KEY_PATH`
-  (path to your `AuthKey_<KEYID>.p8`; the key-id is read from that filename).
-
-Create the key once at **App Store Connect → Users and Access → Integrations → App Store Connect
-API**, download the `.p8` into `macapp/secrets/`, and put its issuer id + path in `secrets/secrets.env`.
-
-Then, every release, one command (builds, signs, notarizes, staples):
+From `macapp/`, build the existing bundle with
+`bash packaging/build-app.sh` (output: `build/Toolstack Operator.app`). Then use an
+explicit, already-existing approved identity; no identity discovery or account setup
+is performed by these scripts:
 
 ```sh
-./packaging/sign-and-notarize.sh
+bash packaging/sign-local.sh --identity 'Apple Development: APPROVED EXISTING IDENTITY' --app 'build/Toolstack Operator.app'
+bash packaging/verify-local.sh 'build/Toolstack Operator.app'
 ```
 
-It signs with Hardened Runtime + a secure timestamp, submits with the API key, waits, staples the
-ticket, and finally zips the **stapled** bundle to `build/ToolstackOperator.zip`; that zip is the
-deliverable (the ticket travels inside the `.app`, so it passes Gatekeeper offline; the recipient
-unzips and drags it to `/Applications`). `spctl --assess` at the end should report **accepted /
-Notarized Developer ID**, i.e. it opens on any Mac with no Gatekeeper warning.
+Alternatively set `TOOLSTACK_LOCAL_SIGN_IDENTITY` explicitly for `sign-local.sh`.
+The app path defaults to `macapp/build/Toolstack Operator.app`, relative to the
+script, not the caller's directory. Both scripts accept paths containing spaces.
+Signing requires an existing bundle; it never builds. It uses
+`codesign --force --sign IDENTITY --timestamp=none`, without hardened runtime,
+ad-hoc fallback, secure timestamp or network submission. Verification is a
+**separate command**, `codesign --verify --deep --strict --verbose=2 APP`;
+run it and require success independently. Missing bundle/identity or failed
+codesign exits nonzero. Sign success alone is not verification evidence.
 
-### Entitlements
+Neither script sources `signing.env`, `secrets.env` or any credential file, invokes
+notarytool/spctl, enumerates identities, nor changes certificates/accounts.
+The signing tool itself uses the existing local keychain identity; these scripts
+do not export its key. Stub tests are argv/failure contracts, not real signing proof.
 
-None are needed for this app: it isn't sandboxed (Developer ID, not App Store), and under Hardened
-Runtime both outgoing network connections (to the admin) and access to the app's **own** Keychain
-items (the saved bearer token) are allowed without an entitlement. Add
-`--entitlements packaging/Toolstack.entitlements` to the `codesign` line only if a future feature
-needs a specific Hardened-Runtime exception (e.g. JIT).
+Strict/deep verification proves signature consistency only: not functional behavior,
+Keychain compatibility, notarization, Gatekeeper acceptance or distribution safety.
+See [local evidence and remaining checks](../../docs/mac-local-signing.md).
 
-## 3. Distribute
+## Historical distribution script — not the default
 
-`build/ToolstackOperator.zip` (produced in step 2) is the artifact; hand it out as-is. If you'd
-rather ship a disk image instead of a zip, wrap the stapled app in a signed `.dmg`:
+`sign-and-notarize.sh` is retained unchanged as historical distribution automation.
+It **builds, sources private configuration, signs with Developer ID, submits to
+Apple, staples and assesses Gatekeeper**. Do not execute or source it for this
+release's local path. Its presence establishes no configured credentials,
+distributable artifact or successful notarization. Developer ID, notary API keys,
+account changes and distribution are out of scope.
 
-```sh
-hdiutil create -volname "Toolstack" -srcfolder "build/Toolstack Operator.app" \
-    -ov -format UDZO build/Toolstack.dmg
-codesign --sign "$DEVELOPER_ID_APP" build/Toolstack.dmg   # sign the dmg too if you ship it
-```
-
-## Versioning
-
-Bump `CFBundleShortVersionString` (marketing, e.g. `0.2.0`) and `CFBundleVersion` (build number) in
-`packaging/Info.plist` per release. The bundle id `com.toolstack.operator` matches the Keychain
-service the app uses to remember your login. Keep them in sync.
-
-## Icons
-
-- **App icon**: generated at build time (`sips` + `iconutil`) from `packaging/AppIcon-source.png`
-  (a 1024×1024 PNG). Replace that file and rebuild to rebrand; no `.icns` is committed.
-- **Menu-bar (systray) glyph**: `Sources/ToolstackApp/Resources/MenuBarIcon.png`, a 36×36
-  *template* image (alpha = the glyph, RGB ignored) so macOS tints it for the light/dark menu bar.
-  It's a SwiftPM resource loaded via `Bundle.module`; `build-app.sh` copies the resource bundle into
-  the `.app` so it resolves there too.
+Bundle identifier, version, Info.plist and icon assets are unchanged. The builder
+generates the app icon from `AppIcon-source.png` and copies SwiftPM resources;
+signature verification does not certify visual behavior or resource completeness.

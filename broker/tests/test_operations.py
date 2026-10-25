@@ -119,7 +119,7 @@ class Operations(unittest.TestCase):
                 call()
 
     def test_revoke_unknown_token_is_noop_without_audit(self):
-        count = operations.revoke_token(self.store, "deadbeef", "op")
+        count = operations.revoke_token(self.store, "deadbeef1234", "op")
         self.assertEqual(count, 0)
         self.assertEqual(self._admin_events("token_revoked"), [])
 

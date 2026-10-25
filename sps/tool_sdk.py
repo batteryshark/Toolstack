@@ -20,6 +20,7 @@ import os
 from typing import Optional
 
 from sps.client import SPSClient
+from sps.config import strict_bool
 
 
 _DEFAULT_HOST = "127.0.0.1"
@@ -59,7 +60,7 @@ class SecretClient:
         host = os.environ.get("TOOLSTACK_SPS_HOST", _DEFAULT_HOST)
         port = int(os.environ.get("TOOLSTACK_SPS_PORT", str(_DEFAULT_PORT)))
         ca_file = os.environ.get("TOOLSTACK_SPS_CA")
-        verify = os.environ.get("TOOLSTACK_SPS_VERIFY", "1") == "1"
+        verify = strict_bool(os.environ.get("TOOLSTACK_SPS_VERIFY", "1"))
         return cls(tool_id, host=host, port=port, esecret=esecret,
                    ca_file=ca_file, verify=verify)
 
@@ -75,8 +76,7 @@ class SecretClient:
 
     def refresh(self, name: str) -> str:
         """Force-refresh one secret from SPS and update the cache."""
-        body = self._cli.get_secret(self._tool_id, name)
-        value = body.get("secrets", {}).get(name, "")
+        value = self._cli.get_secret(self._tool_id, name)
         self._cache[name] = value
         return value
 

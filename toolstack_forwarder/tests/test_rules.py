@@ -1,7 +1,10 @@
+import hashlib
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 from toolstack_forwarder.config import SecretUpdateRule
-from toolstack_forwarder.rules import RuleError, extract_value, match_status
+from toolstack_forwarder.rules import RuleError, apply_secret_update_rules, extract_value, match_status
 
 
 class Extractors(unittest.TestCase):
@@ -41,6 +44,33 @@ class Extractors(unittest.TestCase):
         with self.assertRaises(RuleError) as cm:
             extract_value(self.rule("json", "missing"), "{}")
         self.assertEqual(cm.exception.code, "rule_extraction_failed")
+
+    def test_success_and_partial_failure_logs_only_metadata(self):
+        value = "fake-low-entropy-1234"
+        digest = hashlib.sha256(value.encode()).hexdigest()
+        op = SimpleNamespace(secret_update_rules=(
+            self.rule("json", "token", "first"), self.rule("json", "token", "second")))
+        response = {"status": 200, "body": '{"token":"' + value + '"}'}
+        for partial in (False, True):
+            secrets = mock.Mock()
+            if partial:
+                secrets.writeback.side_effect = [None, OSError("fake")]
+            with self.subTest(partial=partial), self.assertLogs("toolstack_forwarder.rules", level="INFO") as logs:
+                if partial:
+                    with self.assertRaises(RuleError) as caught:
+                        apply_secret_update_rules(op, response, secrets)
+                    self.assertEqual(caught.exception.envelope(), {
+                        "error": "secret_update_failed", "detail": "OSError", "secret": "second"})
+                else:
+                    apply_secret_update_rules(op, response, secrets)
+            secrets.writeback.assert_has_calls([mock.call("first", value), mock.call("second", value)])
+            text = "\n".join(logs.output)
+            self.assertIn("first", text)
+            self.assertIn("rule=json", text)
+            self.assertIn("partial writes" if partial else "second", text)
+            self.assertNotIn(value, text)
+            self.assertNotIn(digest, text)
+            self.assertNotIn("sha256", text)
 
 
 if __name__ == "__main__":

@@ -49,6 +49,19 @@ class ConfigLoad(unittest.TestCase):
         self.assertFalse(op.redact_response_body)
         self.assertFalse(op.redact_response_headers)
 
+    def test_refresh_dispatch_names_reserved_with_or_without_secrets(self):
+        for name in ("refresh", "refresh_one"):
+            for secrets in ("", '\n[[secrets]]\nname="fake"\nfield="FAKE"\n'):
+                with self.subTest(name=name, secrets=bool(secrets)), self.assertRaisesRegex(
+                        ConfigError, "reserved operation"):
+                    load_config(self._write(BASE.replace('name = "get_user"', f'name = "{name}"') + secrets))
+
+    def test_similar_names_are_not_reserved(self):
+        for name in ("Refresh", "refresh_two", "refresh_one_more"):
+            with self.subTest(name=name):
+                cfg = load_config(self._write(BASE.replace('name = "get_user"', f'name = "{name}"')))
+                self.assertIn(name, cfg.operations)
+
     def test_parses_redaction_flags(self):
         cfg = load_config(self._write(BASE + """
 redact_response_body = true

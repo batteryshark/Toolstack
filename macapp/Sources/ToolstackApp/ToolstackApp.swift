@@ -33,6 +33,12 @@ enum AppImages {
 
 @main
 struct ToolstackApp: App {
+    init() {
+        if let index = CommandLine.arguments.firstIndex(of: "--snapshot-directory"), CommandLine.arguments.count > index + 1 {
+            NativeSnapshots.run(directory: CommandLine.arguments[index + 1])
+            exit(0)
+        }
+    }
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
 
@@ -60,11 +66,11 @@ struct MenuBarMenu: View {
         Divider()
         if model.authenticated {
             Button("Start broker") { Task { await model.brokerAction("start") } }
-                .disabled(model.broker?.running == true || model.busy)
+                .disabled(model.broker?.running == true || model.busy || model.effectInFlight || model.uncertainMutation != nil)
             Button("Stop broker") { Task { await model.brokerAction("stop") } }
-                .disabled(model.broker?.running != true || model.busy)
+                .disabled(model.broker?.running != true || model.busy || model.effectInFlight || model.uncertainMutation != nil)
             Button("Restart broker") { Task { await model.brokerAction("restart") } }
-                .disabled(model.busy)
+                .disabled(model.busy || model.effectInFlight || model.uncertainMutation != nil)
             Divider()
         }
         Button("Open Toolstack Operator") {
@@ -85,18 +91,36 @@ struct MenuBarMenu: View {
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
             if model.restoring {
                 ProgressView("Connecting...").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.authenticated {
-                OperatorView()
+                OperatorView().id(model.generation)
             } else {
                 LoginView()
             }
         }
         .task { await model.restoreSession() }   // resume a saved session on launch
+        .task(id: scenePhase == .active && model.authenticated) {
+            guard scenePhase == .active, model.authenticated,
+                  !CommandLine.arguments.contains("--snapshot-directory") else { return }
+            while !Task.isCancelled {
+                await model.refreshWhileActive(true)
+                do { try await Task.sleep(for: .seconds(20)) }
+                catch { return }
+            }
+        }
+        .alert(model.confirmation?.title ?? "Confirm", isPresented: Binding(
+            get: { model.confirmation != nil }, set: { if !$0 { model.confirmation = nil } }
+        ), presenting: model.confirmation) { confirmation in
+            Button("Cancel", role: .cancel) {}
+            Button(confirmation.title.replacingOccurrences(of: "?", with: ""), role: .destructive) {
+                Task { await confirmation.action() }
+            }
+        } message: { confirmation in Text(confirmation.effect) }
         .overlay(alignment: .top) {
             if let error = model.error {
                 Text(error)
@@ -142,10 +166,20 @@ struct LoginView: View {
 
 struct OperatorView: View {
     @EnvironmentObject var model: AppModel
+    @State var selection = 0
 
     var body: some View {
         VStack(spacing: 0) {
             BrokerBar()
+            if let uncertain = model.uncertainMutation {
+                HStack {
+                    Text(uncertain)
+                    Spacer()
+                    Button("Reload and compare") { Task { await model.compareMutationState() } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.effectInFlight)
+                }.padding()
+            }
             Divider()
             if let banner = model.banner {
                 HStack(alignment: .top) {
@@ -155,14 +189,23 @@ struct OperatorView: View {
                         .buttonStyle(.borderless).foregroundStyle(.secondary)
                 }
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                .background(.green.opacity(0.15))
+                .background(.blue.opacity(0.08))
             }
-            TabView {
-                CallersPane().tabItem { Label("Callers", systemImage: "person.2") }
-                ToolsPane().tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
-                ActivityPane().tabItem { Label("Activity", systemImage: "list.bullet.rectangle") }
-                ConfigPane().tabItem { Label("Config", systemImage: "gearshape") }
-            }
+            Picker("Section", selection: $selection) {
+                Text("Callers").tag(0)
+                Text("Tools").tag(1)
+                Text("Activity").tag(2)
+                Text("Config").tag(3)
+            }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: 560).frame(height: 32).padding(10)
+            Divider()
+            Group {
+                switch selection {
+                case 1: ToolsPane()
+                case 2: ActivityPane()
+                case 3: ConfigPane()
+                default: CallersPane()
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .task { await model.refreshAll() }
     }
@@ -178,8 +221,8 @@ struct BrokerBar: View {
         HStack(spacing: 8) {
             Image(systemName: "server.rack").foregroundStyle(.secondary)
             Text("Broker").font(.headline)
-            Circle().fill(running ? .green : .secondary).frame(width: 9, height: 9)
-            Text(running ? "running" : "stopped").font(.callout).foregroundStyle(.secondary)
+             Circle().fill(Color.secondary).frame(width: 9, height: 9)
+            Text(model.broker == nil ? "Unknown" : running ? "Alive" : "Stopped").font(.callout).foregroundStyle(.secondary)
             if let port = model.broker?.port {
                 Text(verbatim: ":\(port)").font(.caption).foregroundStyle(.secondary)  // no thousands separator
             }
@@ -195,16 +238,18 @@ struct BrokerBar: View {
     private func control(_ symbol: String, _ help: String, disabled: Bool,
                          _ action: @escaping () async -> Void) -> some View {
         Button { Task { await action() } } label: {
-            Image(systemName: symbol).frame(width: 16)
+            Image(systemName: symbol).frame(width: 32, height: 32)
         }
         .buttonStyle(.bordered)
         .help(help)
-        .disabled(disabled || model.busy)
+        .accessibilityLabel(help)
+        .disabled(disabled || model.busy || model.effectInFlight || model.uncertainMutation != nil)
     }
 }
 
 struct CallersPane: View {
     @EnvironmentObject var model: AppModel
+    @State private var selection: Set<Int> = []
     @State private var newName = ""
     @State private var editing: Caller?       // caller whose policy is being edited
     @State private var enablingTools: Caller? // caller whose enabled-tools are being set
@@ -217,7 +262,7 @@ struct CallersPane: View {
                 Button("Add") { Task { await model.createCaller(name: newName); newName = "" } }
                     .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty || model.busy)
             }
-            Table(model.callers) {
+            Table(model.callers, selection: $selection) {
                 TableColumn("Caller", value: \.name)
                 TableColumn("Status") { caller in
                     Text(caller.isActive ? "active" : "revoked")
@@ -227,15 +272,26 @@ struct CallersPane: View {
                     if caller.isActive {
                         Menu {
                             Button("Enabled tools...") { enablingTools = caller }
-                            Button("Edit policy...") { editing = caller }
+                            Button(model.policyDrafts[caller.name] == nil ? "Edit policy…" : "Resume policy draft · \(caller.name)") { editing = caller }
                             Button("Rotate token") { Task { await model.rotateToken(caller: caller.name) } }
                             Divider()
-                            Button("Revoke caller", role: .destructive) { revoking = caller }
+                            Button("Revoke caller", role: .destructive) { Task {
+                                if await model.prepareCallerConfirmation(caller.name) { revoking = caller }
+                            } }
                         } label: { Image(systemName: "ellipsis.circle") }
                         .menuStyle(.borderlessButton).fixedSize()
                     }
                 }
             }
+            // Native table primary actions handle double-click and Return, excluding controls.
+            .contextMenu(forSelectionType: Int.self) { ids in
+                if let caller = Caller.policyTarget(in: model.callers, selection: ids) {
+                    Button(model.policyDrafts[caller.name] == nil ? "Edit policy…" : "Resume policy draft · \(caller.name)") { editing = caller }
+                }
+            } primaryAction: { ids in
+                editing = Caller.policyTarget(in: model.callers, selection: ids)
+            }
+            .help("Double-click an active caller or press Return to open policy settings")
         }
         .padding()
         .navigationTitle("Callers")
@@ -280,18 +336,70 @@ func riskBadge(_ risk: String) -> some View {
 struct ToolsPane: View {
     @EnvironmentObject var model: AppModel
     @State private var editing: ToolInfo?
-    @State private var managingSecrets: ToolInfo?
     @State private var addingTool = false
-    @State private var removingTool: ToolInfo?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
+            if let failure = model.toolsError {
+                HStack {
+                    Text(failure)
+                    Spacer()
+                    Button("Retry listing") { Task { await model.refreshTools() } }
+                }.padding()
+            }
             Divider()
+            if let target = model.continuationTarget {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Tools / \(target)").font(.title2.bold())
+                    Text(model.registrationObserved(for: target) ? "Registration observed · Verified" : "Registration observation · Unknown")
+                    if let tool = model.tools.first(where: { $0.id == target }), model.toolsError == nil {
+                        Text("Process: \(tool.observedStatus)")
+                        HStack {
+                            Spacer()
+                            Button("Refresh observation") { Task { await model.refreshCatalog() } }
+                            if model.uncertainMutation != nil {
+                                Text("Reload and compare the pending outcome first.").foregroundStyle(.secondary)
+                            } else if tool.alive == false {
+                                Button("Start \(target)") { Task { await model.toolAction(id: target, action: "start") } }
+                                    .buttonStyle(.borderedProminent).help("Executes this trusted tool; does not grant access or restart the broker")
+                            } else if tool.alive == true && !model.registrationObserved(for: target) {
+                                Button("Review broker restart") { Task { await model.brokerAction("restart") } }
+                                    .buttonStyle(.borderedProminent)
+                            } else if model.registrationObserved(for: target) {
+                                Button("Done") { model.continuationTarget = nil }.buttonStyle(.borderedProminent)
+                            }
+                        }.disabled(model.effectInFlight || model.uncertainMutation != nil)
+                    } else {
+                        Button("Refresh observation") { Task { await model.refreshCatalog() } }
+                            .disabled(model.effectInFlight)
+                    }
+                }.padding(20).frame(maxWidth: 840).frame(maxWidth: .infinity)
+                Divider()
+            }
+            if model.continuationTarget == nil, model.toolsError == nil, let failed = model.tools.first(where: { $0.alive == false && $0.running }) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("\(failed.id) · Process absent").font(.title2.bold())
+                    HStack { Text("Process"); Spacer(); Text("Not alive") }
+                    HStack { Text("Runner record"); Spacer(); Text("Running") }
+                    HStack {
+                        Text("Failed").foregroundStyle(.orange)
+                        Spacer()
+                        Button("Refresh state") { Task { await model.refreshTools() } }
+                        if model.uncertainMutation == nil {
+                            Button("Review restart") { Task { await model.toolAction(id: failed.id, action: "restart") } }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.effectInFlight)
+                        }
+                    }
+                }.padding(20).frame(maxWidth: 840).controlSize(.large)
+                    .frame(maxWidth: .infinity).padding(.vertical, 16)
+                Divider()
+            }
             if model.tools.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "wrench.and.screwdriver").font(.largeTitle).foregroundStyle(.secondary)
-                    Text("No tools registered").foregroundStyle(.secondary)
+                    Text(model.toolsError == nil ? "No tools found" : "Tool listing unknown").foregroundStyle(.secondary)
                     Text("Author tools into the broker's tools dir, then restart it.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -312,7 +420,11 @@ struct ToolsPane: View {
                                         Task { await model.resyncTool(id: tool.id) }
                                     }
                                 }
-                                Button("Remove tool...", role: .destructive) { removingTool = tool }
+                                if let external = tool.removable {
+                                    Button(external ? "Unregister external folder…" : "Remove managed folder…", role: .destructive) { model.requestRemoval(tool) }
+                                } else {
+                                    Text("Folder ownership unknown · Removal unavailable")
+                                }
                             } label: { Image(systemName: "ellipsis.circle") }
                                 .menuStyle(.borderlessButton).fixedSize()
                                 .help("Manage this tool")
@@ -330,9 +442,6 @@ struct ToolsPane: View {
                         HStack {
                             Text("Secrets").font(.caption.bold()).foregroundStyle(.secondary)
                             Spacer()
-                            if model.secretBackend?.name == "vault" && !tool.secrets.isEmpty {
-                                Button("Set values...") { managingSecrets = tool }.font(.caption)
-                            }
                         }
                         if tool.secrets.isEmpty {
                             Text("No secrets declared.").font(.caption).foregroundStyle(.secondary)
@@ -341,17 +450,20 @@ struct ToolsPane: View {
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            Circle().fill(tool.running ? .green : .secondary).frame(width: 8, height: 8)
+                            Text(model.toolsError == nil ? tool.observedStatus : "Unknown · Last known row").font(.caption).foregroundStyle(model.toolsError == nil && tool.observedStatus == "Failed" ? .orange : .secondary)
                             Text(tool.id).bold()
+                            if model.toolsError == nil && tool.alive == false && tool.running {
+                                Text("Process absent · Runner record running").font(.caption)
+                            }
                             Text(tool.type).font(.caption).foregroundStyle(.secondary)
                             Spacer()
-                            toolControl("play.fill", "Start", disabled: tool.running) {
+                            toolControl("play.fill", "Start \(tool.id)", disabled: tool.alive == true) {
                                 await model.toolAction(id: tool.id, action: "start")
                             }
-                            toolControl("stop.fill", "Stop", disabled: !tool.running) {
+                            toolControl("stop.fill", "Stop \(tool.id)", disabled: !tool.running) {
                                 await model.toolAction(id: tool.id, action: "stop")
                             }
-                            toolControl("arrow.clockwise", "Restart", disabled: false) {
+                            toolControl("arrow.clockwise", "Restart \(tool.id)", disabled: false) {
                                 await model.toolAction(id: tool.id, action: "restart")
                             }
                         }
@@ -363,21 +475,12 @@ struct ToolsPane: View {
         .sheet(item: $editing) { tool in
             ToolEditor(tool: tool).environmentObject(model)
         }
-        .sheet(item: $managingSecrets) { tool in
-            SecretValuesSheet(tool: tool).environmentObject(model)
+        .task {
+            let epoch = model.generation
+            await model.refreshTools()
+            guard epoch == model.generation else { return }
+            await model.refreshSecretBackend()
         }
-        .confirmationDialog("Remove tool?", isPresented: removingToolBinding, presenting: removingTool) { tool in
-            Button("Remove \(tool.id)", role: .destructive) {
-                Task { await model.removeTool(id: tool.id) }
-            }
-        } message: { tool in
-            Text("Deletes \(tool.id)'s folder from the broker's tools dir. This can't be undone.")
-        }
-        .task { await model.refreshTools(); await model.refreshSecretBackend() }
-    }
-
-    private var removingToolBinding: Binding<Bool> {
-        Binding(get: { removingTool != nil }, set: { if !$0 { removingTool = nil } })
     }
 
     private var headerBar: some View {
@@ -413,10 +516,11 @@ struct ToolsPane: View {
     // A compact per-row lifecycle button. .borderless so a tap hits the button, not the disclosure.
     private func toolControl(_ symbol: String, _ help: String, disabled: Bool,
                              _ action: @escaping () async -> Void) -> some View {
-        Button { Task { await action() } } label: { Image(systemName: symbol) }
+        Button { Task { await action() } } label: { Image(systemName: symbol).frame(width: 32, height: 32).contentShape(Rectangle()) }
             .buttonStyle(.borderless)
             .help(help)
-            .disabled(disabled || model.busy)
+            .accessibilityLabel(help)
+            .disabled(disabled || model.busy || model.effectInFlight || model.uncertainMutation != nil)
     }
 
     private func opRow(_ op: OpInfo) -> some View {
@@ -450,21 +554,50 @@ struct PolicyEditor: View {
     @EnvironmentObject var model: AppModel
     let caller: String
     @Environment(\.dismiss) private var dismiss
-    @State private var effects: [String: Effect] = [:]            // "tool.op" -> effect
-    @State private var enabled: Set<String> = []
+    @State private var draft: PolicyDraft
     @State private var loaded = false
+    @State private var loadFailed = false
+    @State private var leaving = false
+    @State private var resumed = false
+    @State private var discarded = false
+    @State private var identity: UUID?
 
-    private var enabledTools: [ToolInfo] { model.tools.filter { enabled.contains($0.id) } }
+    init(caller: String, fixture: PolicyDraft? = nil) {
+        self.caller = caller
+        _draft = State(initialValue: fixture ?? PolicyDraft(caller: caller))
+        _loaded = State(initialValue: fixture != nil && fixture?.phase != .loadFailed)
+        _loadFailed = State(initialValue: fixture?.phase == .loadFailed)
+        _resumed = State(initialValue: fixture?.dirty == true)
+    }
+
+    private var enabledTools: [ToolInfo] { model.tools.filter { draft.enabled.contains($0.id) } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Policy: \(caller)").font(.title2.bold())
                 Spacer()
-                Button("Allow all") { setAll(.allow) }.disabled(!loaded || effects.isEmpty)
-                Button("Deny all") { setAll(.deny) }.disabled(!loaded || effects.isEmpty)
             }
-            if !loaded {
+            if resumed { Text("Resume policy draft · \(caller)").font(.callout) }
+            if draft.phase == .rejected { Text("Save rejected · Draft retained").foregroundStyle(.red) }
+            if draft.phase == .unknown {
+                Text("Save outcome unknown · Draft retained")
+                Button("Reload and compare") { Task {
+                    let epoch = model.generation
+                    if let response = await model.loadPolicy(for: caller) {
+                        guard epoch == model.generation else { return }
+                        draft.compare(response)
+                        model.policyDrafts[caller] = draft
+                    }
+                } }.buttonStyle(.borderedProminent)
+            }
+            if draft.phase == .conflict { Text("Reloaded policy differs from this draft. Review before saving.") }
+            if draft.phase == .saved { Text("Policy matches saved state for \(caller).") }
+            if loadFailed {
+                Text("Could not load policy for \(caller). Your policy has not been changed.")
+                Button("Retry") { Task { await load() } }.buttonStyle(.borderedProminent)
+                Spacer()
+            } else if !loaded {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if enabledTools.isEmpty {
                 VStack(spacing: 6) {
@@ -483,14 +616,30 @@ struct PolicyEditor: View {
             }
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Save") { Task { await save() } }
-                    .keyboardShortcut(.defaultAction).disabled(!loaded || model.busy)
+                Button("Close") { if draft.dirty { leaving = true } else { dismiss() } }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(draft.phase == .saving)
+                Button(draft.phase == .rejected ? "Retry save" : "Save") { Task { await save() } }
+                    .buttonStyle(.borderedProminent)
+                    .frame(minHeight: 32).contentShape(Rectangle())
+                    .keyboardShortcut(.defaultAction).disabled(!loaded || !draft.canSave || model.busy)
             }
         }
         .padding()
-        .frame(minWidth: 560, minHeight: 480)
+        .frame(minWidth: 560, idealWidth: 760, maxWidth: 840, minHeight: 480, idealHeight: 560, maxHeight: 620)
+        .controlSize(.large)
+        .tint(.blue)
         .task { await load() }
+        .interactiveDismissDisabled(draft.dirty)
+        .confirmationDialog("Discard policy draft for \(caller)?", isPresented: $leaving) {
+            Button("Stay", role: .cancel) {}
+            Button("Discard draft for \(caller)", role: .destructive) {
+                discarded = true
+                model.policyDrafts[caller] = nil
+                dismiss()
+            }
+        }
+        .onDisappear { if identity == model.generation && draft.dirty && !discarded { model.policyDrafts[caller] = draft } }
     }
 
     @ViewBuilder
@@ -507,37 +656,44 @@ struct PolicyEditor: View {
             Picker("", selection: bind("\(tool.id).\(op.op)")) {
                 ForEach(Effect.allCases) { Text($0.rawValue.capitalized).tag($0) }
             }.pickerStyle(.segmented).labelsHidden()
+                .accessibilityLabel("\(caller) / \(tool.id) / \(op.op) policy")
+                .disabled(!draft.canSave)
         }.padding(.vertical, 2)
     }
 
     private func bind(_ key: String) -> Binding<Effect> {
-        Binding(get: { effects[key] ?? .deny }, set: { effects[key] = $0 })
-    }
-
-    private func setAll(_ effect: Effect) {
-        for key in Array(effects.keys) { effects[key] = effect }
+        Binding(get: { draft.effects[key] ?? .deny }, set: {
+            draft.set($0, for: key)
+            model.policyDrafts[caller] = draft
+        })
     }
 
     private func load() async {
-        await model.refreshTools()
-        guard let resp = await model.loadPolicy(for: caller) else { loaded = true; return }
-        enabled = Set(resp.enabled)
-        var ops: [String: Effect] = [:]
-        for tool in enabledTools {
-            for op in tool.ops { ops["\(tool.id).\(op.op)"] = resp.policy.effect(tool: tool.id, op: op.op) }
+        if CommandLine.arguments.contains("--snapshot-directory") { return }
+        let epoch = model.generation
+        identity = epoch
+        loadFailed = false
+        loaded = false
+        if let saved = model.policyDrafts[caller] {
+            draft = saved; loaded = true; resumed = true; return
         }
-        effects = ops
+        guard await model.refreshTools() else { loadFailed = true; return }
+        guard epoch == model.generation else { return }
+        guard let resp = await model.loadPolicy(for: caller) else { loadFailed = true; return }
+        guard epoch == model.generation else { return }
+        draft.load(resp)
         loaded = true
     }
 
     private func save() async {
-        var allow: [String] = [], review: [String] = []
-        // allow/review listed; deny == omitted (absent is denied)
-        for (key, effect) in effects {
-            if effect == .allow { allow.append(key) } else if effect == .review { review.append(key) }
-        }
-        await model.savePolicy(caller: caller, allow: allow, review: review)
-        dismiss()
+        guard draft.canSave else { return }
+        let pending = draft
+        let epoch = model.generation
+        _ = draft.beginSave()
+        let result = await model.writePolicy(pending)
+        guard epoch == model.generation else { return }
+        draft = result
+        if draft.phase == .saved { model.policyDrafts[caller] = nil; dismiss() }
     }
 }
 
@@ -549,13 +705,49 @@ struct EnabledToolsEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selected: Set<String> = []
     @State private var loaded = false
+    @State private var failed = false
+    @State private var saving = false
+    @State private var outcome: MutationResult?
+    @State private var showPolicy = false
+    @State private var comparedConflict = false
+    @State private var initial: Set<String> = []
+    @State private var leaving = false
+    @State private var resumed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Enabled tools: \(caller)").font(.title2.bold())
-            Text("Which tools this caller may use. The policy editor shows ops for these.")
-                .font(.caption).foregroundStyle(.secondary)
-            if !loaded {
+            if resumed { Text("Resume enabled-tools draft · \(caller)") }
+            if comparedConflict { Text("Remote enablements changed. Local toggles merged; review before saving.") }
+            else if outcome == .rejected { Text("Save rejected · Selection retained").foregroundStyle(.red) }
+            if outcome == .unknown {
+                Text("Save outcome unknown · Reload before retrying")
+                Button("Reload and compare") { Task {
+                    let epoch = model.generation
+                    if let response = await model.loadPolicy(for: caller) {
+                        guard epoch == model.generation else { return }
+                        if Set(response.enabled) == selected {
+                            model.enabledDrafts[caller] = nil
+                            model.enabledOutcomes[caller] = nil
+                            model.enabledBaselines[caller] = nil
+                            initial = selected
+                            showPolicy = true
+                        } else {
+                            selected = EnabledToolsMerge.reconcile(baseline: initial, local: selected, remote: Set(response.enabled))
+                            initial = Set(response.enabled)
+                            model.enabledBaselines[caller] = initial
+                            comparedConflict = true
+                            model.enabledDrafts[caller] = selected
+                            outcome = .rejected
+                            model.enabledOutcomes[caller] = .rejected
+                        }
+                    }
+                } }
+            }
+            if failed {
+                Text("Could not load enabled tools for \(caller).")
+                Button("Retry") { Task { await load() } }
+            } else if !loaded {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.tools.isEmpty {
                 Text("No tools registered.").foregroundStyle(.secondary)
@@ -568,34 +760,83 @@ struct EnabledToolsEditor: View {
                             Text(tool.type).font(.caption).foregroundStyle(.secondary)
                         }
                     }
+                    .disabled(saving || outcome == .unknown)
                 }
             }
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Save") { Task { await save() } }
-                    .keyboardShortcut(.defaultAction).disabled(!loaded || model.busy)
+                Button("Close") { if selected != initial { leaving = true } else { dismiss() } }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(saving)
+                Button("Save and edit policy") { Task { await save() } }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction).disabled(!loaded || saving || outcome == .unknown)
             }
         }
         .padding()
         .frame(minWidth: 420, minHeight: 360)
         .task { await load() }
+        .sheet(isPresented: $showPolicy, onDismiss: { dismiss() }) {
+            PolicyEditor(caller: caller).environmentObject(model)
+        }
+        .interactiveDismissDisabled(selected != initial)
+        .confirmationDialog("Discard enabled-tools draft for \(caller)?", isPresented: $leaving) {
+            Button("Stay", role: .cancel) {}
+            Button("Discard draft for \(caller)", role: .destructive) {
+                model.enabledDrafts[caller] = nil
+                model.enabledOutcomes[caller] = nil
+                model.enabledBaselines[caller] = nil
+                dismiss()
+            }
+        }
     }
 
     private func toggle(_ id: String) -> Binding<Bool> {
         Binding(get: { selected.contains(id) },
-                set: { if $0 { selected.insert(id) } else { selected.remove(id) } })
+                set: {
+                    if $0 { selected.insert(id) } else { selected.remove(id) }
+                    model.enabledDrafts[caller] = selected
+                    model.enabledBaselines[caller] = initial
+                })
     }
 
     private func load() async {
-        await model.refreshTools()
-        if let resp = await model.loadPolicy(for: caller) { selected = Set(resp.enabled) }
+        let epoch = model.generation
+        failed = false
+        loaded = false
+        guard await model.refreshTools() else { failed = true; return }
+        guard epoch == model.generation else { return }
+        guard let resp = await model.loadPolicy(for: caller) else { failed = true; return }
+        guard epoch == model.generation else { return }
+        initial = model.enabledBaselines[caller] ?? Set(resp.enabled)
+        selected = model.enabledDrafts[caller] ?? initial
+        resumed = model.enabledDrafts[caller] != nil
+        outcome = model.enabledOutcomes[caller]
+        if resumed && outcome != .unknown {
+            selected = EnabledToolsMerge.reconcile(baseline: initial, local: selected, remote: Set(resp.enabled))
+            initial = Set(resp.enabled)
+            model.enabledBaselines[caller] = initial
+            model.enabledDrafts[caller] = selected
+        }
         loaded = true
     }
 
     private func save() async {
-        await model.setEnabledTools(caller: caller, enabled: Array(selected))
-        dismiss()
+        guard loaded, !saving, outcome != .unknown else { return }
+        saving = true
+        let epoch = model.generation
+        let result = await model.setEnabledTools(caller: caller, enabled: Array(selected))
+        guard epoch == model.generation else { return }
+        outcome = result
+        model.enabledOutcomes[caller] = outcome
+        saving = false
+        if outcome == .success {
+            model.enabledDrafts[caller] = nil
+            model.enabledBaselines[caller] = nil
+            model.enabledOutcomes[caller] = nil
+            initial = selected
+            showPolicy = true
+        }
     }
 }
 
@@ -718,86 +959,12 @@ struct EditableSecret: Identifiable {
     init() { name = ""; field = ""; writable = false; item = "" }
 }
 
-/// Provision a tool's secret VALUES into the local vault. Values are write-only: typed into a
-/// SecureField, sent, and never shown back; the sheet only knows set/unset status per field.
-struct SecretValuesSheet: View {
-    let tool: ToolInfo
-    @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var status: SecretStatus?
-    @State private var entries: [String: String] = [:]   // field -> the value being typed
-    @State private var saving: String?                    // field currently being saved
-    @State private var note: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Secret values: \(tool.id)").font(.title2.bold())
-            Text("Stored in the local encrypted vault. Values are write-only: they're saved, never "
-                 + "shown back. Restart the tool to pick up a change.")
-                .font(.caption).foregroundStyle(.secondary)
-            if status == nil {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(tool.secrets) { secretRow($0) }
-            }
-            HStack {
-                if let note { Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding().frame(minWidth: 540, minHeight: 360)
-        .task { status = await model.secretStatus(toolId: tool.id) }
-    }
-
-    private func secretRow(_ secret: SecretDecl) -> some View {
-        let isSet = status?.provisioned.contains(secret.field) ?? false
-        return HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(secret.name).bold()
-                    Image(systemName: "arrow.right").font(.caption2).foregroundStyle(.secondary)
-                    Text(secret.field).font(.caption).foregroundStyle(.secondary)
-                    Text(isSet ? "set" : "not set").font(.caption2)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background((isSet ? Color.green : .orange).opacity(0.2), in: .capsule)
-                }
-                SecureField("new value", text: binding(secret.field))
-                    .textFieldStyle(.roundedBorder).frame(maxWidth: 300)
-                    .onSubmit { Task { await save(secret.field) } }
-            }
-            Spacer()
-            Button(saving == secret.field ? "Saving..." : "Save") { Task { await save(secret.field) } }
-                .disabled((entries[secret.field] ?? "").isEmpty || saving != nil)
-        }.padding(.vertical, 3)
-    }
-
-    private func binding(_ field: String) -> Binding<String> {
-        Binding(get: { entries[field] ?? "" }, set: { entries[field] = $0 })
-    }
-
-    private func save(_ field: String) async {
-        let value = entries[field] ?? ""
-        guard !value.isEmpty else { return }
-        saving = field
-        let ok = await model.setSecretValue(toolId: tool.id, field: field, value: value)
-        saving = nil
-        if ok {
-            entries[field] = ""                                    // clear the typed value
-            note = "Saved \(field)."
-            status = await model.secretStatus(toolId: tool.id)     // refresh set/unset
-        } else {
-            note = model.error
-        }
-    }
-}
-
 /// Add a tool by pointing at a folder that contains a toolyard.toml. The path is on the ADMIN's
 /// machine: for a local admin that's this Mac (use "Choose..."); for a remote/Docker admin, type a
 /// path it can see. The folder is copied into the broker's managed tools dir.
 struct AddToolSheet: View {
     enum Mode: String, CaseIterable, Identifiable {
-        case folder = "Local folder", github = "GitHub"
+        case folder = "Admin host folder", github = "GitHub"
         var id: String { rawValue }
     }
 
@@ -808,7 +975,6 @@ struct AddToolSheet: View {
     @State private var repo = ""
     @State private var subdir = ""
     @State private var ref = ""
-    @State private var picking = false
     @State private var addError: String?
     @State private var authoringFor: String?   // set when a picked folder has no toolyard.toml
 
@@ -844,9 +1010,6 @@ struct AddToolSheet: View {
         }
         .padding()
         .frame(minWidth: 520, minHeight: 230)
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result { path = url.path }   // a local pick fills the field
-        }
     }
 
     @ViewBuilder private var folderFields: some View {
@@ -855,7 +1018,8 @@ struct AddToolSheet: View {
             .font(.caption).foregroundStyle(.secondary)
         HStack {
             TextField("/path/to/tool-folder", text: $path).textFieldStyle(.roundedBorder)
-            Button("Choose...") { picking = true }
+            Button("Author a tool…") { authoringFor = path }
+                .disabled(path.trimmingCharacters(in: .whitespaces).isEmpty)
         }
     }
 
@@ -949,6 +1113,9 @@ struct ToolAuthoringForm: View {
     @State private var operations: [EditableOp] = [EditableOp()]
     @State private var secrets: [EditableSecret] = []
     @State private var saveError: String?
+    @State private var importing = false
+    @State private var specification = ""
+    @State private var authHeaders: [ParsedAuthHeader] = []
 
     private let risks = ["read", "write", "destructive"]   // matches admin RISK_CHOICES
     private let toolTypes = ["api", "mcp", "rest"]          // matches admin TOOL_TYPES
@@ -964,8 +1131,8 @@ struct ToolAuthoringForm: View {
                 Spacer()
             }
             Text("Author a tool").font(.title2.bold())
-            Text("No toolyard.toml in \(source). Describe the tool. The folder is copied into the "
-                 + "broker's tools dir with the manifest you write here.")
+            Button("Import OpenAPI…") { importing = true }
+            Text("Admin host folder: \(source). Creating copies this folder with the reviewed manifest.")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(2)
             Form {
                 Section("Tool") {
@@ -976,6 +1143,12 @@ struct ToolAuthoringForm: View {
                     TextField("description (optional)", text: $description, axis: .vertical).lineLimit(1...3)
                     if type == "rest" {
                         TextField("base URL, e.g. https://api.example.com/v1", text: $baseURL)
+                        ForEach(authHeaders) { header in
+                            Text("\(header.name): \(header.value)").font(.caption.monospaced())
+                        }
+                        if !authHeaders.isEmpty {
+                            Text("Header templates for calls—not automatically sent").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 Section {
@@ -1008,6 +1181,36 @@ struct ToolAuthoringForm: View {
         }
         .padding()
         .frame(minWidth: 580, minHeight: 560)
+        .sheet(isPresented: $importing) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Import OpenAPI · Review draft").font(.title2.bold())
+                Text("Paste the specification. Parsing only prepares an editable draft.")
+                TextEditor(text: $specification).font(.body.monospaced())
+                if let error = model.error { Text(error).foregroundStyle(.red) }
+                HStack {
+                    Spacer()
+                    Button("Cancel") { importing = false }.keyboardShortcut(.cancelAction)
+                    Button("Parse to draft") { Task { await importDraft() } }
+                        .buttonStyle(.borderedProminent).disabled(specification.isEmpty || model.busy)
+                }
+            }.padding().frame(width: 600, height: 420)
+        }
+    }
+
+    private func importDraft() async {
+        guard let parsed = await model.parseOpenAPI(specification) else { return }
+        type = "rest"; baseURL = parsed.baseUrl; authHeaders = parsed.authHeaders
+        secrets = parsed.secrets.map(EditableSecret.init(from:))
+        operations = parsed.operations.map { source in
+            var op = EditableOp()
+            op.name = source.name; op.verb = source.verb; op.path = source.path
+            op.risk = source.risk; op.description = source.description
+            op.bodyKind = source.bodyKind; op.bodyContentType = source.bodyContentType ?? ""
+            op.allowedHeaders = source.allowedHeaders.map { EditableHeader(name: $0) }
+            op.args = source.args.map { EditableArg(name: $0.name, type: $0.type, required: $0.required) }
+            return op
+        }
+        importing = false
     }
 
     private var entrypointHint: String {
@@ -1200,12 +1403,9 @@ struct ToolAuthoringForm: View {
             "operations": operations.compactMap { op -> [String: Any]? in
                 guard !s(op.name).isEmpty else { return nil }
                 if type == "rest" {
-                    var row: [String: Any] = [
-                        "name": s(op.name), "verb": s(op.verb), "path": s(op.path),
-                        "description": s(op.description), "body_kind": s(op.bodyKind),
-                    ]
                     let headers = op.allowedHeaders.map { s($0.name) }.filter { !$0.isEmpty }
-                    if !headers.isEmpty { row["allowed_headers"] = headers }
+                    var row = RestAuthoringPayload.operation(name: s(op.name), verb: s(op.verb), path: s(op.path),
+                        description: s(op.description), bodyKind: s(op.bodyKind), allowedHeaders: headers)
                     let rules = op.secretUpdateRules.compactMap { rule -> [String: Any]? in
                         let target = s(rule.secretName)
                         guard !target.isEmpty else { return nil }
@@ -1249,9 +1449,6 @@ struct ActivityPane: View {
                 }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: 220)
                 Spacer()
                 if model.busy { ProgressView().controlSize(.small) }
-                Button { Task { await model.clearAudit() } } label: { Image(systemName: "trash") }
-                    .help("Clear audit log")
-                    .disabled(model.busy || (model.audit?.audit.isEmpty ?? true))
                 Button { Task { await model.refreshAudit() } } label: { Image(systemName: "arrow.clockwise") }
                     .help("Refresh")
             }

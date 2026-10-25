@@ -7,14 +7,18 @@ final class StubURLProtocol: URLProtocol {
     static var handler: ((URLRequest) -> (Int, [String: String], Data))?
     static var lastRequest: URLRequest?
     static var lastBody: Data?
+    static var failure: Error?
+    static var requestCount = 0
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func stopLoading() {}
 
     override func startLoading() {
+        Self.requestCount += 1
         StubURLProtocol.lastRequest = request
         StubURLProtocol.lastBody = Self.readBody(request)
+        if let failure = Self.failure { client?.urlProtocol(self, didFailWithError: failure); return }
         let (status, headers, data) = StubURLProtocol.handler!(request)
         let resp = HTTPURLResponse(url: request.url!, statusCode: status,
                                    httpVersion: "HTTP/1.1", headerFields: headers)!
@@ -56,6 +60,58 @@ final class ApiClientTests: XCTestCase {
         StubURLProtocol.handler = nil
         StubURLProtocol.lastRequest = nil
         StubURLProtocol.lastBody = nil
+        StubURLProtocol.failure = nil
+        StubURLProtocol.requestCount = 0
+    }
+
+    func testImportedHeaderDeclarationPayloadIsNotStaticInjection() async throws {
+        let row = RestAuthoringPayload.operation(name: "read", verb: "GET", path: "/notes",
+            description: "Read", bodyKind: "none", allowedHeaders: ["Authorization"])
+        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"id":"notes","type":"rest","description":"","path":"/fake/notes"}"#.utf8)) }
+        _ = try await makeClient().addToolWithManifest(source: "/fake/source", manifest: [
+            "id": "notes", "type": "rest", "operations": [row],
+            "secrets": [["name": "api_token", "field": "API_TOKEN", "writable": false]]
+        ])
+        let body = try bodyJSON()
+        let manifest = try XCTUnwrap(body["manifest"] as? [String: Any])
+        let operation = try XCTUnwrap((manifest["operations"] as? [[String: Any]])?.first)
+        XCTAssertEqual(operation["allowed_headers"] as? [String], ["Authorization"])
+        XCTAssertNil(manifest["auth_headers"])
+        XCTAssertNil(operation["headers"])
+        XCTAssertEqual((manifest["secrets"] as? [[String: Any]])?.first?["field"] as? String, "API_TOKEN")
+    }
+
+    func testPolicyTimeoutIsUnknownAndNotReplayed() async throws {
+        StubURLProtocol.failure = URLError(.timedOut)
+        do {
+            _ = try await makeClient().setPolicy(caller: "writer", allow: ["notes.read"], review: [])
+            XCTFail("Expected timeout")
+        } catch {
+            XCTAssertEqual(MutationResult(error: error), .unknown)
+            XCTAssertEqual(StubURLProtocol.requestCount, 1)
+            XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "PUT")
+        }
+    }
+
+    func testPolicyHTTPRejectionRetainsDraft() async throws {
+        StubURLProtocol.handler = { _ in (400, [:], Data(#"{"detail":"validation"}"#.utf8)) }
+        var draft = PolicyDraft(caller: "writer")
+        do {
+            _ = try await makeClient().setPolicy(caller: "writer", allow: [], review: [])
+            XCTFail("Expected rejection")
+        } catch {
+            draft.failed(error)
+            XCTAssertEqual(draft.phase, .rejected)
+            XCTAssertEqual(draft.caller, "writer")
+        }
+    }
+
+    func testPolicyLoadFailureCannotSave() async throws {
+        StubURLProtocol.handler = { _ in (503, [:], Data(#"{"detail":"unavailable"}"#.utf8)) }
+        var draft = PolicyDraft(caller: "writer")
+        do { draft.load(try await makeClient().policy(for: "writer")); XCTFail("Expected failed load") }
+        catch { draft.loadFailed() }
+        XCTAssertFalse(draft.beginSave())
     }
 
     func testLoginSendsPasswordUnauthedAndStoresToken() async throws {
@@ -219,7 +275,7 @@ final class ApiClientTests: XCTestCase {
 
     func testSecretBackendDecodes() async throws {
         StubURLProtocol.handler = { _ in
-            (200, [:], Data(#"{"name":"infisical","host":"https://infisical.example.test","default_vault":"ToolServer","organization_slug":"org","identity_configured":true}"#.utf8))
+            (200, [:], Data(#"{"plugin":"infisical","host":"https://infisical.example.test","default_vault":"ToolServer","organization_slug":"org","identity_configured":true}"#.utf8))
         }
         let backend = try await makeClient(token: "t").secretBackend()
         XCTAssertEqual(backend.name, "infisical")
@@ -311,24 +367,13 @@ final class ApiClientTests: XCTestCase {
     }
 
     func testSecretStatusDecodes() async throws {
-        let json = #"{"backend":"vault","settable":true,"fields":["API_KEY"],"provisioned":["API_KEY"]}"#
+        let json = #"{"backend":"localfile","settable":false,"fields":["API_KEY"],"provisioned":null,"status":"UNKNOWN"}"#
         StubURLProtocol.handler = { _ in (200, [:], Data(json.utf8)) }
         let s = try await makeClient(token: "t").secretStatus(toolId: "echo")
-        XCTAssertTrue(s.settable)
-        XCTAssertEqual(s.provisioned, ["API_KEY"])
+        XCTAssertFalse(s.settable)
+        XCTAssertNil(s.provisioned)
         XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "GET")
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/echo/secrets")
-    }
-
-    func testSetSecretValuePostsFieldAndValue() async throws {
-        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"field":"API_KEY","set":true}"#.utf8)) }
-        let ok = try await makeClient(token: "t").setSecretValue(toolId: "echo", field: "API_KEY", value: "s3cr3t")
-        XCTAssertTrue(ok)
-        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
-        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/tools/echo/secrets")
-        let body = try bodyJSON()
-        XCTAssertEqual(body["field"] as? String, "API_KEY")
-        XCTAssertEqual(body["value"] as? String, "s3cr3t")
     }
 
     func testAuditDecodesEventsRequestsAndDetails() async throws {
@@ -345,14 +390,6 @@ final class ApiClientTests: XCTestCase {
         XCTAssertEqual(resp.requests.first?.op, "say")
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/audit")
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.query, "limit=100")   // query support works
-    }
-
-    func testClearAuditSendsDelete() async throws {
-        StubURLProtocol.handler = { _ in (200, [:], Data(#"{"ok":true}"#.utf8)) }
-        let ok = try await makeClient(token: "t").clearAudit()
-        XCTAssertTrue(ok)
-        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "DELETE")
-        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/audit")
     }
 
     func testResyncToolPostsToUpdatePath() async throws {

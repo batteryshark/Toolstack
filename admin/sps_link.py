@@ -20,11 +20,16 @@ import os
 import time
 
 from sps.client import SPSError, SPSClient
-from sps.config import load_config
+from sps.config import load_config, parse_bool
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_SPS_ENV = "/etc/toolstack/sps.env"
+
+
+def parse_verify(value: str) -> bool:
+    """Use the integrated shared TLS verification contract."""
+    return parse_bool(value, name="TOOLSTACK_SPS_VERIFY")
 
 
 class SPSLink:
@@ -50,7 +55,7 @@ class SPSLink:
             cfg = load_config(path)
             # Resolve env overrides inside the guard: a bad value (e.g.
             # TOOLSTACK_SPS_PORT=abc) must not raise into startup.
-            verify = os.environ.get("TOOLSTACK_SPS_VERIFY", "1") == "1"
+            verify = parse_verify(os.environ.get("TOOLSTACK_SPS_VERIFY", "1"))
             return cls(
                 host=os.environ.get("TOOLSTACK_SPS_HOST", cfg.sp_host),
                 port=int(os.environ.get("TOOLSTACK_SPS_PORT", str(cfg.sp_port))),

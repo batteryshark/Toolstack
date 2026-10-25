@@ -21,6 +21,10 @@ def _record(tool_id="echo", backend="process", handle="123"):
 
 class ReconcileTests(unittest.TestCase):
     def setUp(self):
+        from contextlib import nullcontext
+        patcher = mock.patch("admin.toolyard_ops.state_lock", side_effect=nullcontext)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmp = tempfile.mkdtemp(prefix="reconcile-")
         self.addCleanup(__import__("shutil").rmtree, self.tmp, ignore_errors=True)
         self._prev = os.environ.get("XDG_STATE_HOME")

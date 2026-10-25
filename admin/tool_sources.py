@@ -21,7 +21,7 @@ from pathlib import Path
 
 from toolyard.config import load as load_tool
 
-from . import tool_authoring
+from . import tool_authoring, manifest_files
 
 SIDECAR = ".tsr-source.json"
 # Don't drag a source's VCS/build cruft (or a stale sidecar) into the managed copy.
@@ -90,7 +90,9 @@ def _clone_into(tmp: Path, url: str, branch: str, sub: str) -> Path:
         raise ValueError("git is not installed on the admin's machine")
     if sub.startswith("..") or "/.." in sub or sub.startswith("/"):
         raise ValueError("subdir must be a relative path inside the repo")
-    clone = tmp / "repo"
+    # Canonicalize our own private temp directory (macOS /var is an alias),
+    # not an operator-controlled tool directory or imported manifest.
+    clone = tmp.resolve() / "repo"
     cmd = ["git", "clone", "--depth", "1"]
     if branch:
         cmd += [f"--branch={branch}"]   # '=' binds the value, so a ref can't be read as a flag
@@ -137,6 +139,7 @@ def update(dir_path: str | Path) -> dict:
                                   (source.get("subdir") or "").strip().strip("/"))
         else:
             raise ValueError(f"unknown source type: {kind!r}")
+        manifest_files.validate(new_dir)
         if not (new_dir / "toolyard.toml").exists():
             raise NoManifest(str(new_dir))
         merged = tool_authoring.read(new_dir)   # upstream operations + entrypoint
@@ -164,13 +167,13 @@ def _swap_in_place(dest: Path, new_dir: Path, merged: dict, source: dict) -> Non
     """Replace ``dest``'s contents with ``new_dir``'s files + the merged manifest + the source
     sidecar, via a staged rename so a mid-operation failure leaves the original tool intact.
 
-    Staging/backup live in ``<tools_root>/.tsr-staging/``: one level deeper than the tools, so the
+    Staging/backup live in a unique ``<tools_root>/.tsr-staging-*/``: one level deeper than the tools, so the
     ``*/toolyard.toml`` discovery glob never sees them (a half-built or crash-orphaned copy can't be
     mistaken for, or shadow, a real tool), while staying on the same filesystem so ``os.replace`` is
     atomic (no cross-device rename)."""
-    work = dest.parent / ".tsr-staging"
-    shutil.rmtree(work, ignore_errors=True)   # clear any orphan from a previous crashed update
-    work.mkdir(parents=True, exist_ok=True)
+    # Concurrent imports must not clear one another's staging/backup trees.
+    # Nested manifests remain invisible to one-level tool discovery.
+    work = Path(tempfile.mkdtemp(prefix=".tsr-staging-", dir=dest.parent))
     staging = work / dest.name
     backup = work / (dest.name + ".old")
     try:
@@ -208,6 +211,7 @@ def _clone_error(exc: subprocess.CalledProcessError) -> str:
 def _ingest(tool_dir: Path, root: Path, existing_ids, meta: dict) -> dict:
     """Validate the tool at ``tool_dir`` and copy it into ``root/<id>`` with a source sidecar.
     Shared by add_from_path / add_from_github. Raises ``NoManifest`` / ``ValueError``."""
+    manifest_files.validate(tool_dir)
     if not (tool_dir / "toolyard.toml").exists():
         raise NoManifest(str(tool_dir))
     tool = tool_authoring.read(tool_dir)        # normalized dict (id/description/ops/secrets/...)
@@ -260,12 +264,17 @@ def _copy_tool_dir(src: Path, root: Path, tool_id: str) -> Path:
     """Copy ``src`` into ``root/<tool_id>`` (rejecting a clash), rolling back a half-copy on failure.
     ``symlinks=True`` copies links verbatim rather than dereferencing them, so a link in the source
     can't materialize outside-file CONTENT into the managed (possibly synced) tools dir."""
+    manifest_files.validate(src)
     dest = root / tool_id
     if dest.exists():
         raise ValueError(f"a folder named '{tool_id}' already exists in the tools dir")
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
         shutil.copytree(src, dest, ignore=_IGNORE, symlinks=True)
+        manifest_files.validate(dest)
+    except ValueError:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise
     except shutil.Error as exc:
         shutil.rmtree(dest, ignore_errors=True)   # don't leave a half-copied dir that wedges retries
         raise ValueError("could not copy all of the tool's files") from exc

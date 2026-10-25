@@ -1,16 +1,11 @@
-"""Tool runners.
+"""Tool runners. Process mode is for trusted same-owner tools only.
+File modes and separate channel credentials are not OS isolation: another
+unrestricted process owned by the same account can read private runner state.
 
-`ProcessRunner` (dev/CI, zero infra) starts the tool as a local subprocess with
-its secrets written to a private 0700 dir, pointed at by `$TOOLSTACK_SECRETS_DIR`.
-`DockerRunner` (production) runs the tool in a container with its secrets mounted
-at `/run/secrets`. Both keep secret values entirely off the broker.
-
-On stop, the secrets dir is removed; if `start` fails partway it cleans up the
-(world-readable) secrets dir and any write-proxy it spawned, so a failed start never
-leaks secret material on disk or orphans the proxy. Docker subprocess calls carry
-timeouts so a wedged daemon can't hang the caller (start/stop runs inside an admin
-request). (Hardening note: production should inject secrets into a container tmpfs at
-start so they never touch host disk; the bind mount here is the simpler form.)
+Process tools receive an SPS capability and an independent API channel capability.
+The broker channel view contains only the latter. Response visibility still depends
+on each tool: writeback is not automatic redaction. Docker/Seatbelt SPS lifecycle
+is not yet validated, and the mutable privileged Linux helper launch is disabled.
 """
 
 from __future__ import annotations
@@ -21,13 +16,12 @@ import os
 import re
 import secrets as _secrets
 import shlex
-import shutil
 import signal
 import socket
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -59,11 +53,25 @@ _READINESS_WAIT = 0.3
 log = logging.getLogger(__name__)
 
 
+def _child_environment() -> dict[str, str]:
+    """Only runtime plumbing crosses into tools/helpers; SPS/provider masters don't.
+
+    Custom workload credentials belong in SPS, not inherited runner environment.
+    This reduces accidental disclosure, not same-account filesystem authority.
+    """
+    allowed = {"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "TZ",
+               "PYTHONPATH", "VIRTUAL_ENV", "PYTHONUNBUFFERED", "SSL_CERT_FILE",
+               "SSL_CERT_DIR", "TOOLSTACK_SPS_FAKE"}
+    return {key: value for key, value in os.environ.items()
+            if key in allowed or key.startswith("LC_")}
+
+
 def _tool_log_path(tool_def: ToolDef) -> Path:
     """Per-tool logfile in the tool folder (`logs/tool.log`) so tool output travels with
     the tool, not an opaque global state directory."""
     d = tool_def.path / "logs"
-    d.mkdir(parents=True, exist_ok=True)
+    d.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(d, 0o700)
     return d / "tool.log"
 
 
@@ -94,10 +102,35 @@ def _boot_id() -> str | None:
         return None
 
 
+def _process_identity(pid: str | int | None) -> str | None:
+    if pid is None:
+        return None
+    try:
+        if sys.platform.startswith("linux"):
+            text = Path(f"/proc/{int(pid)}/stat").read_text()
+            return text[text.rfind(")") + 2:].split()[19]
+        if sys.platform == "darwin":
+            # Darwin proc_bsdinfo ends with uint64 start_tvsec/start_tvusec.
+            # Unlike ps lstart, this retains microseconds for same-boot reuse.
+            import ctypes
+            import struct
+            library = ctypes.CDLL("/usr/lib/libproc.dylib")
+            info = ctypes.create_string_buffer(136)
+            size = library.proc_pidinfo(int(pid), 3, 0, info, len(info))
+            if size == len(info):
+                seconds, micros = struct.unpack_from("=QQ", info.raw, 120)
+                return f"{seconds}:{micros}"
+        return None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
 def _pids_are_current(running: "RunningTool") -> bool:
     """Whether persisted PIDs in this record belong to the current boot."""
     current = _boot_id()
-    return current is not None and running.boot_id == current
+    return (current is not None and running.boot_id == current and
+            running.process_identity is not None and
+            _process_identity(running.handle) == running.process_identity)
 
 
 # ---- SPS re-registration helper (used by the admin watchdog) ---------------
@@ -107,7 +140,39 @@ def _pids_are_current(running: "RunningTool") -> bool:
 # The runner re-registers on every fresh tool start; this helper re-registers
 # already-running tools without bouncing them, called by the admin watchdog
 # when it sees a new SPS boot_id.
-def reregister_all_with_sps(*, tools_root: str, tool_dirs, sps_env_path: str) -> int:
+def reregister_all_with_sps(**kwargs) -> int:
+    """Compatibility count wrapper; watchdogs should use the detailed helper."""
+    return sum(error is None for error in reregister_with_sps_results(**kwargs).values())
+
+
+@dataclass(frozen=True)
+class SPSRecoveryResult:
+    succeeded: tuple[str, ...]
+    failed: tuple[str, ...]
+
+    @property
+    def complete(self) -> bool:
+        return not self.failed
+
+    @property
+    def count(self) -> int:
+        return len(self.succeeded)
+
+
+def reregister_all_with_sps_detailed(**kwargs) -> SPSRecoveryResult:
+    results = reregister_with_sps_results(**kwargs)
+    return SPSRecoveryResult(tuple(k for k, v in results.items() if v is None),
+                             tuple(k for k, v in results.items() if v is not None))
+
+
+def reregister_with_sps_results(*, tools_root: str, tool_dirs, sps_env_path: str) -> dict[str, str | None]:
+    from .cli import state_lock
+    with state_lock():
+        return _reregister_results(tools_root=tools_root, tool_dirs=tool_dirs,
+                                   sps_env_path=sps_env_path)
+
+
+def _reregister_results(*, tools_root: str, tool_dirs, sps_env_path: str) -> dict[str, str | None]:
     """Re-register every tool currently in the toolyard state file with SPS.
 
     Idempotent: calling it for tools that are already registered is a no-op
@@ -119,12 +184,12 @@ def reregister_all_with_sps(*, tools_root: str, tool_dirs, sps_env_path: str) ->
     """
     if not os.path.exists(sps_env_path):
         log.warning("SPS re-register: sps.env not found at %s; skipping", sps_env_path)
-        return 0
+        raise RunnerConfigError("SPS configuration missing; recovery must retry")
     from .cli import _load_state
     from .config import discover, load as load_tool
     state = _load_state()
     if not state:
-        return 0
+        return {}
     defs: dict[str, ToolDef] = {}
     if tools_root:
         for d in discover(tools_root):
@@ -136,7 +201,7 @@ def reregister_all_with_sps(*, tools_root: str, tool_dirs, sps_env_path: str) ->
                 defs[load_tool(toml_path).id] = load_tool(toml_path)
             except Exception as exc:
                 log.warning("SPS re-register: cannot load %s: %s", toml_path, exc)
-    count = 0
+    results = {}
     for tool_id, rec in state.items():
         if not isinstance(rec, dict):
             continue
@@ -157,14 +222,16 @@ def reregister_all_with_sps(*, tools_root: str, tool_dirs, sps_env_path: str) ->
         tool_def = defs.get(tool_id)
         if tool_def is None:
             log.warning("SPS re-register: tool %s has e_secret but no tool_def", tool_id)
+            results[tool_id] = "tool definition missing"
             continue
         try:
             _sps_register(tool_def, e_secret, sps_env_path)
-            count += 1
+            results[tool_id] = None
             log.info("SPS re-registered %s", tool_id)
         except Exception as exc:
             log.warning("SPS re-register %s failed: %s", tool_id, exc)
-    return count
+            results[tool_id] = "registration failed"
+    return results
 
 
 # ---- SPS integration (Phase 2) --------------------------------------------
@@ -174,20 +241,50 @@ def _mint_e_secret() -> str:
     return _secrets.token_hex(64)
 
 
+class RunnerConfigError(ValueError):
+    """Invalid runner/SPS configuration (safe for ordinary exception handlers)."""
+
+
+def strict_bool(value: str) -> bool:
+    from sps.config import parse_bool
+    try:
+        return parse_bool(value, name="TOOLSTACK_SPS_VERIFY")
+    except ValueError as exc:
+        raise RunnerConfigError(str(exc)) from exc
+
+
+@dataclass(frozen=True)
+class ResolvedSPS:
+    sp_host: str
+    sp_port: int
+    sp_secret: str = field(repr=False)
+    sp_tls_ca: str
+    verify: bool
+
+
+def _resolve_sps(path):
+    from sps.config import load_config
+    try:
+        cfg = load_config(path)
+        return ResolvedSPS(os.environ.get("TOOLSTACK_SPS_HOST", cfg.sp_host),
+                           int(os.environ.get("TOOLSTACK_SPS_PORT", cfg.sp_port)),
+                           cfg.sp_secret, os.environ.get("TOOLSTACK_SPS_CA", cfg.sp_tls_ca),
+                           strict_bool(os.environ.get("TOOLSTACK_SPS_VERIFY", "1")))
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise RunnerConfigError(f"invalid SPS configuration: {exc}") from exc
+
+
 def _check_sps_env(path: str) -> str:
-    """Fail closed: sps.env must be present and mode 0600 (the SPS config
-    module raises ConfigModeError if not). Called by `runner.start()` BEFORE
-    `_sps_register` so a misconfigured SPS is caught at the gate rather than
-    at the wire."""
+    """Compatibility validation entry point; start resolves/validates once instead."""
     from sps.config import ConfigModeError, load_config
     try:
         load_config(path)
     except ConfigModeError as exc:
-        raise SystemExit(f"sps.env: {exc}") from exc
+        raise RunnerConfigError(f"sps.env: {exc}") from exc
     except FileNotFoundError as exc:
-        raise SystemExit(f"sps.env not found at {path}: {exc}") from exc
+        raise RunnerConfigError(f"sps.env not found at {path}: {exc}") from exc
     except ValueError as exc:
-        raise SystemExit(f"sps.env: {exc}") from exc
+        raise RunnerConfigError(f"sps.env: {exc}") from exc
     return path
 
 
@@ -195,15 +292,13 @@ def _sps_register(tool_def: ToolDef, e_secret: str, sps_env_path: str) -> None:
     """Open a TLS connection to SPS, verify the cert against `sp_tls_ca`,
     send a `register` JSON line carrying the tool's CS_TUPLE list."""
     from sps.client import SPSClient
-    from sps.config import load_config
-    cfg = load_config(sps_env_path)
-    verify = os.environ.get("TOOLSTACK_SPS_VERIFY", "1") == "1"
+    cfg = _resolve_sps(sps_env_path) if isinstance(sps_env_path, str) else sps_env_path
     client = SPSClient(
-        host=os.environ.get("TOOLSTACK_SPS_HOST", cfg.sp_host),
-        port=int(os.environ.get("TOOLSTACK_SPS_PORT", str(cfg.sp_port))),
+        host=cfg.sp_host,
+        port=cfg.sp_port,
         sp_secret=cfg.sp_secret,
         ca_file=cfg.sp_tls_ca,
-        verify=verify,
+        verify=cfg.verify,
     )
     cs_tuples = [
         {"name": s.name, "field": s.field, "item": s.item, "writable": bool(s.writable)}
@@ -218,27 +313,49 @@ def _sps_unregister(tool_id: str, sps_env_path: str) -> None:
     from sps.client import SPSClient
     from sps.config import load_config
     try:
-        cfg = load_config(sps_env_path)
+        cfg = _resolve_sps(sps_env_path)
     except Exception as exc:
         log.warning("SPS unregister %s: cannot load config %s: %s", tool_id, sps_env_path, exc)
         return
     try:
-        verify = os.environ.get("TOOLSTACK_SPS_VERIFY", "1") == "1"
         client = SPSClient(
-            host=os.environ.get("TOOLSTACK_SPS_HOST", cfg.sp_host),
-            port=int(os.environ.get("TOOLSTACK_SPS_PORT", str(cfg.sp_port))),
+            host=cfg.sp_host,
+            port=cfg.sp_port,
             sp_secret=cfg.sp_secret,
             ca_file=cfg.sp_tls_ca,
-            verify=verify,
+            verify=cfg.verify,
         )
         client.unregister(tool_id)
     except Exception as exc:
         log.warning("SPS unregister %s failed: %s", tool_id, exc)
 
 
-def _terminate(pid: str | int | None) -> None:
-    """SIGTERM a detached process group (a setpgroup=0 leader) and reap it; best-effort.
-    Shared by the write proxy, the egress proxy, the log follower, and start()'s cleanup."""
+def _pid_absent(pid: int) -> bool:
+    """Only ESRCH is positive absence; snapshot failure and EPERM are not.
+
+    Signal zero is a non-delivering probe of this single PID, never its group.
+    It cannot establish the fate of arbitrary descendants of a departed leader.
+    """
+    if pid <= 1:
+        raise RuntimeError("invalid process handle; retain state")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except OSError as exc:
+        raise RuntimeError("process absence unconfirmed; retain state") from exc
+    return False
+
+
+def _terminate(pid: str | int | None, identity: str | None = None,
+               boot_id: str | None = None) -> None:
+    """Reap before signalling; require a positive boot/start match for each signal.
+
+    Missing identity, permission failure and an unavailable process snapshot are
+    uncertainty, not evidence of exit. Reaping, positive OS absence, or a known
+    different boot confirm that the recorded runtime no longer exists.
+    This is trusted same-owner bookkeeping, not hostile-owner isolation.
+    """
     if pid is None:
         return
     try:
@@ -252,26 +369,75 @@ def _terminate(pid: str | int | None) -> None:
     if pid_int <= 1:
         log.warning("_terminate: refusing unsafe pid %r (≤1 would signal init or every process)", pid)
         return
-    try:
-        os.killpg(pid_int, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        pass
-    try:
-        os.waitpid(pid_int, 0)
-    except (ChildProcessError, ProcessLookupError):
-        pass
+    def reaped():
+        try:
+            return os.waitpid(pid_int, os.WNOHANG)[0] == pid_int
+        except ChildProcessError:
+            return False
+
+    # Never reap a potentially reused PID when a known identity differs. An
+    # unknown snapshot can still be resolved by a positive own-child waitpid.
+    def check_exit():
+        current_boot = _boot_id()
+        if boot_id and current_boot and boot_id != current_boot:
+            return True  # No PID probes, reaps or signals across a known reboot.
+        if boot_id and current_boot is None:
+            raise RuntimeError("process boot identity unconfirmed; retain state")
+        current = _process_identity(pid_int)
+        if identity is not None and current is not None and current != identity:
+            # Original leader is gone, but its group may survive. Do not reap or
+            # signal the replacement and do not invent a whole-cleanup receipt.
+            raise RuntimeError("process identity changed; retain state")
+        if reaped():
+            return True
+        if not boot_id or not current_boot:
+            raise RuntimeError("process boot identity unconfirmed; retain state")
+        return _pid_absent(pid_int)
+
+    if check_exit():
+        return
+    for sig, delay in ((signal.SIGTERM, 2), (signal.SIGKILL, 1)):
+        if (not boot_id or _boot_id() != boot_id or not identity or
+                _process_identity(pid_int) != identity):
+            raise RuntimeError("process identity unconfirmed; retain state")
+        try:
+            os.killpg(pid_int, sig)
+        except ProcessLookupError:
+            pass
+        except PermissionError as exc:
+            # Darwin zombies can report EPERM: reaping/ESRCH can still resolve it.
+            if check_exit():
+                return
+            raise RuntimeError("process signal denied; retain state") from exc
+        deadline = time.monotonic() + delay
+        while time.monotonic() < deadline:
+            if check_exit():
+                return
+            time.sleep(0.05)
+        if check_exit():
+            return
+    raise RuntimeError("process stop unconfirmed; retain state")
 
 
-def _cleanup_partial_start(child_pid: int | None = None,
-                           log_pid: str | None = None,
-                           egress_pid: str | None = None) -> None:
-    """Best-effort cleanup when start() fails partway. Phase 5: no secrets
-    dir mount, no write-proxy socket dir -- just reap any zombie children
-    the tool wouldn't have inherited (e.g. bwrap sudo launcher, the
-    docker log follower). start() runs inside the long-lived admin handler;
-    a leaked zombie per failed start would accrue there."""
-    for pid in (child_pid, log_pid, egress_pid):
-        _terminate(pid)
+def _cleanup_partial_start(running: "RunningTool") -> "RunningTool":
+    """Attempt every known child, preserving identities and positive exit receipts."""
+    failed = False
+    children = [("log", running.log_pid), ("egress", running.egress_pid)]
+    if running.backend in ("process", "seatbelt"):
+        children.insert(0, ("process", running.handle or None))
+    for kind, pid in children:
+        if pid is None or getattr(running, f"{kind}_exited"):
+            continue
+        try:
+            if int(pid) <= 1:
+                raise ValueError("invalid process handle")
+            _terminate(pid, getattr(running, f"{kind}_identity"), running.boot_id)
+            running = replace(running, **{f"{kind}_exited": True})
+        except BaseException:
+            failed = True
+    if failed:
+        raise RunnerStartCleanupError(running)
+    return running
 
 
 @dataclass(frozen=True)
@@ -293,6 +459,22 @@ class RunningTool:
     # A persisted PID may be recycled after reboot. Old records (without this field)
     # deserialize as unknown and are never probed or signalled by PID.
     boot_id: str | None = None
+    channel_secret: str | None = None
+    process_identity: str | None = None
+    log_identity: str | None = None
+    egress_identity: str | None = None
+    # Positive exit receipts (reap, ESRCH, known prior boot) survive retries.
+    process_exited: bool = False
+    log_exited: bool = False
+    egress_exited: bool = False
+
+
+class RunnerStartCleanupError(RuntimeError):
+    """Start failed but cleanup is unconfirmed: persist running for later recovery."""
+
+    def __init__(self, running: RunningTool):
+        super().__init__(f"start cleanup failed for {running.tool_id}; retain state record")
+        self.running = running
 
 
 def _pick_free_port() -> int:
@@ -316,32 +498,35 @@ def _start_egress_proxy(allow: tuple[str, ...]) -> tuple[str, int]:
     cmd = (f"exec {shlex.quote(sys.executable)} -m toolyard.egress_proxy "
            f"--port {port} {allow_args}")
     script = f"cd {shlex.quote(str(_REPO_ROOT))} && {cmd}"
-    pid = os.posix_spawn("/bin/sh", ["/bin/sh", "-c", script], os.environ, setpgroup=0)
+    pid = os.posix_spawn("/bin/sh", ["/bin/sh", "-c", script], _child_environment(), setpgroup=0)
     return str(pid), port
 
 
 def _stop_log_follower(running: RunningTool) -> None:
-    if _pids_are_current(running):
-        _terminate(running.log_pid)
+    if running.log_pid and not running.log_exited:
+        _terminate(running.log_pid, running.log_identity, running.boot_id)
 
 
 def _stop_egress_proxy(running: RunningTool) -> None:
-    if _pids_are_current(running):
-        _terminate(running.egress_pid)
+    if running.egress_pid and not running.egress_exited:
+        _terminate(running.egress_pid, running.egress_identity, running.boot_id)
 
 
-def _start_docker_log_follower(container: str, log_path: Path) -> str:
-    fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+def _start_docker_log_follower(container: str, log_path: Path, *, _on_spawn=None) -> str:
+    fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+    os.fchmod(fd, 0o600)
     try:
         pid = os.posix_spawn(
             "/usr/bin/env",
             ["env", "docker", "logs", "-f", container],
-            os.environ,
+            _child_environment(),
             setpgroup=0,
             file_actions=[(os.POSIX_SPAWN_DUP2, fd, 1),
                           (os.POSIX_SPAWN_DUP2, fd, 2),
                           (os.POSIX_SPAWN_CLOSE, fd)],
         )
+        if _on_spawn is not None:
+            _on_spawn(str(pid))
     finally:
         os.close(fd)
     return str(pid)
@@ -412,34 +597,42 @@ class ProcessRunner:
             raise ValueError(f"tool {tool_def.id} has no entrypoint.command")
         _check_port_free(tool_def.port)
 
-        # SPS integration: when configured (env file present, mode 0600),
-        # mint an ephemeral E_SECRET and register the tool with SPS so the
-        # tool can retrieve its secrets over TLS/TCP. When unconfigured (dev
-        # path), run the tool in "no-secrets" mode and let the tool report
-        # has_api_key: False. Tests can disable the SPS path entirely via
-        # TOOLSTACK_SPS_SKIP=1.
+        # Required secrets fail closed. Only explicit trusted-process development
+        # may opt out with TOOLSTACK_SPS_SKIP=1.
         sps_env_path = os.environ.get("TOOLSTACK_SPS_ENV", _DEFAULT_SPS_ENV)
         sps_active = (
             os.environ.get("TOOLSTACK_SPS_SKIP") != "1"
             and os.path.exists(sps_env_path)
         )
+        if (sps_active or tool_def.secrets) and self.backend != "process":
+            raise RunnerConfigError(f"{self.backend} + SPS lifecycle is not validated")
+        if tool_def.secrets and not sps_active:
+            if os.environ.get("TOOLSTACK_SPS_SKIP") != "1":
+                raise RunnerConfigError("tool declares secrets but SPS configuration is absent")
+            log.warning("DEVELOPMENT ONLY: TOOLSTACK_SPS_SKIP=1; tool %s launches without declared secrets",
+                        tool_def.id)
+        channel_secret = _secrets.token_hex(64)
+        sps_cfg = None
         e_secret = _mint_e_secret() if sps_active else None
         sps_registered = False
-        if tool_def.secrets and not sps_active:
-            log.warning("tool %s declares secrets but SPS is not active; launching without secrets",
-                        tool_def.id)
         egress_pid = egress_port = None
-        child_pid = None
         log_path = _tool_log_path(tool_def)
+        running = RunningTool(tool_def.id, tool_def.port, self.backend, "",
+                              log_path=str(log_path), boot_id=_boot_id(),
+                              e_secret=e_secret, channel_secret=channel_secret)
+
+        def mark_reaped():
+            nonlocal running
+            running = replace(running, process_exited=True)
+
         try:
             if sps_active:
                 try:
-                    _check_sps_env(sps_env_path)
-                    _sps_register(tool_def, e_secret, sps_env_path)  # type: ignore[arg-type]
+                    sps_cfg = _resolve_sps(sps_env_path)
+                    _sps_register(tool_def, e_secret, sps_cfg)
                     sps_registered = True
-                except SystemExit:
-                    # Mode-0600 failure already logged by _check_sps_env; do not
-                    # silently keep going -- refuse to launch.
+                except RunnerConfigError:
+                    # Configuration errors must not degrade to secretless launch.
                     raise
                 except Exception as exc:
                     if tool_def.secrets:
@@ -451,22 +644,28 @@ class ProcessRunner:
                                 "continuing without SPS)", tool_def.id, exc)
                     e_secret = None
                     sps_registered = False
+            running = replace(running, e_secret=e_secret,
+                              sps_host=sps_cfg.sp_host if sps_cfg else _DEFAULT_SPS_HOST,
+                              sps_port=sps_cfg.sp_port if sps_cfg else _DEFAULT_SPS_PORT,
+                              sps_ca=sps_cfg.sp_tls_ca if sps_cfg else None)
             policy = self._policy(tool_def)
             if policy.egress.allow:
                 egress_pid, egress_port = _start_egress_proxy(policy.egress.allow)
+                running = replace(running, egress_pid=egress_pid)
+                running = replace(running, egress_identity=_process_identity(egress_pid))
             env = {
-                **os.environ,
+                **_child_environment(),
                 "TOOLSTACK_PORT": str(tool_def.port),
                 "TOOLSTACK_TOOL_CONFIG": str(tool_def.path / "toolyard.toml"),
             }
+            env.pop("TOOLSTACK_E_SECRET", None)
+            env["TOOLSTACK_CHANNEL_SECRET"] = channel_secret
             if e_secret is not None:
                 env["TOOLSTACK_E_SECRET"] = e_secret
-                env["TOOLSTACK_SPS_HOST"] = os.environ.get(
-                    "TOOLSTACK_SPS_HOST", _DEFAULT_SPS_HOST)
-                env["TOOLSTACK_SPS_PORT"] = os.environ.get(
-                    "TOOLSTACK_SPS_PORT", str(_DEFAULT_SPS_PORT))
-                env["TOOLSTACK_SPS_CA"] = os.environ.get(
-                    "TOOLSTACK_SPS_CA", _DEFAULT_SPS_CA)
+                env["TOOLSTACK_SPS_HOST"] = sps_cfg.sp_host
+                env["TOOLSTACK_SPS_PORT"] = str(sps_cfg.sp_port)
+                env["TOOLSTACK_SPS_CA"] = sps_cfg.sp_tls_ca
+                env["TOOLSTACK_SPS_VERIFY"] = "1" if sps_cfg.verify else "0"
             if egress_port:
                 # Route the tool's outbound HTTP(S) through its egress proxy; the sandbox
                 # allows outbound only to this port, so the proxy is the sole exit.
@@ -477,7 +676,8 @@ class ProcessRunner:
             # warn about; setpgroup=0 gives it its own group so stop() can killpg it.
             inner_script = f"cd {shlex.quote(str(tool_def.path))} && exec {_bind_interpreter(tool_def.command)}"
             executable, argv = self._spawn_argv(tool_def, inner_script, None, egress_port)
-            log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+            os.fchmod(log_fd, 0o600)
             try:
                 pid = os.posix_spawn(
                     executable, argv, env, setpgroup=0,
@@ -485,58 +685,62 @@ class ProcessRunner:
                                   (os.POSIX_SPAWN_DUP2, log_fd, 2),
                                   (os.POSIX_SPAWN_CLOSE, log_fd)],
                 )
+                running = replace(running, handle=str(pid))
+                running = replace(running, process_identity=_process_identity(pid))
             finally:
                 os.close(log_fd)
-            child_pid = pid
-            running = RunningTool(
-                tool_def.id, tool_def.port, self.backend, str(pid),
-                log_path=str(log_path), egress_pid=egress_pid,
-                e_secret=e_secret,
-                sps_host=env.get("TOOLSTACK_SPS_HOST", _DEFAULT_SPS_HOST),
-                sps_port=int(env.get("TOOLSTACK_SPS_PORT", str(_DEFAULT_SPS_PORT))),
-                sps_ca=env.get("TOOLSTACK_SPS_CA") if e_secret else None,
-                boot_id=_boot_id(),
-            )
             time.sleep(_READINESS_WAIT)
-            if not self.is_alive(running):
+            if not self.is_alive(running, _on_reaped=mark_reaped):
                 raise RuntimeError(f"tool {tool_def.id} exited immediately on start: see {log_path}")
             log.info("started tool %s on 127.0.0.1:%s (pid %s, log %s, sps=%s)",
                      tool_def.id, tool_def.port, pid, log_path, sps_registered)
             return running
-        except BaseException:
-            _cleanup_partial_start(child_pid, egress_pid=egress_pid)
-            if sps_registered:
-                try:
-                    _sps_unregister(tool_def.id, sps_env_path)
-                except Exception:
-                    pass
+        except BaseException as cause:
+            try:
+                _cleanup_partial_start(running)
+            except RunnerStartCleanupError as cleanup:
+                raise cleanup from cause
+            finally:
+                if sps_registered:
+                    try:
+                        _sps_unregister(tool_def.id, sps_env_path)
+                    except Exception:
+                        pass
             raise
 
     def stop(self, running: RunningTool) -> None:
-        if _pids_are_current(running):
-            pid = int(running.handle)
-            try:
-                os.killpg(pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
-            try:
-                os.waitpid(pid, 0)
-            except (ChildProcessError, ProcessLookupError):
-                pass
-        _stop_log_follower(running)
-        _stop_egress_proxy(running)
-        if running.e_secret:
-            try:
-                _sps_unregister(
-                    running.tool_id,
-                    os.environ.get("TOOLSTACK_SPS_ENV", _DEFAULT_SPS_ENV),
-                )
-            except Exception as exc:
-                log.warning("SPS unregister %s on stop: %s", running.tool_id, exc)
+        try:
+            _cleanup_partial_start(running)
+        finally:
+            if running.e_secret:
+                try:
+                    _sps_unregister(
+                        running.tool_id,
+                        os.environ.get("TOOLSTACK_SPS_ENV", _DEFAULT_SPS_ENV),
+                    )
+                except Exception:
+                    log.warning("SPS unregister %s on stop failed", running.tool_id)
         log.info("stopped tool %s (pid %s)", running.tool_id, running.handle)
 
-    def is_alive(self, running: RunningTool) -> bool:
+    def is_alive(self, running: RunningTool, *, _on_reaped=None) -> bool:
+        if running.process_exited:
+            return False
+        if not running.handle:
+            return False  # No main child spawned; stop still handles any helpers.
         pid = int(running.handle)
+        current_boot = _boot_id()
+        if running.boot_id and current_boot and running.boot_id != current_boot:
+            return False
+        current_identity = _process_identity(pid)
+        if not running.boot_id or not current_boot:
+            raise RunnerConfigError("process identity unknown; retain record")
+        if (running.process_identity is not None and current_identity is not None
+                and current_identity != running.process_identity):
+            return False
+        if not running.process_identity:
+            if _pid_absent(pid):
+                return False
+            raise RunnerConfigError("process identity unknown; retain record")
         # Reap-aware liveness. The tool is our own posix_spawn child, so poll it with waitpid
         # first: on Linux a just-exited child that has not been reaped is a zombie whose pid still
         # answers killpg(pid, 0) as "alive", which would let start()'s readiness check pass a tool
@@ -546,19 +750,17 @@ class ProcessRunner:
         try:
             reaped, _ = os.waitpid(pid, os.WNOHANG)
             if reaped:
+                if _on_reaped is not None:
+                    _on_reaped()
                 return False
             return True  # waitpid proved this is our current, live child
         except ChildProcessError:
             pass
+        if _pid_absent(pid):
+            return False
         if not _pids_are_current(running):
-            return False
-        try:
-            os.killpg(pid, 0)
-            return True
-        except (ProcessLookupError, PermissionError):
-            # On macOS a just-exited (zombie) group leader answers killpg with EPERM, not ESRCH;
-            # both mean dead here. (Linux's zombie case is caught by the waitpid poll above.)
-            return False
+            raise RuntimeError("process identity unconfirmed; retain record")
+        return True
 
 
 _SANDBOX_EXEC = "/usr/bin/sandbox-exec"  # macOS Seatbelt wrapper
@@ -625,59 +827,19 @@ class SeatbeltRunner(ProcessRunner):
 
 _CGROUP_ROOT = "/sys/fs/cgroup"
 _NETGUARD_PARENT = "toolyard"          # tool cgroups: /sys/fs/cgroup/toolyard/<id> (see netguard)
-_SANDBOX_READINESS_WAIT = 1.0          # sudo + netguard + (bwrap) start is slower than a bare spawn
-
-
-_SUDO = shutil.which("sudo") or "/usr/bin/sudo"   # absolute: start() launches it via posix_spawn
-
-
 def _netguard_argv(*args: str) -> list[str]:
-    """The privileged netguard invocation. Run under ``sudo -n`` (non-interactive) using the
-    broker's own interpreter so ``-m toolyard.netguard`` resolves in the same environment. A
-    locked-down NOPASSWD sudoers rule for exactly this command is what keeps the broker itself
-    unprivileged (see ``toolyard/netguard.py``). ``sudo`` is resolved to an absolute path because
-    ``start()`` launches it with ``posix_spawn`` (which, unlike subprocess, does not search PATH)."""
-    return [_SUDO, "-n", sys.executable, "-m", "toolyard.netguard", *args]
+    """Compatibility entry point: mutable privileged Python launch is disabled."""
+    raise RunnerConfigError("Linux native runner disabled: mutable sudo Python helper is unsafe; no validated privileged helper")
 
 
 @functools.lru_cache(maxsize=1)
 def _bwrap_usable() -> bool:
-    """Whether bwrap can create its (unprivileged) user namespace in the real launch context.
-    Some hosts block it -- e.g. Ubuntu 24.04 with ``apparmor_restrict_unprivileged_userns=1`` --
-    and there the native runner still confines egress via cgroup+nft but skips bwrap's filesystem
-    isolation (the same scope the macOS Seatbelt runner has today). Probed once through the actual
-    sudo->netguard path so the answer matches how tools are launched, and cached for the process."""
-    if shutil.which("bwrap") is None:
-        return False
-    probe = "bwrapprobe"
-    ok = False
-    try:
-        r = subprocess.run(_netguard_argv("run", "--tool", probe, "--",
-                                          "bwrap", "--dev-bind", "/", "/", "/bin/true"),
-                           capture_output=True, text=True, timeout=15)
-        ok = r.returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        ok = False
-    finally:
-        subprocess.run(_netguard_argv("teardown", "--tool", probe), capture_output=True, timeout=15)
-    if not ok:
-        log.warning("bwrap unavailable in the sandbox launch context (unprivileged user "
-                    "namespaces are likely restricted); the Linux native runner will confine "
-                    "egress only, with no filesystem isolation (matching the Seatbelt runner)")
-    return ok
+    """Disabled; never probe sudo or modify host network/cgroups."""
+    return False
 
 
 class BwrapRunner:
-    """Linux-native tool sandbox. Confines a tool's outbound network with a per-tool cgroup v2 +
-    nftables rule through the privileged ``netguard`` helper -- deny-all egress by default, new
-    outbound only to the tool's loopback egress proxy when it has an allowlist -- and, when the
-    host permits an unprivileged user namespace, additionally wraps the launch in bubblewrap for
-    filesystem/pid/ipc isolation. The tool runs as the broker's own (non-root) user. Lifecycle is
-    keyed to the cgroup (``cgroup.kill`` / reading ``cgroup.procs``), not a pid, since the launch
-    goes through ``sudo`` and the broker can neither signal nor reap the resulting root process.
-
-    This is the Linux counterpart of :class:`SeatbeltRunner`; both confine the network today, with
-    filesystem/syscall tightening (Landlock + seccomp here) as the next step."""
+    """Disabled Linux-native API, retained to diagnose legacy records honestly."""
 
     backend = "bwrap"
 
@@ -688,74 +850,10 @@ class BwrapRunner:
         return f"{_CGROUP_ROOT}/{_NETGUARD_PARENT}/{tool_id}/cgroup.procs"
 
     def start(self, tool_def: ToolDef) -> RunningTool:
-        if not tool_def.command:
-            raise ValueError(f"tool {tool_def.id} has no entrypoint.command")
-        _check_port_free(tool_def.port)
-        egress_pid = egress_port = None
-        launcher_pid = None
-        log_path = _tool_log_path(tool_def)
-        try:
-            policy = self._policy(tool_def)
-            if policy.egress.allow:
-                egress_pid, egress_port = _start_egress_proxy(policy.egress.allow)
-            # sudo scrubs the environment, so the tool's env is set inside the inner shell
-            # instead of inherited -- the values (paths/port/proxy URL, never secret values)
-            # reach the tool regardless of sudo, and the sudoers rule needs no SETENV.
-            env_assign = {
-                "TOOLSTACK_PORT": str(tool_def.port),
-                "TOOLSTACK_TOOL_CONFIG": str(tool_def.path / "toolyard.toml"),
-            }
-            if egress_port:
-                proxy_url = f"http://127.0.0.1:{egress_port}"
-                for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
-                    env_assign[var] = proxy_url
-            assigns = " ".join(f"{k}={shlex.quote(v)}" for k, v in env_assign.items())
-            inner = (f"cd {shlex.quote(str(tool_def.path))} && "
-                     f"{assigns} exec {_bind_interpreter(tool_def.command)}")
-            launch = ["/bin/sh", "-c", inner]
-            if _bwrap_usable():
-                # Share the host net ns (the cgroup+nft rule enforces egress); isolate fs/pid/ipc.
-                launch = ["bwrap", "--dev-bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
-                          "--unshare-pid", "--unshare-ipc", "--die-with-parent", *launch]
-            ng = _netguard_argv("run", "--tool", tool_def.id)
-            if egress_port:
-                ng += ["--proxy-port", str(egress_port)]
-            argv = [*ng, "--", *launch]
-            log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-            try:
-                launcher_pid = os.posix_spawn(
-                    argv[0], argv, os.environ, setpgroup=0,
-                    file_actions=[(os.POSIX_SPAWN_DUP2, log_fd, 1),
-                                  (os.POSIX_SPAWN_DUP2, log_fd, 2),
-                                  (os.POSIX_SPAWN_CLOSE, log_fd)],
-                )
-            finally:
-                os.close(log_fd)
-            running = RunningTool(tool_def.id, tool_def.port, self.backend, tool_def.id,
-                                  log_path=str(log_path),
-                                  egress_pid=egress_pid, launcher_pid=str(launcher_pid),
-                                  boot_id=_boot_id())
-            time.sleep(_SANDBOX_READINESS_WAIT)
-            if not self.is_alive(running):
-                raise RuntimeError(f"tool {tool_def.id} did not start under the sandbox: see {log_path}")
-            log.info("started tool %s on 127.0.0.1:%s under %s (cgroup %s, log %s)",
-                     tool_def.id, tool_def.port, self.backend, tool_def.id, log_path)
-            return running
-        except BaseException:
-            subprocess.run(_netguard_argv("teardown", "--tool", tool_def.id),
-                           capture_output=True, timeout=15)  # remove the cgroup + nft rule
-            _cleanup_partial_start(child_pid=launcher_pid, egress_pid=egress_pid)
-            raise
+        raise RunnerConfigError("Linux native runner disabled: no validated privileged helper")
 
     def stop(self, running: RunningTool) -> None:
-        # cgroup.kill (via teardown) SIGKILLs the tool even though the broker can't signal it
-        # directly; then reap the sudo launcher.
-        subprocess.run(_netguard_argv("teardown", "--tool", running.handle),
-                       capture_output=True, timeout=15)
-        if _pids_are_current(running):
-            _terminate(running.launcher_pid)
-        _stop_egress_proxy(running)
-        log.info("stopped tool %s (cgroup %s)", running.tool_id, running.handle)
+        raise RunnerConfigError(f"Linux native runner disabled; retain legacy record {running.tool_id}; operator cleanup required")
 
     def is_alive(self, running: RunningTool) -> bool:
         try:
@@ -785,27 +883,44 @@ class DockerRunner:
         # from SPS via the env vars the runner injects. The container
         # only needs the toolyard.toml (for the forwarder) and the
         # egress proxy mount when an egress allowlist is in effect.
+        if tool_def.secrets or os.environ.get("TOOLSTACK_E_SECRET") or (
+                os.environ.get("TOOLSTACK_SPS_SKIP") != "1" and
+                os.path.exists(os.environ.get("TOOLSTACK_SPS_ENV", _DEFAULT_SPS_ENV))):
+            raise RunnerConfigError("docker + SPS lifecycle is not validated")
+        channel_secret = _secrets.token_hex(64)
         name = None
         log_pid = None
         log_path = _tool_log_path(tool_def)
+        running = RunningTool(tool_def.id, tool_def.port, self.backend, "",
+                              channel_secret=channel_secret, boot_id=_boot_id(),
+                              log_path=str(log_path))
+
+        def log_spawned(pid):
+            nonlocal running
+            # Keep the handle even if identity capture or closing the log fails.
+            running = replace(running, log_pid=pid)
+            running = replace(running, log_identity=_process_identity(pid))
+
         try:
             rest_generic = tool_def.type == "rest" and tool_def.image is None
             image = tool_def.image or ("python:3.13-slim" if rest_generic else f"toolstack-{tool_def.id}")
             if tool_def.image is None and not rest_generic:
-                self._docker(["build", "-t", image, str(tool_def.path)], _DOCKER_BUILD_TIMEOUT, check=True)
+                bundled = tool_def.path.resolve() in {
+                    (_REPO_ROOT / "tools" / "echo_api").resolve(),
+                    (_REPO_ROOT / "tools" / "echo_mcp").resolve()}
+                context = _REPO_ROOT if bundled else tool_def.path
+                self._docker(["build", "-t", image, "-f", str(tool_def.path / "Dockerfile"),
+                              str(context)], _DOCKER_BUILD_TIMEOUT, check=True)
             name = f"toolyard-{tool_def.id}"
+            running = replace(running, handle=name)
             self._docker(["rm", "-f", name], _DOCKER_RM_TIMEOUT)  # clear a same-named leftover
             run_args = [
                 "run", "-d", "--name", name,
                 "-p", f"127.0.0.1:{tool_def.port}:{tool_def.port}",
                 "-e", f"TOOLSTACK_PORT={tool_def.port}",
+                "-e", f"TOOLSTACK_CHANNEL_SECRET={channel_secret}",
                 "-e", "TOOLSTACK_BIND=0.0.0.0",  # container-internal; host side stays loopback via -p
             ]
-            # Carry the SPS connection env through so the SDK can find the server.
-            for var in ("TOOLSTACK_E_SECRET", "TOOLSTACK_SPS_HOST",
-                         "TOOLSTACK_SPS_PORT", "TOOLSTACK_SPS_CA"):
-                if var in os.environ:
-                    run_args += ["-e", f"{var}={os.environ[var]}"]
             if tool_def.type == "rest":
                 run_args += [
                     "-v", f"{tool_def.path / 'toolyard.toml'}:{_CONTAINER_TOOL_CONFIG}:ro",
@@ -820,35 +935,48 @@ class DockerRunner:
             if rest_generic:
                 run_args += ["python3", "-m", "toolstack_forwarder"]
             self._docker(run_args, _DOCKER_RUN_TIMEOUT, check=True)
-            log_pid = _start_docker_log_follower(name, log_path)
-            running = RunningTool(tool_def.id, tool_def.port, self.backend, name,
-                                  log_pid=log_pid, log_path=str(log_path), boot_id=_boot_id())
+            log_pid = _start_docker_log_follower(name, log_path, _on_spawn=log_spawned)
+            if running.log_pid != log_pid:
+                log_spawned(log_pid)
             time.sleep(_READINESS_WAIT)
             if not self.is_alive(running):
                 raise RuntimeError(f"tool {tool_def.id} container exited immediately: see {log_path}")
             log.info("started tool %s in container %s on :%s (log %s)",
                      tool_def.id, name, tool_def.port, log_path)
             return running
-        except BaseException:
+        except BaseException as cause:
+            removed = True
             if name:
                 try:
-                    subprocess.run(["docker", "rm", "-f", name], capture_output=True,
-                                   timeout=_DOCKER_RM_TIMEOUT)
-                except subprocess.TimeoutExpired:
-                    pass
-            _cleanup_partial_start(log_pid=log_pid)
+                    removal = subprocess.run(["docker", "rm", "-f", name], capture_output=True,
+                                             timeout=_DOCKER_RM_TIMEOUT)
+                    removed = removal.returncode == 0
+                except BaseException:
+                    removed = False
+            try:
+                running = _cleanup_partial_start(running)
+            except RunnerStartCleanupError as cleanup:
+                raise cleanup from cause
+            if not removed:
+                raise RunnerStartCleanupError(running) from cause
             raise
 
     def stop(self, running: RunningTool) -> None:
-        _stop_log_follower(running)
+        cleanup_error = None
+        try:
+            running = _cleanup_partial_start(running)
+        except RunnerStartCleanupError as exc:
+            cleanup_error = exc
+            running = exc.running
         try:
             r = subprocess.run(["docker", "rm", "-f", running.handle],
                                capture_output=True, text=True, timeout=_DOCKER_RM_TIMEOUT)
             if r.returncode != 0:
-                log.warning("docker rm %s failed on stop (rc=%s): %s; container may still exist",
-                            running.handle, r.returncode, (r.stderr or "").strip())
-        except subprocess.TimeoutExpired:
-            log.warning("docker rm %s timed out on stop; container may still exist", running.handle)
+                raise RuntimeError(f"docker removal failed for {running.handle}; retain state record")
+        except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+            raise RunnerStartCleanupError(running) from exc
+        if cleanup_error:
+            raise cleanup_error
         log.info("stopped tool %s (container %s)", running.tool_id, running.handle)
 
     def is_alive(self, running: RunningTool) -> bool:

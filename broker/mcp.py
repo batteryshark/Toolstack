@@ -35,7 +35,9 @@ _JSON_TYPES = {"string", "integer", "number", "boolean", "object", "array"}
 
 # Outcome statuses that make an MCP tools/call an error result. `pending_approval` is NOT
 # one of them; it is in-progress, not failed (mirrors the HTTP action flow).
-_MCP_FAIL = {lifecycle.DENIED, lifecycle.FAILED, lifecycle.UNAVAILABLE, lifecycle.EXPIRED}
+_MCP_FAIL = {lifecycle.DENIED, lifecycle.FAILED, lifecycle.UNAVAILABLE, lifecycle.EXPIRED,
+             lifecycle.RECEIVED, lifecycle.EXECUTING, lifecycle.UNKNOWN, lifecycle.CONFLICT,
+             lifecycle.INVALID, lifecycle.RESULT_EXPIRED}
 
 
 class _MethodNotFound(Exception):
@@ -71,13 +73,13 @@ def _input_schema(args: list) -> dict:
 
 def _with_reason(schema: dict) -> dict:
     """Advertise the optional `_reason` justification on a review tool's input schema,
-    the MCP analogue of the CLI's --reason. Stripped before the tool runs; shown to the
-    human approver and audited (redacted)."""
+    the MCP analogue of the CLI's --reason. Legacy private metadata, stripped
+    before the tool runs; omitted from approval and audit text."""
     props = dict(schema.get("properties", {}))
     props["_reason"] = {
         "type": "string",
-        "description": ("Why you need this, shown to the human approver and recorded in "
-                        "the audit log. Recommended on review ops; not passed to the tool."),
+        "description": ("Legacy private request metadata; omitted from approval and audit text. "
+                         "Not passed to the tool. Do not include secrets."),
     }
     return {**schema, "type": "object", "properties": props}
 
@@ -131,7 +133,12 @@ def _resolve_name(ctx, name: str):
     return None, None
 
 
-def _call_tool(ctx, caller, correlation_id, params) -> dict:
+class _IdempotencyConflict(Exception):
+    def __init__(self, result):
+        self.result = result
+
+
+def _call_tool(ctx, caller, correlation_id, params, idempotency_key=None) -> dict:
     # Local import breaks an import cycle: gateway imports this module to route /mcp, and
     # these two helpers shape/audit the outcome identically to the HTTP action path. Reusing
     # them (rather than duplicating) is what guarantees "audit works the same" (AC).
@@ -157,14 +164,22 @@ def _call_tool(ctx, caller, correlation_id, params) -> dict:
         return _result(f'unknown tool "{name}"', is_error=True)
 
     # `_reason` is adapter metadata, not a tool argument: pull it out (never forwarded to
-    # the tool) and pass it as the broker's justification; rides to the approver, audited.
+    # the tool) and keep it as private request metadata, not approval/audit text.
     args = dict(arguments)
     reason = args.pop("_reason", None)
     reason = reason if isinstance(reason, str) and reason.strip() else None
+    meta = params.get("_meta", {})
+    if not isinstance(meta, dict):
+        raise _InvalidParams("_meta must be an object")
+    key = meta.get("toolstack/idempotency-key")
+    if idempotency_key is not None:
+        if key is not None and key != idempotency_key:
+            raise _InvalidParams("conflicting idempotency metadata")
+        key = idempotency_key
 
     # The SAME path as _action: submit applies policy/approval and writes the same
     # audit trail (request.received, policy.decision_*, then the terminal request.* below).
-    outcome = lifecycle.submit(ctx, caller, tool, op, args, correlation_id, reason=reason)
+    outcome = lifecycle.submit(ctx, caller, tool, op, args, correlation_id, reason=reason, idempotency_key=key)
     _audit_request_terminal(ctx, outcome, correlation_id, tool, op)
 
     # Least privilege at the RESULT layer only: a denied or unknown op reads as "unknown
@@ -173,22 +188,26 @@ def _call_tool(ctx, caller, correlation_id, params) -> dict:
     if outcome.status in (lifecycle.DENIED, lifecycle.NOT_FOUND):
         return _result(f'unknown tool "{name}"', is_error=True)
     body = _outcome_body(outcome)
-    return _result(json.dumps(body, indent=2), is_error=outcome.status in _MCP_FAIL)
+    if outcome.status == lifecycle.CONFLICT:
+        raise _IdempotencyConflict(_result(json.dumps(body), is_error=True))
+    tool_error = isinstance(outcome.result, dict) and outcome.result.get("isError") is True
+    return _result(json.dumps(body, indent=2), is_error=outcome.status in _MCP_FAIL or tool_error)
 
 
-def _dispatch(ctx, caller, correlation_id, method: str, params: dict):
+def _dispatch(ctx, caller, correlation_id, method: str, params: dict, idempotency_key=None):
     if method == "initialize":
         return {
             "protocolVersion": params.get("protocolVersion", PROTOCOL_VERSION),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "toolstack-broker", "version": "0.1.0"},
+            "instructions": 'Supply tools/call params._meta["toolstack/idempotency-key"] (1-128 letters/digits/_/-). Matching retries return the same receipt, never replay. Poll the request receipt; unknown is not retry permission.',
         }
     if method == "ping":
         return {}
     if method == "tools/list":
         return {"tools": _list_tools(ctx, caller)}
     if method == "tools/call":
-        return _call_tool(ctx, caller, correlation_id, params)
+        return _call_tool(ctx, caller, correlation_id, params, idempotency_key=idempotency_key)
     raise _MethodNotFound(method)
 
 
@@ -196,7 +215,7 @@ def _error(mid, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": mid, "error": {"code": code, "message": message}}
 
 
-def handle(body, ctx, caller, correlation_id) -> tuple[int, dict]:
+def handle(body, ctx, caller, correlation_id, idempotency_key=None) -> tuple[int, dict]:
     """Handle one MCP JSON-RPC message posted to /mcp. Returns ``(http_status, body)``:
     the gateway uses the status for the response AND for the audit outcome word. Almost
     everything is HTTP 200 with a JSON-RPC envelope (results and JSON-RPC method errors
@@ -219,9 +238,11 @@ def handle(body, ctx, caller, correlation_id) -> tuple[int, dict]:
         return 200, ({} if is_notification else _error(mid, -32602, "params must be an object"))
 
     try:
-        result = _dispatch(ctx, caller, correlation_id, method, params)
+        result = _dispatch(ctx, caller, correlation_id, method, params, idempotency_key=idempotency_key)
     except _RateLimited:
         return 429, ({} if is_notification else _error(mid, -32000, "rate_limited"))
+    except _IdempotencyConflict as exc:
+        return 409, ({} if is_notification else {"jsonrpc": "2.0", "id": mid, "result": exc.result})
     except _MethodNotFound as exc:
         return 200, ({} if is_notification else _error(mid, -32601, f"method not found: {exc}"))
     except _InvalidParams as exc:

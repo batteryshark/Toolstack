@@ -14,8 +14,9 @@ import logging
 import json
 import os
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -29,6 +30,9 @@ from . import (api, auth, broker_config, loginguard, settings, supervisor,
 from .reconciler import RECONCILE_LOCK, start_reconciler_thread
 from .sps_link import SPSLink
 from .store_access import open_store
+from . import operator_audit
+from .blocking import work
+from .policy_edits import merge_grants, merge_enabled, operation_fields, retained_draft
 
 log = logging.getLogger(__name__)
 
@@ -43,13 +47,25 @@ def create_app() -> FastAPI:
     guard = loginguard.LoginGuard()  # shared by /login and /api/login
     app = FastAPI(title="Toolstack Admin", docs_url=None, redoc_url=None, openapi_url=None)
 
+    @app.middleware("http")
+    async def session_generation(request: Request, call_next):
+        # Snapshot once per request; never use the startup key after reset.
+        # Missing/unreadable key fails closed, rather than recreating authority.
+        try:
+            key = settings.session_secret_file().read_text(encoding="utf-8").strip()
+            if not key:
+                raise ValueError("empty session generation")
+        except (OSError, ValueError):
+            return JSONResponse({"detail": "Session authority unavailable"}, status_code=503)
+        request.state.session_secret = key
+        return await call_next(request)
+
     # --- SPS restart watchdog + startup reconciliation -------------------------
     # SPS is in-memory only (see sps/store.py). If SPS bounces (crash, library
     # upgrade, manual restart) every running tool loses its registration. The
     # watchdog detects that from a live boot_id ping and re-registers the tools
     # that are still alive.
-    from .sps_watchdog import SPSWatchdog
-    from toolyard.runner import reregister_all_with_sps
+    from .sps_watchdog import SPSWatchdog, recover_with_runner
 
     _initial_cfg = broker_config.load()
     _sps_env_path = settings.sps_env_path() or "/etc/toolstack/sps.env"
@@ -66,7 +82,7 @@ def create_app() -> FastAPI:
         _watchdog = SPSWatchdog(
             config=_initial_cfg,
             probe=_sps_link.boot_id,
-            re_register_fn=reregister_all_with_sps,
+            re_register_fn=recover_with_runner,
             sps_env_path=_sps_env_path,
             lock=RECONCILE_LOCK,
         )
@@ -86,6 +102,13 @@ def create_app() -> FastAPI:
                   "skipping tool reconciliation", _sps_env_path)
     else:
         app.state.reconciler = start_reconciler_thread(_initial_cfg, _sps_link)
+
+    @app.exception_handler(operator_audit.AppliedAuditError)
+    async def _applied_audit_error(request: Request, exc):
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": str(exc), "action_applied": True,
+                                 "audit_complete": False}, status_code=503)
+        return HTMLResponse(f"<p>{views.esc(str(exc))}</p>", status_code=503)
 
     @app.exception_handler(sqlite3.OperationalError)
     async def _operational_error(request: Request, exc: sqlite3.OperationalError):
@@ -109,11 +132,11 @@ def create_app() -> FastAPI:
         return request.cookies.get(SESSION_COOKIE)
 
     def current_user(request: Request) -> str | None:
-        return auth.verify_session(session_value(request), secret)
+        return auth.verify_session(session_value(request), request.state.session_secret)
 
     def csrf_for(request: Request) -> str:
         sv = session_value(request)
-        return auth.csrf_token(sv, secret) if sv else ""
+        return auth.csrf_token(sv, request.state.session_secret) if sv else ""
 
     async def read_form(request: Request) -> dict[str, str]:
         # Parse urlencoded bodies ourselves (no python-multipart dependency), as
@@ -123,7 +146,7 @@ def create_app() -> FastAPI:
         return {k: v[-1] if v else "" for k, v in parsed.items()}
 
     def csrf_ok(request: Request, data: dict) -> bool:
-        return auth.verify_csrf(data.get("_csrf"), session_value(request), secret)
+        return auth.verify_csrf(data.get("_csrf"), session_value(request), request.state.session_secret)
 
     def redirect(path: str = "/") -> RedirectResponse:
         return RedirectResponse(path, status_code=303)
@@ -192,7 +215,7 @@ def create_app() -> FastAPI:
         resp = redirect("/")
         resp.set_cookie(
             SESSION_COOKIE,
-            auth.sign_session(username, secret, settings.session_ttl_seconds()),
+            auth.sign_session(username, request.state.session_secret, settings.session_ttl_seconds()),
             # Secure only when reached over TLS (TOOLSTACK_ADMIN_SECURE_COOKIE=1); loopback http
             # and the container's http-behind-publish would otherwise drop the cookie.
             httponly=True, samesite="strict", secure=settings.cookie_secure(),
@@ -227,16 +250,37 @@ def create_app() -> FastAPI:
             return render_dashboard(request, user, error="Invalid CSRF token.")
         config = broker_config.load()
         events = {"start": "broker_started", "stop": "broker_stopped", "restart": "broker_restarted"}
+        target = data.get('catalog_target')
+
+        async def registration_result(error=None):
+            from .catalog_observation import observe_catalog
+            catalog = await work.run(observe_catalog, config)
+            tools, list_error = safe_list_tools(config)
+            from .catalog_observation import target_verified
+            verified = target_verified(catalog, target)
+            message = f"{views.esc(target)} · " + ('Catalog registration verified.' if verified else 'Registration unknown. Refresh state before deciding whether to restart again.')
+            return HTMLResponse(views.tools_view(user=user, csrf=csrf_for(request), tools=tools,
+                tools_root=config.tools_root, catalog=catalog, broker_port=config.port,
+                banner=message if verified else None, error=error or list_error or (None if verified else message),
+                mutation_outcome='unknown' if error or not verified else None))
         if action not in events:
             return render_dashboard(request, user, error="Unknown broker action.")
         try:
-            result = supervisor.stop() if action == "stop" else getattr(supervisor, action)(config)
+            result = await work.run(supervisor.stop) if action == "stop" else await work.run(getattr(supervisor, action), config)
         except Exception as exc:  # surface a failed spawn rather than 500
-            return render_dashboard(request, user, error=f"Broker {action} failed: {exc}")
+            if target:
+                return await registration_result(f"Broker restart outcome unknown for {target}. Refresh state; no retry was sent.")
+            response = render_dashboard(request, user, error=f"Broker {action} outcome unknown. Refresh state before another action.")
+            response.headers['X-Toolstack-Mutation-Outcome'] = 'unknown'
+            return response
         with open_store(config) as store:
             operations.record_admin_event(store, user, events[action], {})
         if isinstance(result, dict) and result.get("error"):  # started but never went healthy
+            if target:
+                return await registration_result(f"Broker restart did not establish readiness for {target}. Refresh state.")
             return render_dashboard(request, user, error=f"Broker {action}: {result['error']}")
+        if target:
+            return await registration_result()
         return redirect("/")
 
     # --- run config -----------------------------------------------------------
@@ -258,13 +302,14 @@ def create_app() -> FastAPI:
                 user=user, csrf=csrf_for(request), config=broker_config.load(),
                 error="Invalid CSRF token."))
         try:
-            updated = _config_from_form(data, broker_config.load())
+            current = broker_config.load()
+            updated = _config_from_form(data, current)
             broker_config.validate_nod_url(updated.nod_url)  # SSRF guard (carries the nod token)
         except ValueError as exc:
             return HTMLResponse(views.config_view(
                 user=user, csrf=csrf_for(request), config=broker_config.load(),
                 error=f"Invalid config: {exc}"))
-        broker_config.save(updated)
+        operator_audit.save_config(current, updated, user)
         return render_dashboard(request, user,
                                 banner="Saved broker config. Restart the broker to apply changes.")
 
@@ -350,11 +395,30 @@ def create_app() -> FastAPI:
         data = await read_form(request)
         if not csrf_ok(request, data):
             return render_dashboard(request, user, error="Invalid CSRF token.")
-        with open_store(broker_config.load()) as store:
-            store.clear_audit()
+        operator_audit.clear_audit(broker_config.load(), user)
         return redirect("/#audit")
 
     # --- policy ---------------------------------------------------------------
+    def policy_recovery(request, user, name, data, message, status):
+        try:
+            config = broker_config.load()
+            with open_store(config) as store:
+                current = store.policy_for(operations.require_caller(store, name)["id"])
+                catalog = ops_by_tool(config)
+                field_map = operation_fields(current, catalog)
+            scope_changed = any(k.startswith('op__') and not field_map.get(k) for k in data)
+            shown = {t: ops for t, ops in catalog.items() if t in operations.enabled_tools(current)}
+            if scope_changed:
+                message += " Operation set changed. Load the current policy page; only still-editable draft values are shown."
+            return HTMLResponse(views.policy_view(
+                user=user, csrf=csrf_for(request), caller=name, ops_by_tool=shown,
+                current=retained_draft(current, data, field_map), loaded=not scope_changed and status != 503,
+                error=message), status_code=status)
+        except (LookupError, OSError, ValueError, sqlite3.Error):
+            return HTMLResponse(views.policy_view(
+                user=user, csrf=csrf_for(request), caller=name, ops_by_tool={}, current={},
+                loaded=False, error=message + " Draft could not be displayed. Return to the previous page to keep your inputs."), status_code=status)
+
     @app.get("/callers/{name}/policy")
     async def edit_policy(request: Request, name: str):
         user = current_user(request)
@@ -365,9 +429,16 @@ def create_app() -> FastAPI:
             with open_store(config) as store:
                 caller = operations.require_caller(store, name)
                 current = store.policy_for(caller["id"])
-        except LookupError as exc:
-            return render_dashboard(request, user, error=str(exc))
-        all_ops = ops_by_tool(config)
+        except (LookupError, OSError, sqlite3.Error):
+            return HTMLResponse(views.policy_view(
+                user=user, csrf=csrf_for(request), caller=name, ops_by_tool={},
+                current={}, loaded=False, error="Policy could not be loaded. Retry load."), status_code=503)
+        try:
+            all_ops = ops_by_tool(config)
+        except (OSError, ValueError):
+            return HTMLResponse(views.policy_view(
+                user=user, csrf=csrf_for(request), caller=name, ops_by_tool={},
+                current={}, loaded=False, error="Tool catalog could not be loaded. Retry load."), status_code=503)
         enabled = operations.enabled_tools(current)
         shown = {t: ops for t, ops in all_ops.items() if t in enabled}
         return HTMLResponse(views.policy_view(
@@ -381,32 +452,32 @@ def create_app() -> FastAPI:
             return redirect("/login")
         data = await read_form(request)
         config = broker_config.load()
+        wants_receipt = request.headers.get("accept") == "application/json"
         if not csrf_ok(request, data):
-            try:
-                with open_store(config) as store:
-                    current = store.policy_for(operations.require_caller(store, name)["id"])
-            except LookupError:
-                current = {}
-            all_ops = ops_by_tool(config)
-            shown = {t: ops for t, ops in all_ops.items() if t in operations.enabled_tools(current)}
-            return HTMLResponse(views.policy_view(
-                user=user, csrf=csrf_for(request), caller=name,
-                ops_by_tool=shown, current=current, has_tools=bool(all_ops),
-                error="Invalid CSRF token."))
-        allow, review, deny = [], [], []
-        for key, value in data.items():
-            if key.startswith("op__"):  # api/mcp: one effect per op; deny == omitted
-                _, tool, op = key.split("__", 2)
-                spec = f"{tool}.{op}"
-                if value == "allow":
-                    allow.append(spec)
-                elif value == "review":
-                    review.append(spec)
+            if wants_receipt:
+                return JSONResponse({"outcome": "rejected", "error": "Session check failed. Reload policy before saving."}, status_code=403)
+            return policy_recovery(request, user, name, data,
+                "Save rejected. Invalid CSRF token. Valid editable draft values retained; review before saving.", 403)
+        effect_started = False
         try:
             with open_store(config) as store:
+                current = store.policy_for(operations.require_caller(store, name)["id"])
+                field_map = operation_fields(current, ops_by_tool(config))
+                allow, review, deny = merge_grants(current, data, field_map)
+                effect_started = True
                 operations.set_policy(store, name, allow, review, user, deny=deny)
-        except LookupError as exc:
-            return render_dashboard(request, user, error=str(exc))
+        except Exception as exc:
+            rejected = not effect_started and isinstance(exc, (LookupError, ValueError))
+            if wants_receipt:
+                return JSONResponse({"outcome": "rejected" if rejected else "unknown",
+                    "error": "Policy not saved. Operation set or effects may have changed. Reload to compare before saving." if rejected else
+                             "Save outcome unknown. Reload to compare before retrying."}, status_code=400 if rejected else 503)
+            return policy_recovery(request, user, name, data,
+                "Save rejected. Valid editable draft values retained; review the current operation set and effects." if rejected else
+                "Save outcome unknown. Draft retained where still editable. Reload policy to compare before retrying.",
+                400 if rejected else 503)
+        if wants_receipt:
+            return JSONResponse({"outcome": "saved", "target": name})
         return redirect(f"/callers/{name}/policy")
 
     @app.get("/callers/{name}/tools")
@@ -439,6 +510,8 @@ def create_app() -> FastAPI:
                    if k.startswith("tool__") and v == "on"]
         try:
             with open_store(config) as store:
+                current = store.policy_for(operations.require_caller(store, name)["id"])
+                enabled = merge_enabled(current, ops_by_tool(config), enabled)
                 operations.set_enabled_tools(store, name, enabled, user)
         except LookupError as exc:
             return render_dashboard(request, user, error=str(exc))
@@ -454,9 +527,14 @@ def create_app() -> FastAPI:
         tools, error = safe_list_tools(config)
         for t in tools:  # attach the source sidecar so updatable tools get an Update button
             t["source"] = tool_sources.read_source(t["path"])
+        from .catalog_observation import observe_catalog
+        catalog = await work.run(observe_catalog, config)
+        selected = request.query_params.get('tool')
+        if selected:
+            tools = [t for t in tools if t['id'] == selected]
         return HTMLResponse(views.tools_view(
             user=user, csrf=csrf_for(request), tools=tools,
-            tools_root=config.tools_root, error=error))
+            tools_root=config.tools_root, error=error, catalog=catalog, broker_port=config.port, focused=bool(selected)))
 
     @app.post("/toolyard/tools/{tool_id}/{action}")
     async def toolyard_action(request: Request, tool_id: str, action: str):
@@ -467,11 +545,12 @@ def create_app() -> FastAPI:
         config = broker_config.load()
         events = {"start": "tool_started", "stop": "tool_stopped", "restart": "tool_restarted"}
 
-        def tools_error(msg: str) -> HTMLResponse:
+        def tools_error(msg: str, unknown=False) -> HTMLResponse:
             tools, _ = safe_list_tools(config)
             return HTMLResponse(views.tools_view(
-                user=user, csrf=csrf_for(request), tools=tools,
-                tools_root=config.tools_root, error=msg))
+                user=user, csrf=csrf_for(request), tools=[t for t in tools if t['id'] == tool_id],
+                tools_root=config.tools_root, error=msg, focused=True, broker_port=config.port,
+                mutation_outcome='unknown' if unknown else None))
 
         if not csrf_ok(request, data):
             return tools_error("Invalid CSRF token.")
@@ -479,16 +558,16 @@ def create_app() -> FastAPI:
             return redirect("/tools")
         try:
             if action == "stop":
-                toolyard_ops.stop(tool_id)
+                await work.run(toolyard_ops.stop, tool_id)
             else:
-                getattr(toolyard_ops, action)(
+                await work.run(getattr(toolyard_ops, action),
                     tool_id, config.tools_root, config.tool_dirs,
                     settings.tool_runner_backend())
             with open_store(config) as store:
                 operations.record_admin_event(store, user, events[action], {"tool": tool_id})
-        except Exception as exc:
-            return tools_error(f"Tool {action} failed: {exc}")
-        return redirect("/tools")
+        except Exception:
+            return tools_error(f"{tool_id} · {action} outcome unknown. Refresh state before another action; nothing was replayed.", unknown=True)
+        return redirect(f"/tools?tool={quote(tool_id, safe='')}")
 
     # --- tool authoring (write/edit toolyard.toml) ----------------------------
     @app.get("/tools/new")
@@ -546,8 +625,9 @@ def create_app() -> FastAPI:
         tool_authoring.write(dir_path, tool)
         norm_dir = str(Path(dir_path))  # normalize so the later removable check matches
         if norm_dir not in config.tool_dirs:
+            previous = replace(config)
             config.tool_dirs = [*config.tool_dirs, norm_dir]
-            broker_config.save(config)
+            operator_audit.save_config(previous, config, user)
         with open_store(config) as store:
             operations.record_admin_event(store, user, "tool_created", {"tool": tool["id"], "dir": norm_dir})
         return render_dashboard(request, user, banner=(
@@ -616,32 +696,14 @@ def create_app() -> FastAPI:
         if not csrf_ok(request, data):
             return render_dashboard(request, user, error="Invalid CSRF token.")
         config = broker_config.load()
-        tools_list, list_err = safe_list_tools(config)
-        if list_err:
-            return render_dashboard(request, user, error=list_err)
-        tools = {t["id"]: t for t in tools_list}
-        if tool_id not in tools:
-            return render_dashboard(request, user, error=f"no such tool: {tool_id}")
-        path = str(Path(tools[tool_id]["path"]))
-        is_external = path in {str(Path(p)) for p in config.tool_dirs}
+        from .tool_removal import remove_tool as remove_owned_tool
         try:
-            if is_external:
-                # An operator-owned folder registered via tool_dirs: unregister it, leave the files.
-                toolyard_ops.stop(tool_id)  # stop if running (no-op otherwise)
-                config.tool_dirs = [p for p in config.tool_dirs if str(Path(p)) != path]
-                broker_config.save(config)
-                banner = (f"Unregistered tool <code>{views.esc(tool_id)}</code> (its files were "
-                          "left on disk). Restart the broker to apply.")
-            else:
-                # A TSR-managed tool under the tools root: stop it and delete its folder.
-                toolyard_ops.remove(tool_id, config.tools_root, config.tool_dirs)
-                banner = (f"Removed tool <code>{views.esc(tool_id)}</code> (deleted its folder). "
-                          "Restart the broker to apply.")
+            result = await work.run(remove_owned_tool, config, tool_id, user)
+            effect = "deleted its managed folder" if result['deleted'] else "files retained on disk"
+            label = "Removed tool" if result['deleted'] else "Unregistered tool"
+            banner = f"{label} <code>{views.esc(tool_id)}</code> · {effect}. Restart the broker to apply."
         except (LookupError, ValueError) as exc:
             return render_dashboard(request, user, error=str(exc))
-        with open_store(config) as store:
-            operations.record_admin_event(store, user, "tool_removed",
-                                          {"tool": tool_id, "dir": path, "deleted": not is_external})
         return render_dashboard(request, user, banner=banner)
 
     # --- add / update a tool from its source (folder or git) ------------------
@@ -671,20 +733,22 @@ def create_app() -> FastAPI:
         existing_ids = [] if list_err else [t["id"] for t in existing]
         try:
             if data.get("kind") == "github":
-                tool = tool_sources.add_from_github(
+                tool = await work.run(tool_sources.add_from_github,
                     repo_val, config.tools_root, existing_ids,
                     subdir=(data.get("subdir") or "").strip(), ref=(data.get("ref") or "").strip())
             else:
-                tool = tool_sources.add_from_path(src_val, config.tools_root, existing_ids)
+                tool = await work.run(tool_sources.add_from_path, src_val, config.tools_root, existing_ids)
         except tool_sources.NoManifest:
             return again("No toolyard.toml at that location; use “Author a tool” to create one.")
         except ValueError as exc:
             return again(str(exc))
         with open_store(config) as store:
             operations.record_admin_event(store, user, "tool_created", {"tool": tool["id"], "dir": tool["path"]})
-        return render_dashboard(request, user, banner=(
-            f"Added tool {views.esc(tool['id'])} from its source. Restart the broker to register it, "
-            "then grant a caller access in its policy."))
+        tools, error = safe_list_tools(config)
+        return HTMLResponse(views.tools_view(user=user, csrf=csrf_for(request),
+            tools=[t for t in tools if t['id'] == tool['id']], tools_root=config.tools_root,
+            broker_port=config.port, error=error, focused=True,
+            banner=f"Added {views.esc(tool['id'])}. Start executes this trusted local tool. Catalog registration and caller grants remain separate decisions."))
 
     @app.post("/tools/{tool_id}/update-source")
     async def update_tool_source(request: Request, tool_id: str):
@@ -702,7 +766,7 @@ def create_app() -> FastAPI:
         if tool_id not in tools:
             return render_dashboard(request, user, error=f"no such tool: {tool_id}")
         try:
-            tool = tool_sources.update(tools[tool_id]["path"])
+            tool = await work.run(tool_sources.update, tools[tool_id]["path"])
         except tool_sources.NoManifest:
             return render_dashboard(request, user, error="the tool's source no longer has a toolyard.toml")
         except ValueError as exc:
@@ -749,22 +813,4 @@ def _parse_openapi_text(raw: str) -> dict:
 
 
 def _config_from_form(data: dict, current) -> "broker_config.BrokerRunConfig":
-    def _int(key: str, default: int) -> int:
-        raw = data.get(key, "").strip()
-        try:
-            return int(raw) if raw else default
-        except ValueError:
-            return default
-
-    # nod token is write-only: keep the stored value unless a new one is provided.
-    nod_token = data.get("nod_token", "") or current.nod_token
-    return broker_config.BrokerRunConfig(
-        port=_int("port", current.port),
-        db_path=data.get("db_path", "").strip() or current.db_path,
-        tools_root=data.get("tools_root", "").strip() or current.tools_root,
-        nod_url=data.get("nod_url", current.nod_url).strip(),
-        nod_token=nod_token,
-        nod_channel=data.get("nod_channel", current.nod_channel).strip(),
-        approval_ttl=_int("approval_ttl", current.approval_ttl),
-        rate_limit=_int("rate_limit", current.rate_limit),
-    )
+    return broker_config.merge_update(current, data)

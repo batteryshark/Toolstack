@@ -1,80 +1,20 @@
-# Toolstack one-box (Docker, for a laptop)
+# Experimental image scaffold — NOT supported SPS deployment
 
-Run the whole stack (broker + admin + toolyard) in a single container on your laptop,
-no home-lab server and no external secret service required. State persists in `./data`.
+Dockerfile now copies SPS and the forwarder, installs the complete pinned deployment
+export, and invokes the packaged `admin serve --port 8780` (no unsupported --host
+argument). This has not been built or started with a Docker daemon in this lane.
 
-This is the **laptop** path. For a server install, see [../README.md](../README.md) (systemd).
+Compose is opt-in under the `experimental` profile. It does not supervise SPS and
+does not provide proven runner registration/recovery. Do not use it for the supported
+release. See [runtime matrix](../../docs/runtime-matrix.md) and native deployment.
+The image's process runner does not isolate hostile tools.
 
-## What's in the box
+Before any future Docker/SPS support claim, prove: SPS lifecycle, TLS server name/CA
+matching the reachable service, explicit runner config and passphrase wiring, private
+state/log volumes, offline vault provisioning, separate broker channel credentials,
+restart/recovery and negative credential tests. Do not mount a Docker socket or
+publish SPS publicly. Docker network egress is not loopback isolation.
 
-One image runs `python -m admin serve`. The admin (a loopback web UI) supervises the
-**broker** as a subprocess and runs **tools** with the **process runner**, so the broker
-and tools share one container loopback. (Tools run as processes, not nested containers:
-docker-out-of-docker would publish tool ports to the host loopback, which the in-container
-broker couldn't reach. Less isolation, but correct and simple for one user.)
-
-Secrets use the **encrypted vault** ([T-025](../../toolyard/secrets.py)) by default, a
-local file encrypted with your passphrase. The broker never sees a secret.
-
-## Quick start
-
-```bash
-cd deploy/docker
-cp .env.example .env
-# edit .env: set TOOLSTACK_ADMIN_PASSWORD and TOOLSTACK_VAULT_PASSPHRASE
-docker compose up -d --build
-```
-
-Then:
-
-1. Open the admin UI at **http://127.0.0.1:8780** and log in (user `admin`, your password).
-2. Click **Start broker**. It comes up on `127.0.0.1:8765`.
-3. **Add a caller** and mint a token (this is your agent's bearer token).
-4. **Author a tool** (or use the bundled `echo`), grant the caller an op (allow / review).
-5. Point your agent at the broker: `TOOLSTACK_URL=http://127.0.0.1:8765`,
-   `TOOLSTACK_TOKEN=<the token>` (HTTP action API, or the broker-native MCP at `POST /mcp`).
-
-Provision a tool's secret into the vault from inside the box:
-
-```bash
-docker compose exec toolstack sh -c 'printf "%s" "the-secret" | toolyard vault-set <tool> <FIELD>'
-```
-
-## The operator CLI (`brokerctl`)
-
-`brokerctl` (and `toolstack` / `toolyard`) live **inside** the container, not on the host, so
-they won't show up under `/opt/toolstack` or an `admin/.venv`. The admin UI covers everything
-`brokerctl` does, but if you want the CLI, run it in the box (its `XDG_*` already point at
-`/data`, so it opens the right DB):
-
-```bash
-docker compose exec toolstack brokerctl list-callers
-docker compose exec toolstack brokerctl create-caller --name my-agent --allow echo_api.echo
-```
-
-## The trust boundary (important)
-
-Inside the container the broker and admin bind `0.0.0.0` so Docker can reach them. The
-boundary is the **publish mapping**: compose publishes both ports to `127.0.0.1` on the
-host *only*. Do not change the host side to `0.0.0.0`; that would expose the broker /
-admin on your network. (This mirrors how tool containers already bind `0.0.0.0` + publish
-to host loopback via `TOOLSTACK_BIND`.)
-
-> ⚠️ If you bypass compose and use `docker run`, you **must** prefix every `-p` with
-> `127.0.0.1:`, e.g. `-p 127.0.0.1:8765:8765`. A bare `-p 8765:8765` defaults to
-> publishing on **all** interfaces (`0.0.0.0`), exposing the broker (bearer-token-only) and
-> the admin on your LAN. The compose file already does this correctly; the trap is only on
-> hand-written `docker run`.
-
-## State & lifecycle
-
-Everything lives under `./data` (mounted at `/data`): admin config (password hash,
-session key, broker config), the broker SQLite DB + audit, the encrypted vault, and
-toolyard state. Back up `./data` to back up your whole setup. `docker compose down`
-stops the box but keeps `./data`; delete `./data` to start fresh.
-
-## Adding your own tools
-
-Author tools into a directory under the volume (e.g. `/data/tools/<id>/`) so they
-persist, then add that directory in the admin's **broker config** (tool dirs). A process
-tool needs its code present in that directory; the panel writes its `toolyard.toml`.
+`TOOLSTACK_ADMIN_PASSWORD` is not a password bootstrap mechanism: the actual admin
+requires `admin set-password` with persistent XDG config before serving. Example
+env carries no real password. No default credentials are supplied.

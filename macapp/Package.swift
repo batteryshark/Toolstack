@@ -12,6 +12,6 @@ let package = Package(
         .target(name: "ToolstackKit"),
         .executableTarget(name: "ToolstackApp", dependencies: ["ToolstackKit"],
                           resources: [.copy("Resources/MenuBarIcon.png")]),
-        .testTarget(name: "ToolstackKitTests", dependencies: ["ToolstackKit"]),
+        .testTarget(name: "ToolstackKitTests", dependencies: ["ToolstackKit", "ToolstackApp"]),
     ]
 )

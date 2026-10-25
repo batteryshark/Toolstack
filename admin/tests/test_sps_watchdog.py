@@ -4,6 +4,7 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 from admin.sps_watchdog import SPSWatchdog
@@ -29,7 +30,7 @@ class SPSWatchdogTests(unittest.TestCase):
             with self.re_register_lock:
                 self.re_registered.append(kwargs)
             self.cfg_ev.set()
-            return 2  # pretend we re-registered 2 tools
+            return SimpleNamespace(complete=True)
 
         self.re_register = re_register
         self.wd = SPSWatchdog(
@@ -150,7 +151,7 @@ class SPSWatchdogTests(unittest.TestCase):
 
         def re_register(**kwargs):
             held.append(lock.locked())
-            return 1
+            return SimpleNamespace(complete=True)
 
         wd = SPSWatchdog(
             config=self.cfg,

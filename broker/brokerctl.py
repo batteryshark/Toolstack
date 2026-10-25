@@ -27,12 +27,13 @@ import os
 import shlex
 import signal
 import subprocess
+import sqlite3
 from pathlib import Path
 
 from . import operations, request_lifecycle
 from .audit import AuditLog, stderr_sink
 from .context import BrokerContext
-from .store import Store
+from .store import Store, default_db_path
 from .surface_nod import NodSurface
 
 
@@ -172,6 +173,43 @@ def list_requests(args) -> None:
         store.close()
 
 
+def prune_payloads(args):
+    store = _store(args)
+    try:
+        count = store.prune_payloads()
+        operations.record_admin_event(store, args.operator, "payloads_pruned", {"count": count, "retention_days": 7})
+        print(json.dumps({"pruned": count, "note": "WAL/backups may retain bytes; not secure erasure"}))
+    finally:
+        store.close()
+
+
+def reconcile_offline(args):
+    store = _store(args)
+    try:
+        count = store.reconcile_offline(confirmed_offline=args.confirm_offline)
+        operations.record_admin_event(store, args.operator, "execution_reconciled", {"unknown_count": count})
+        print(json.dumps({"unknown": count, "replayed": 0}))
+    finally:
+        store.close()
+
+
+def backup(args):
+    if not Path(args.db or default_db_path()).is_file():
+        raise FileNotFoundError("backup source database must already exist")
+    store = _store(args)
+    try:
+        destination = store.backup_to(args.destination)
+        operations.record_admin_event(store, args.operator, "state_backed_up", {"new_destination": True})
+        print(json.dumps({"snapshot": destination}))
+    finally:
+        store.close()
+
+
+def restore_new(args):
+    destination = Store.restore_new(args.snapshot, args.destination, confirmed_offline=args.confirm_offline)
+    print(json.dumps({"restored": destination, "tokens_invalidated": True, "policies_cleared": True, "replayed": 0}))
+
+
 def audit(args) -> None:
     store = _store(args)
     try:
@@ -256,6 +294,21 @@ def main() -> None:
     p.add_argument("--limit", type=int, default=50)
     p.set_defaults(func=list_requests)
 
+    p = sub.add_parser("prune-payloads", parents=[common, operator], help="manually prune terminal payloads older than seven days; keep receipts/keys")
+    p.set_defaults(func=prune_payloads)
+    p = sub.add_parser("reconcile-offline", parents=[common, operator], help="STOP all writers first; mark stale received/executing unknown, NEVER replay")
+    p.add_argument("--confirm-offline", action="store_true", required=True)
+    p.set_defaults(func=reconcile_offline)
+
+    p = sub.add_parser("backup", parents=[common, operator], help="SQLite WAL-consistent private snapshot to a NEW destination only")
+    p.add_argument("--destination", required=True)
+    p.set_defaults(func=backup)
+    p = sub.add_parser("restore-new", help="STOP all writers; restore a snapshot to NEW destination, invalidate authority; no replay")
+    p.add_argument("--snapshot", required=True)
+    p.add_argument("--destination", required=True)
+    p.add_argument("--confirm-offline", action="store_true", required=True)
+    p.set_defaults(func=restore_new)
+
     p = sub.add_parser("audit", parents=[common])
     p.add_argument("--request-id", type=int)
     p.add_argument("--correlation-id")
@@ -267,7 +320,10 @@ def main() -> None:
     p.set_defaults(func=reload)
 
     args = parser.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        raise SystemExit(f"operation refused: {type(exc).__name__}") from None
 
 
 if __name__ == "__main__":

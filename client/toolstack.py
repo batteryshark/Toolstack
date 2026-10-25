@@ -28,6 +28,9 @@ import json
 import os
 import sys
 import time
+import re
+import math
+from http.client import HTTPException
 import urllib.error
 import urllib.request
 
@@ -36,7 +39,16 @@ DEFAULT_URL = "http://127.0.0.1:8765"
 # a CLIENT-side outcome: the wait gave up, but the request may still be pending on
 # the broker; it must NOT read as success.
 _FAIL = {"denied", "expired", "failed", "unavailable", "invalid", "not_found",
-         "rate_limited", "timeout"}
+         "rate_limited", "timeout", "received", "executing", "unknown", "result_expired", "conflict"}
+_WAITING = {"pending_approval", "received", "executing"}
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 def _base() -> str:
@@ -57,22 +69,28 @@ def _token() -> str | None:
     return None
 
 
-def _send(method: str, path: str, body=None):
+def _send(method: str, path: str, body=None, *, idempotency_key=None):
     """Send a request to the broker and return (status, parsed-json). Raises
     urllib.error.URLError if the broker is unreachable; callers decide how to
     surface that (the CLI exits; the MCP server returns a JSON-RPC error). Shared
     with client.mcp_server so the broker HTTP call lives in exactly one place."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Content-Type": "application/json"}
+    if idempotency_key is not None:
+        if not isinstance(idempotency_key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", idempotency_key):
+            raise ValueError("invalid idempotency key")
+        headers["Idempotency-Key"] = idempotency_key
     token = _token()
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(_base() + path, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=_timeout()) as resp:
+        with _OPENER.open(req, timeout=_timeout()) as resp:
             return resp.status, json.loads(resp.read() or b"{}")
     except urllib.error.HTTPError as exc:
         try:
+            if 300 <= exc.code < 400:
+                return exc.code, {"status": "unknown", "error": "redirect_refused"}
             return exc.code, json.loads(exc.read() or b"{}")
         finally:
             exc.close()
@@ -82,26 +100,23 @@ def _timeout() -> float:
     """Per-call broker timeout in seconds (default 30). Override with TOOLSTACK_CLIENT_TIMEOUT
     for slow tools or links."""
     try:
-        return float(os.environ.get("TOOLSTACK_CLIENT_TIMEOUT", "30"))
+        value = float(os.environ.get("TOOLSTACK_CLIENT_TIMEOUT", "30"))
     except ValueError:
-        return 30.0
+        value = 30.0
+    if not math.isfinite(value) or not 0 < value <= 300:
+        raise ValueError("client timeout must be finite and within (0,300]")
+    return value
 
 
-def _request(method: str, path: str, body=None):
+def _request(method: str, path: str, body=None, *, idempotency_key=None):
     try:
-        return _send(method, path, body)
-    except urllib.error.URLError as exc:
-        # Name the error class too: a timeout vs a refused connection vs DNS failure all arrive
-        # as URLError subclasses, and the distinction matters when diagnosing.
-        print(f"cannot reach broker at {_base()}: {type(exc).__name__}: {exc.reason}",
-              file=sys.stderr)
-        # The most common cause is "I installed the CLIs but never started a broker." Say so,
-        # and point at the ways to start one (installing this package does not run anything).
-        print("Is a broker running at that address? Start one from the admin app (Start broker), "
-              "the Docker one-box (deploy/docker), the systemd service (deploy/), or directly with "
-              "`python3 -m broker.server`. Point elsewhere with TOOLSTACK_URL.",
-              file=sys.stderr)
-        raise SystemExit(2)
+        return _send(method, path, body, idempotency_key=idempotency_key) if idempotency_key is not None else _send(method, path, body)
+    except (OSError, HTTPException, json.JSONDecodeError) as exc:
+        response = {"status": "unknown", "error": "broker_transport_error", "detail": type(exc).__name__,
+                    "source": "client", "note": "Use the receipt or original key and exact payload; never auto-resubmit with a new key."}
+        if idempotency_key is not None:
+            response["idempotency_key"] = idempotency_key
+        return 502, response
 
 
 def _print(obj) -> None:
@@ -111,7 +126,7 @@ def _print(obj) -> None:
 def _finish(resp: dict) -> None:
     _print(resp)
     status = resp.get("status")
-    if status in _FAIL or (status is None and "error" in resp):
+    if status in _FAIL or (status is None and "error" in resp) or (isinstance(resp.get("result"), dict) and resp["result"].get("isError") is True):
         raise SystemExit(1)
 
 
@@ -123,17 +138,21 @@ def _poll_until_done(request_id: int, timeout: float, interval: float = 2.0) -> 
     as success. The request usually outlives this wait (the broker's approval TTL is far
     longer than the default client timeout), so the result carries the request id to
     resume with `toolstack wait <id>`."""
+    if not math.isfinite(timeout) or not 0 <= timeout <= 86400:
+        raise ValueError("wait timeout must be finite and within [0,86400]")
     deadline = time.monotonic() + timeout
     while True:
         _, resp = _request("GET", f"/v1/requests/{request_id}")
-        if resp.get("status") != "pending_approval":
+        resp.setdefault("request_id", request_id)
+        if resp.get("status") not in _WAITING:
             return resp
         if time.monotonic() >= deadline:
             return {**resp, "status": "timeout", "request_id": request_id,
+                    "broker_status": resp.get("status"),
                     "note": (f"client wait timed out after {timeout:g}s; the request is "
                              f"still pending on the broker. Resume with "
                              f"`toolstack wait {request_id}`")}
-        time.sleep(interval)
+        time.sleep(min(interval, max(0, deadline - time.monotonic())))
 
 
 def cmd_tools(args) -> None:
@@ -186,9 +205,14 @@ def cmd_call(args) -> None:
     body = {"arguments": _load_arguments(args)}
     if args.reason:
         body["reason"] = args.reason
-    _, resp = _request("POST", f"/v1/actions/{args.spec}", body)
-    if args.wait and resp.get("status") == "pending_approval":
+    key = getattr(args, "idempotency_key", None)
+    if key is None:
+        print("No idempotency key: resubmission can repeat effects. Prefer --idempotency-key; never auto-retry uncertain outcomes.", file=sys.stderr)
+    _, resp = _request("POST", f"/v1/actions/{args.spec}", body, idempotency_key=key) if key is not None else _request("POST", f"/v1/actions/{args.spec}", body)
+    if args.wait and resp.get("status") in _WAITING:
         resp = _poll_until_done(resp["request_id"], args.timeout)
+    if key is not None:
+        resp.setdefault("idempotency_key", key)
     _finish(resp)
 
 
@@ -218,8 +242,9 @@ def main() -> None:
     c.add_argument("args", nargs="?", default=None,
                    help="JSON arguments object (prefer stdin/heredoc or --args-file)")
     c.add_argument("--args-file", help="read JSON arguments from a file (shell-safe)")
-    c.add_argument("--reason", help="justification (use only for review ops / retries)")
-    c.add_argument("--wait", action="store_true", help="poll to the outcome if review-required")
+    c.add_argument("--reason", help="legacy private metadata, NOT shown to approver; do not include secrets")
+    c.add_argument("--idempotency-key", help="caller-scoped stable retry key: 1–128 letters, digits, _ or -; reuse only with the exact same action")
+    c.add_argument("--wait", action="store_true", help="bounded wait for received/approval/executing requests; never replay")
     c.add_argument("--timeout", type=float, default=300, metavar="SECONDS",
                    help="client-side wait for approval (default 300); on timeout, exits "
                         "non-zero with status=timeout and the request id to resume")
@@ -233,7 +258,10 @@ def main() -> None:
     w.set_defaults(func=cmd_wait)
 
     args = parser.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise SystemExit(f"request failed: {type(exc).__name__}; outcome may be unknown; use the receipt/original key, never auto-resubmit") from None
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+# Source-integrity SHA-256, not a credential: verification.json line 16 records
+# macapp/Sources/ToolstackKit/ApiClient.swift at baseline 06df1b15c0c8ac996ec8ce4851e674199b124393.
+# Independently matched to SHA-256 of git show BASELINE:path. Exempt only this
+# archived finding fingerprint; no path, rule or digest-wide exemption.
+9f36f44775e4b187ac1cc6ee1155beddf5184237:docs/ui-directions/iterations/01-superseded.zip!evidence/verification.json:generic-api-key:16

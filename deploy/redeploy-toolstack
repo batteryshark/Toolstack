@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 usage() {
   cat <<'USAGE'
@@ -109,7 +110,7 @@ if [[ "$SKIP_VENV" -eq 0 ]]; then
   echo "==> Installing the package + admin dependencies"
   # Editable install of the root package too, so brokerctl/toolstack/toolyard land in the venv
   # alongside the admin (the bootstrap + redeploy use admin/.venv/bin/brokerctl).
-  "$VENV_PIP" install -e '.[vault]' -r "$REPO_ROOT/admin/requirements.txt"
+  "$VENV_PIP" install '.[admin,vault]' -r "$REPO_ROOT/admin/requirements.txt" -c "$REPO_ROOT/admin/requirements-lock.txt"
 fi
 
 if [[ "$SKIP_SERVICE" -eq 0 ]]; then
@@ -120,7 +121,7 @@ import os, sqlite3, sys, time
 from pathlib import Path
 db = Path(sys.argv[1])
 backups = db.parent / "backups"
-backups.mkdir(parents=True, exist_ok=True)
+backups.mkdir(parents=True, exist_ok=True, mode=0o700)
 dest = backups / f"{db.stem}-{time.strftime('%Y%m%d-%H%M%S')}.sqlite3"
 src = sqlite3.connect(str(db))
 try:

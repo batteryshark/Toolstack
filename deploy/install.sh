@@ -9,10 +9,10 @@
 # and installs + enables the systemd unit. It chowns the checkout to the service user, so
 # run it from where the deployment should live (e.g. /opt/toolstack), not a personal clone.
 #
-# This gives a working basic install (process runner + file secret backend). For the docker
-# runner, the encrypted vault, or Infisical, fill in /etc/toolstack/admin.env afterwards
-# (see deploy/README.md) and restart the service.
+# Trusted process tools only; SPS requires offline provisioning after installation.
+# Supported release boundary is a dedicated Toolstack VM with agents outside it.
 set -euo pipefail
+umask 077
 
 [ "$(id -u)" -eq 0 ] || { echo "run as root: sudo deploy/install.sh" >&2; exit 1; }
 
@@ -21,7 +21,7 @@ SERVICE_USER="${TOOLSTACK_USER:-toolstack}"
 UNIT="/etc/systemd/system/toolstack-admin.service"
 VENV_PY="$REPO_ROOT/admin/.venv/bin/python"
 VENV_PIP="$REPO_ROOT/admin/.venv/bin/pip"
-# admin is run from the checkout root (it is not a pip-distributed package), so every admin
+# admin service is run from the checkout root (also distributed in the wheel), so every admin
 # invocation below cd's there first, matching the unit's WorkingDirectory.
 run_admin() { sudo -u "$SERVICE_USER" env XDG_CONFIG_HOME=/var/lib XDG_STATE_HOME=/var/lib \
                   sh -c "cd '$REPO_ROOT' && $1"; }
@@ -46,12 +46,13 @@ if [ ! -x "$VENV_PY" ]; then
     sudo -u "$SERVICE_USER" python3 -m venv "$REPO_ROOT/admin/.venv"
 fi
 echo "==> Installing the package + admin dependencies"
-sudo -u "$SERVICE_USER" sh -c "cd '$REPO_ROOT' && '$VENV_PIP' install --quiet -e '.[vault]' -r admin/requirements.txt"
+sudo -u "$SERVICE_USER" sh -c "cd '$REPO_ROOT' && '$VENV_PIP' install --quiet '.[admin,vault]' -r admin/requirements.txt -c admin/requirements-lock.txt"
 
 # 4. State + log dirs (the unit's StateDirectory/ReadWritePaths keep them; pre-create
 #    so set-password + the SPS audit logger land right instead of crashing on first write)
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 700 /var/lib/toolstack
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 750 /var/log/toolstack
+install -d -o root -g "$SERVICE_GROUP" -m 750 /etc/toolstack
 
 # 5. Admin password (the panel fails closed without one)
 if run_admin "'$VENV_PY' -c 'from admin import settings; raise SystemExit(0 if settings.read_password_hash() else 1)'"; then
@@ -86,14 +87,14 @@ if [ -f /etc/toolstack/sps.env ]; then
     systemctl enable --now toolstack-sps
 else
     echo "==> /etc/toolstack/sps.env not found; enabling toolstack-sps unit without autostart."
-    echo "    Run:  sudo -u $SERVICE_USER python3 -m sps.cli init --config /etc/toolstack/sps.env"
+    echo "    Bootstrap as root using deploy/bootstrap-sps.py; see deploy/README.md."
     echo "    then: sudo systemctl start toolstack-sps"
     systemctl enable toolstack-sps
 fi
 
 cat <<EOF
 
-Toolstack is installed and running.
+Toolstack admin is installed. SPS still requires config/vault provisioning if new.
   Panel:   http://127.0.0.1:8780   (reach it over a TLS tunnel; never bind a public interface)
   SPS:     tcp://127.0.0.1:8743 (TLS; tools register here on startup)
   Status:  systemctl status toolstack-admin toolstack-sps
@@ -105,7 +106,6 @@ Toolstack is installed and running.
     sudo -u $SERVICE_USER env XDG_CONFIG_HOME=/var/lib XDG_STATE_HOME=/var/lib \\
         $REPO_ROOT/admin/.venv/bin/brokerctl create-caller --name my-agent --allow echo_api.echo
 
-  Docker runner / encrypted vault / Infisical: fill in /etc/toolstack/admin.env, then
-  'systemctl restart toolstack-admin'. For the SPS plugin (Infisical / Vault / localfile),
-  fill in /etc/toolstack/sps.env and 'systemctl restart toolstack-sps'. See deploy/README.md.
+  Trusted process tools only. Linux privileged helper is disabled; Docker/Seatbelt
+  with SPS are unsupported. Complete SPS provisioning per deploy/README.md.
 EOF

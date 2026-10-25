@@ -47,7 +47,7 @@ class _FakeAudit:
     def __init__(self):
         self.events: list[tuple[str, str, str]] = []
 
-    def event(self, action, *, tool_id="", secret_name=""):
+    def event(self, action, *, tool_id="", secret_name="", outcome="ok"):
         self.events.append((action, tool_id, secret_name))
 
 
@@ -70,6 +70,17 @@ def _send(port: int, msg: dict) -> dict:
 
 
 class Wire(unittest.TestCase):
+    def test_sdk_refresh_real_wire_client_returns_string(self):
+        from sps.client import SPSClient
+        from sps.tool_sdk import SecretClient
+        registrar = SPSClient("127.0.0.1", self.port, sp_secret="sp-1",
+                              ca_file=self.cert)
+        registrar.register("sdk", "a" * 64, [{"name": "key", "field": "API_KEY"}])
+        sdk = SecretClient("sdk", host="127.0.0.1", port=self.port,
+                           esecret="a" * 64, ca_file=self.cert)
+        self.assertEqual(sdk.refresh("key"), "V")
+        self.assertEqual(sdk.get("key"), "V")
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(__import__("shutil").rmtree, self.tmp, ignore_errors=True)
