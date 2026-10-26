@@ -48,7 +48,9 @@ class DeploymentContracts(unittest.TestCase):
             pip.write_text('#!/bin/sh\n'
                            'printf "%s\\n" "$@" > "$HOME/pip-args"\n'
                            'case " $* " in *" --no-cache-dir "*) ;; '
-                           '*) mkdir -p "$HOME/.cache/pip" ;; esac\n')
+                           '*) mkdir -p "$HOME/.cache/pip" ;; esac\n'
+                           'sh -c \'printf "%s" "$PIP_NO_CACHE_DIR" > "$HOME/child-cache-setting"; '
+                           '[ "$PIP_NO_CACHE_DIR" = 1 ] || mkdir -p "$HOME/.cache/pip"\'\n')
             pip.chmod(0o700)
             subprocess.run(['bash', '-c', 'sudo(){ shift 2; "$@"; }\n' + command],
                            env={'PATH': '/usr/bin:/bin', 'HOME': tmp, 'REPO_ROOT': tmp,
@@ -58,6 +60,7 @@ class DeploymentContracts(unittest.TestCase):
             self.assertEqual(args[0], 'install')
             self.assertIn('--no-cache-dir', args)
             self.assertIn('admin/requirements-lock.txt', args)
+            self.assertEqual((home / 'child-cache-setting').read_text(), '1')
             self.assertFalse((home / '.cache').exists())
 
     def test_private_units_and_no_toml_environmentfile(self):
