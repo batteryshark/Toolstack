@@ -36,6 +36,30 @@ class DeploymentContracts(unittest.TestCase):
             self.assertIn('admin/requirements.txt', source)
             self.assertIn('admin/requirements-lock.txt', source)
 
+    def test_native_installer_disables_pip_cache_in_service_home(self):
+        # Execute only the dependency-install command with stand-ins, never the
+        # privileged installer or a real package download/service operation.
+        source = (ROOT / 'deploy/install.sh').read_text()
+        command, = [line for line in source.splitlines()
+                    if line.startswith('sudo -u "$SERVICE_USER" sh -c ')]
+        with tempfile.TemporaryDirectory(prefix='toolstack-install-cache-') as tmp:
+            home = Path(tmp)
+            pip = home / 'fake-pip'
+            pip.write_text('#!/bin/sh\n'
+                           'printf "%s\\n" "$@" > "$HOME/pip-args"\n'
+                           'case " $* " in *" --no-cache-dir "*) ;; '
+                           '*) mkdir -p "$HOME/.cache/pip" ;; esac\n')
+            pip.chmod(0o700)
+            subprocess.run(['bash', '-c', 'sudo(){ shift 2; "$@"; }\n' + command],
+                           env={'PATH': '/usr/bin:/bin', 'HOME': tmp, 'REPO_ROOT': tmp,
+                                'SERVICE_USER': 'fake', 'VENV_PIP': str(pip)},
+                           check=True, capture_output=True, text=True, timeout=10)
+            args = (home / 'pip-args').read_text().splitlines()
+            self.assertEqual(args[0], 'install')
+            self.assertIn('--no-cache-dir', args)
+            self.assertIn('admin/requirements-lock.txt', args)
+            self.assertFalse((home / '.cache').exists())
+
     def test_private_units_and_no_toml_environmentfile(self):
         for component in ('admin', 'sps'):
             source = (ROOT / f'deploy/toolstack-{component}.service').read_text()
