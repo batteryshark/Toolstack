@@ -193,6 +193,17 @@ public actor ApiClient {
         try await send("GET", "/api/callers/\(caller)/policy")
     }
 
+    public func callerSettings(_ caller: String) async throws -> SettingsSnapshot {
+        try await send("GET", "/api/callers/\(caller)/settings")
+    }
+
+    public func saveCallerSettings(_ draft: CallerSettingsDraft) async throws -> SettingsReceipt {
+        try await send("PUT", "/api/callers/\(draft.snapshot.name)/settings", body: [
+            "revision": draft.snapshot.revision, "enabled": draft.values.enabled.sorted(),
+            "disabled_functions": draft.values.excluded.mapValues { $0.sorted() }, "tools": draft.values.tools
+        ])
+    }
+
     /// Replace a caller's policy. `allow`/`review`/`deny` are `tool.op` specs.
     /// An op in none of the lists is denied.
     @discardableResult

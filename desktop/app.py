@@ -24,6 +24,7 @@ import sys
 import time
 import threading
 import urllib.request
+from pathlib import Path
 
 DEFAULT_URL = "http://127.0.0.1:8780"
 WINDOW_TITLE = "Toolstack"
@@ -126,7 +127,13 @@ def main() -> None:
                 js_api=bridge, width=620, height=360)
         else:
             webview.create_window(WINDOW_TITLE, stack.url, width=1180, height=820)
-        webview.start()  # blocks until the window is closed
+        # Private mode clears WebKit's website data at launch, including durable
+        # caller drafts. Persist this app's origin storage across window closes.
+        storage = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "toolstack/desktop-browser"
+        storage.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if storage.is_symlink() or storage.stat().st_uid != os.getuid() or storage.stat().st_mode & 0o077:
+            raise RuntimeError("desktop browser storage must be an owned private directory")
+        webview.start(private_mode=False, storage_path=str(storage))  # blocks until closed
     finally:
         if bridge is not None:
             bridge.shutdown()

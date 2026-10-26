@@ -75,6 +75,25 @@ final class AppModel: ObservableObject {
         return result
     }
 
+    func loadCallerSettings(_ caller: String) async throws -> SettingsSnapshot {
+        let epoch = generation, activeClient = client
+        let snapshot = try await activeClient.callerSettings(caller)
+        guard epoch == generation else { throw CancellationError() }
+        guard snapshot.name == caller, snapshot.callerId > 0 else { throw ApiError.decoding("Settings target differs from caller") }
+        return snapshot
+    }
+
+    func writeCallerSettings(_ draft: CallerSettingsDraft) async -> CallerSettingsDraft {
+        let epoch = generation, activeClient = client
+        var result = draft
+        guard result.canSave else { return result }
+        result.phase = .saving
+        do { try result.accept(try await activeClient.saveCallerSettings(draft)) }
+        catch { result.phase = MutationResult(error: error) == .rejected ? .stale : .unknown }
+        guard epoch == generation else { return draft }
+        return result
+    }
+
     /// The admin URL the user signs in against, editable on the login screen, remembered
     /// across launches. Works for a local admin (the default) or a remote one (a tailnet /
     /// tunnelled homeserver), as long as it's reachable.

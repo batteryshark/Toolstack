@@ -236,6 +236,10 @@ class Store:
     # --- policy -------------------------------------------------------------
 
     def set_policy(self, caller_id: int, policy: dict) -> None:
+        self._write_policy(caller_id, policy)
+        self._conn.commit()
+
+    def _write_policy(self, caller_id: int, policy: dict) -> None:
         self._conn.execute(
             """
             INSERT INTO caller_policies (caller_id, policy_json, updated_at)
@@ -247,7 +251,31 @@ class Store:
         )
         self._conn.execute("UPDATE approvals SET status='cancelled' WHERE status='pending' AND request_id IN (SELECT id FROM requests WHERE caller_id=? AND status='pending_approval')", (caller_id,))
         self._conn.execute("UPDATE requests SET status='denied', error='approval_invalidated', arguments_json=NULL, action_json=NULL,updated_at=? WHERE caller_id=? AND status='pending_approval'", (time.time(), caller_id))
-        self._conn.commit()
+
+    def compare_and_set_policy(self, caller_id: int, before: dict, after: dict,
+                               operator: str) -> bool:
+        """Commit both settings tabs, approval invalidation and audit together.
+
+        The write lock closes the read/write race with other admin and CLI connections.
+        No partial tool-enable / policy write can escape this transaction.
+        """
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            caller = self._conn.execute("SELECT name, revoked_at FROM callers WHERE id=?",
+                                        (caller_id,)).fetchone()
+            if caller is None or caller["revoked_at"] is not None or self.policy_for(caller_id) != before:
+                self._conn.rollback()
+                return False
+            self._write_policy(caller_id, after)
+            self._conn.execute(
+                "INSERT INTO audit_events (at, component, event_type, outcome, correlation_id, request_id, details_json) "
+                "VALUES (?, 'admin', 'settings_changed', 'ok', ?, NULL, ?)",
+                (time.time(), str(uuid.uuid4()), json.dumps({"operator": operator, "name": caller["name"]})))
+            self._conn.commit()
+            return True
+        except BaseException:
+            self._conn.rollback()
+            raise
 
     def policy_for(self, caller_id: int) -> dict:
         row = self._conn.execute(
