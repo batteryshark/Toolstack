@@ -46,7 +46,8 @@ if [ ! -x "$VENV_PY" ]; then
     sudo -u "$SERVICE_USER" python3 -m venv "$REPO_ROOT/admin/.venv"
 fi
 echo "==> Installing the package + admin dependencies"
-sudo -u "$SERVICE_USER" sh -c "cd '$REPO_ROOT' && '$VENV_PIP' install --quiet '.[admin,vault]' -r admin/requirements.txt -c admin/requirements-lock.txt"
+# The service account's HOME is the checkout; do not create an untracked .cache there.
+sudo -u "$SERVICE_USER" sh -c "cd '$REPO_ROOT' && '$VENV_PIP' install --no-cache-dir --quiet '.[admin,vault]' -r admin/requirements.txt -c admin/requirements-lock.txt"
 
 # 4. State + log dirs (the unit's StateDirectory/ReadWritePaths keep them; pre-create
 #    so set-password + the SPS audit logger land right instead of crashing on first write)
