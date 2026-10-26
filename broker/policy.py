@@ -16,6 +16,10 @@ DENY = "deny"
 
 def decide(policy: dict, tool: str, op: str) -> str:
     """Return ALLOW, REVIEW, or DENY for a (tool, op) under a caller policy."""
+    if "disabled_functions" in policy and "enabled" in policy and tool not in policy["enabled"]:
+        return DENY
+    if op in policy.get("disabled_functions", {}).get(tool, []):
+        return DENY
     rules = policy.get("tools", {}).get(tool, {})
     return _norm(rules.get(op))
 

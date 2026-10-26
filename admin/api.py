@@ -138,6 +138,34 @@ def add_api_routes(app: FastAPI, secret: str, guard) -> None:
         return supervisor.status()
 
     # --- callers / policy / tokens -------------------------------------------
+    @app.get("/api/callers/{name}/settings")
+    async def api_get_settings(name: str, user: str = Depends(require_user)):
+        from .caller_settings import snapshot
+        from fastapi.responses import JSONResponse
+        config = broker_config.load()
+        try:
+            with open_store(config) as store:
+                result = snapshot(store, config, name)
+                result["operator"] = user
+                return JSONResponse(result, headers={"Cache-Control": "no-store"})
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+    @app.put("/api/callers/{name}/settings")
+    async def api_set_settings(name: str, request: Request, user: str = Depends(require_user)):
+        from .caller_settings import apply, ChangedElsewhere
+        data = await _json_object(request)
+        config = broker_config.load()
+        try:
+            with open_store(config) as store:
+                return apply(store, config, name, data, user)
+        except ChangedElsewhere as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     @app.get("/api/callers")
     async def api_callers(user: str = Depends(require_user)):
         with open_store(broker_config.load()) as store:

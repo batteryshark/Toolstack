@@ -7,6 +7,10 @@ import ToolstackKit
     static func run(directory: String) {
         NSApplication.shared.setActivationPolicy(.prohibited)
         do {
+            if CommandLine.arguments.contains("--settings-snapshots") {
+                try settings(directory: directory)
+                return
+            }
             let model = AppModel()
             let decoder = JSONDecoder()
             model.tools = try decoder.decode(ToolsResponse.self, from: Data(#"{"tools":[{"id":"notes-demo","type":"api","running":true,"alive":false,"state":"crashed","health":"stopped","ops":[{"op":"read_note","risk":"read","description":"Read a note"},{"op":"write_note","risk":"write","description":"Write a note"}]}]}"#.utf8)).tools
@@ -62,4 +66,49 @@ import ToolstackKit
         } catch { fputs("Snapshot failure: \(error)\n", stderr); exit(1) }
     }
     enum SnapshotError: Error { case render }
+
+    private static func settings(directory: String) throws {
+        let catalog = Dictionary(uniqueKeysWithValues: (0..<30).map { tool in
+            (String(format: "tool%02d", tool), (0..<20).map { op in
+                ["op": String(format: "fn%02d", op), "risk": "read", "description": "Fake function"]
+            })
+        })
+        let payload: [String: Any] = ["name": "writer-demo", "caller_id": 1, "operator": "fake-admin", "installation": "fake-installation", "revision": "one",
+                                     "enabled": ["tool00"], "policy": ["tools": ["tool00": ["fn01": "review"]]], "catalog": catalog]
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let snapshot = try decoder.decode(SettingsSnapshot.self, from: JSONSerialization.data(withJSONObject: payload))
+        let model = AppModel()
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        var evidence: [[String: Any]] = []
+        for state in ["enabled", "policy", "many", "empty", "stale"] {
+            var draft = CallerSettingsDraft(snapshot)
+            draft.expanded = ["tool00"]
+            draft.setFunction("tool00", "fn02", enabled: false)
+            draft.values.tools["tool00"]?["fn03"] = "review"
+            if state != "enabled" { draft.tab = "policy" }
+            if state == "many" { draft.search = "fn01" }
+            if state == "empty" { draft.search = "no-such-function" }
+            if state == "stale" { draft.phase = .stale }
+            for width in [900, 660] {
+                let host = NSHostingView(rootView: CallerSettingsEditor(caller: "writer-demo", fixture: draft)
+                    .environmentObject(model).environment(\.colorScheme, .light).environment(\.controlActiveState, .active)
+                    .frame(width: CGFloat(width), height: 680).background(Color(nsColor: .windowBackgroundColor)))
+                host.frame = NSRect(x: 0, y: 0, width: width, height: 680)
+                let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false; window.appearance = NSAppearance(named: .aqua); window.contentView = host
+                host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2)); host.layoutSubtreeIfNeeded()
+                guard !window.isVisible, NSApplication.shared.activationPolicy() == .prohibited,
+                      let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw SnapshotError.render }
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                guard let png = bitmap.representation(using: .png, properties: [:]) else { throw SnapshotError.render }
+                try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("settings-\(state)-\(width).png"))
+                evidence.append(["state": state, "width": width, "functions": 600, "tools": 30, "window_visible": window.isVisible,
+                                 "activation_prohibited": true, "live_keyboard_or_voiceover": false])
+                window.close()
+            }
+        }
+        try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys])
+            .write(to: URL(fileURLWithPath: directory).appendingPathComponent("settings-evidence.json"))
+        print("Rendered 10 native caller-settings fixtures offscreen; live keyboard and VoiceOver remain separate checks.")
+    }
 }

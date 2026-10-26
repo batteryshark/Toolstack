@@ -11,6 +11,24 @@ extension PendingTransport {
 }
 
 final class StalePublicationTests: XCTestCase {
+    @MainActor func testLateCombinedSettingsCannotCrossAnAccountReset() async throws {
+        let model = model()
+        let json = #"{"name":"A","caller_id":1,"operator":"admin","installation":"fake","revision":"one","enabled":["echo"],"policy":{"tools":{"echo":{"say":"review"}}},"catalog":{"echo":[{"op":"say","risk":"read","description":"fake"}]}}"#
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        var draft = CallerSettingsDraft(try decoder.decode(SettingsSnapshot.self, from: Data(json.utf8)))
+        draft.values.tools["echo"]?["say"] = "allow"
+        let started = expectation(description: "combined settings pending")
+        PendingTransport.started = { if PendingTransport.count == 1 { started.fulfill() } }
+        let pending = draft
+        let task = Task { await model.writeCallerSettings(pending) }
+        await fulfillment(of: [started], timeout: 2)
+        try seedB(model)
+        PendingTransport.pending?.respond(200, #"{"outcome":"saved","name":"A","policy":{"enabled":["echo"],"tools":{"echo":{"say":"allow"}},"disabled_functions":{"echo":[]}}}"#)
+        let returned = await task.value
+        XCTAssertEqual(returned, pending, "A late receipt is not consumable as a saved B draft")
+        assertB(model)
+    }
+
     @MainActor private func model() -> AppModel {
         PendingTransport.count = 0
         let configuration = URLSessionConfiguration.ephemeral
