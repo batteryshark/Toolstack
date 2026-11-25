@@ -1,4 +1,4 @@
-"""One fixed prior-proof cleanup; inert by default. Parent live admission required."""
+"""One fixed prior-proof cleanup; inert by default. Run only with explicit live approval."""
 import argparse
 import dataclasses
 import json
@@ -141,7 +141,7 @@ class CleanupProof:
 
     def root_command(self, action):
         require(action in ('cleanup-check', 'cleanup-remove'), 'fixed cleanup action')
-        return ('qm', 'guest', 'exec', '130', '--timeout', '30', '--', 'python3', '-c',
+        return ('qm', 'guest', 'exec', g.PROOF_VMID, '--timeout', '30', '--', 'python3', '-c',
                 GUEST_CODE, OLD_RUN, action, str(MARKER['dev']), str(MARKER['ino']))
 
     def permit(self, argv, data):
@@ -219,7 +219,7 @@ class CleanupIO(linux.LinuxSubprocessIO):
 
     def allowed(self, argv, input_data=None):
         # Narrow the inherited metadata allowlist, never broaden it.
-        if argv[:3] == ('qm', 'guest', 'exec') and argv[3] == '130':
+        if argv[:3] == ('qm', 'guest', 'exec') and argv[3] == g.PROOF_VMID:
             if argv != g.agent_ready_argv() and not self.proof.permit(argv, input_data):
                 raise g.GuardRefusal('cleanup-only guest command refused')
         return super().allowed(argv, input_data)

@@ -1,8 +1,8 @@
 """Broker registry auto-injects refresh/refresh_one ops for tools with [[secrets]] declared.
 
-Plan ref: docs/plans/2026-07-16-sps-overhaul.md Task 3.5. Without this injection, the broker
-returns "not found" for `<tool>.refresh` and `<tool>.refresh_one` even though every tool
-with declared secrets has the SPS-backed SecretClient that can serve them. With it, the
+Without this injection, the broker returns "not found" for `<tool>.refresh` and
+`<tool>.refresh_one` even though every tool with declared secrets has the SPS-backed
+SecretClient that can serve them. With it, the
 catalog lists both ops (risk="read") so the broker's policy + audit pipeline picks them
 up exactly like any other op.
 """

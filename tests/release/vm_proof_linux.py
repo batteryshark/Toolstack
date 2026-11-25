@@ -391,28 +391,28 @@ class LinuxSubprocessIO:
             return
         if input_data is not None:
             raise g.GuardRefusal("stdin is only admitted by the fixed proof receiver")
-        if argv in {("free", "-m"), g.NOD_CURL, ("qm", "status", "100"),
-                    ("qm", "status", "130"), ("qm", "config", "130"), g.production_ps_argv()}:
+        if argv in {("free", "-m"), g.NOD_CURL, ("qm", "status", g.PRODUCTION_VMID),
+                    ("qm", "status", g.PROOF_VMID), ("qm", "config", g.PROOF_VMID), g.production_ps_argv()}:
             return
-        if argv == ("qm", "set", "130", "--memory", "4096"):
+        if argv == ("qm", "set", g.PROOF_VMID, "--memory", "4096"):
             if self.owned_resize and not self.cleanup and self.admit_text() == self.config.run_id:
                 return
-        if argv == ("qm", "start", "130"):
+        if argv == ("qm", "start", g.PROOF_VMID):
             if (self.owned_start and self.pressure_state.boot_monotonic is None
                     and not self.cleanup and self.admit_text() == self.config.run_id):
                 return
-        if argv == ("qm", "set", "130", "--memory", "8192"):
+        if argv == ("qm", "set", g.PROOF_VMID, "--memory", "8192"):
             if self.cleanup and self.owned_resize:
                 return
-        if argv == ("qm", "shutdown", "130", "--timeout", "90"):
+        if argv == ("qm", "shutdown", g.PROOF_VMID, "--timeout", "90"):
             if self.cleanup and self.owned_start and not self.shutdown_sent:
                 return
         if self.owned_start and argv in {g.agent_ready_argv(), g.unit_list_argv(), g.listen_argv(), g.process_meta_argv()}:
             return
-        if self.owned_start and argv == g._guest("130", "30", (
+        if self.owned_start and argv == g._guest(g.PROOF_VMID, "30", (
                 "docker", "ps", "-a", "--no-trunc", "--format", g.PROOF_PS_FORMAT)):
             return
-        if self.owned_start and self.checkout != "discover" and argv in {g._guest("130", "15", c) for c in inventory_commands(self.checkout)}:
+        if self.owned_start and self.checkout != "discover" and argv in {g._guest(g.PROOF_VMID, "15", c) for c in inventory_commands(self.checkout)}:
             return
         raise g.GuardRefusal("command not in boot-metadata allowlist")
 
@@ -442,27 +442,27 @@ class LinuxSubprocessIO:
             raise g.GuardRefusal("timeout differs from command bound")
         self.check()
         expected = {
-            ("qm", "set", "130", "--memory", "4096"): ("stopped", 8192),
-            ("qm", "start", "130"): ("stopped", 4096),
-            ("qm", "set", "130", "--memory", "8192"): ("stopped", 4096),
-            ("qm", "shutdown", "130", "--timeout", "90"): ("running", 4096),
+            ("qm", "set", g.PROOF_VMID, "--memory", "4096"): ("stopped", 8192),
+            ("qm", "start", g.PROOF_VMID): ("stopped", 4096),
+            ("qm", "set", g.PROOF_VMID, "--memory", "8192"): ("stopped", 4096),
+            ("qm", "shutdown", g.PROOF_VMID, "--timeout", "90"): ("running", 4096),
         }.get(argv)
         if expected:
-            status = self.run(("qm", "status", "130"), 15)
-            config = self.run(("qm", "config", "130"), 15)
+            status = self.run(("qm", "status", g.PROOF_VMID), 15)
+            config = self.run(("qm", "config", g.PROOF_VMID), 15)
             shape = g.parse_allowlisted_config(config.stdout) if config.code == 0 else None
             if (status.code or g.parse_qm_status(status.stdout) != expected[0]
                     or shape is None or (shape.memory_mib, shape.cores, shape.onboot) != (expected[1], 2, 0)):
                 # Intent is not ownership when the final preflight refuses to
                 # issue the command. Do not undo somebody else's transition.
-                if argv == ("qm", "set", "130", "--memory", "4096"):
+                if argv == ("qm", "set", g.PROOF_VMID, "--memory", "4096"):
                     self.owned_resize = False
-                if argv == ("qm", "start", "130"):
+                if argv == ("qm", "start", g.PROOF_VMID):
                     self.owned_start = False
                 self.checkpoint()
                 raise g.GuardRefusal("effect refused: VM ownership/shape drift")
             self.check()
-        if argv == ("qm", "start", "130"):
+        if argv == ("qm", "start", g.PROOF_VMID):
             # Final stopped/shape/health preflight has passed. Journal intent
             # before spawn so checks DURING qm start share this finite grace.
             # Failure/lost reply never resets it and never permits another boot.
@@ -532,7 +532,7 @@ class LinuxSubprocessIO:
                 result = g.completed_from_guest(text)
                 payload = json.loads(text)
                 return g.Completed(1, "") if payload.get("err-data") or payload.get("out-truncated") else result
-            if argv == ("qm", "config", "130"):
+            if argv == ("qm", "config", g.PROOF_VMID):
                 text = g.redact_qm_config(text)
             return g.Completed(0, text)
         except (TimeoutError, OSError, ValueError, g.GuardRefusal):
@@ -550,7 +550,7 @@ class LinuxSubprocessIO:
         inventory = []
         commands = (g.unit_list_argv(), g.listen_argv(), g.process_meta_argv())
         if self.proof is None:
-            commands += tuple(g._guest("130", "15", c) for c in inventory_commands(self.checkout))
+            commands += tuple(g._guest(g.PROOF_VMID, "15", c) for c in inventory_commands(self.checkout))
         for argv in commands:
             latch.before_effect()
             sample, shape = _fresh(self, self.config, 2400 - (self.deadline - self.clock()))

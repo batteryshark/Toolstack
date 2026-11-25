@@ -26,7 +26,7 @@ UNEXECUTED_GATES = (
     "process SPS TLS/restart/recovery on this VM",
     "qm stop or poweroff",
     "memory restore while a guest is running",
-    "mutation of VM 100 or any other guest",
+    "mutation of the production VM or any other guest",
 )
 
 STAGE2_STEPS = (
@@ -34,7 +34,7 @@ STAGE2_STEPS = (
     "refuse-start-unless-stopped-8192-and-headroom",
     "start-guard-before-resize",
     "qm-set-4096-while-stopped",
-    "qm-start-130",
+    "qm-start-proof-vm",
     "wait-guest-agent-or-rollback",
     "list-units-ports-process-metadata",
     "inventory-status-hash-paths",

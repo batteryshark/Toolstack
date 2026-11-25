@@ -1,40 +1,58 @@
-"""Fail-closed VM 130 proof guard. Library only; this file does not contact a host.
+"""Fail-closed proof-VM guard. Library only; this file does not contact a host.
 
 Tests inject a fake executor. Rollback stops a container only when its recorded
 full 64-character id and unique label both match, and removes an image only when
-its sha256 id, run label, and exact run tag all match. It shuts VM 130 down
+its sha256 id, run label, and exact run tag all match. It shuts the proof VM down
 once and restores 8192 MiB only after that guest is stopped.
 
 Tripwires, any one of which rolls back: MemAvailable below 1.5 GiB, unreadable
-pressure, full-memory stall, VM 100 not running, Nod health not the exact
+pressure, full-memory stall, production VM not running, Nod health not the exact
 expected body, baseline production container metadata missing or unhealthy,
 unknown probe output, stale parent lease, or the resource window elapsing.
 Rollback stops only containers whose recorded id and unique label both match,
-shuts VM 130 down gracefully, and restores 8192 MiB only after it is stopped.
+shuts the proof VM down gracefully, and restores 8192 MiB only after it is stopped.
 It never poweroffs a guest, prunes, or signals an unverified PID.
 
-This harness targets one self-hosted Proxmox setup. The VM IDs, memory sizes and
-Nod health URL below are that setup's values (the URL is a documentation
-placeholder); set them for your own host before using it elsewhere.
+The harness drives a self-hosted Proxmox host. Point it at yours with:
+
+  TOOLSTACK_VMPROOF_PROOF_VMID       disposable VM the proof boots, resizes and
+                                     shuts down (example: 130)
+  TOOLSTACK_VMPROOF_PRODUCTION_VMID  VM that must stay running throughout
+                                     (example: 100)
+  TOOLSTACK_VMPROOF_NOD_HEALTH_URL   Nod health endpoint checked from the host
+                                     (example: http://192.0.2.10:8767/health,
+                                     a documentation address)
+
+Unset variables fall back to those examples, which the tests also use. Memory
+sizes, cores and timeouts below are fixed for the expected proof-VM shape.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import sys
 from dataclasses import dataclass
 
-PROOF_VMID = "130"
-PRODUCTION_VMID = "100"
+# Host-specific settings; the defaults are examples, not a real host.
+PROOF_VMID = os.environ.get("TOOLSTACK_VMPROOF_PROOF_VMID", "130")
+PRODUCTION_VMID = os.environ.get("TOOLSTACK_VMPROOF_PRODUCTION_VMID", "100")
+NOD_HEALTH_URL = os.environ.get("TOOLSTACK_VMPROOF_NOD_HEALTH_URL", "http://192.0.2.10:8767/health")
+if not (PROOF_VMID.isascii() and PROOF_VMID.isdigit()
+        and PRODUCTION_VMID.isascii() and PRODUCTION_VMID.isdigit()
+        and PROOF_VMID != PRODUCTION_VMID):
+    raise ValueError("TOOLSTACK_VMPROOF_*_VMID must be two different numeric Proxmox VM IDs")
+if not re.fullmatch(r"https?://[^\s/]+/\S*", NOD_HEALTH_URL):
+    raise ValueError("TOOLSTACK_VMPROOF_NOD_HEALTH_URL must be an http(s) URL")
+
 TEST_MEMORY_MIB = 4096
 RESTORE_MEMORY_MIB = 8192
 REQUIRED_CORES = 2
 REQUIRED_ONBOOT = 0
 MEMORY_FLOOR_MIB = 1536
 HEADROOM_MIB = TEST_MEMORY_MIB + MEMORY_FLOOR_MIB
-NOD_HEALTH_URL = "http://192.0.2.10:8767/health"
 NOD_HEALTH_BODY = '{"ok":true,"service":"nod"}'
 LABEL_KEY = "toolstack.vmproof"
 LEASE_STALE_SECONDS = 90

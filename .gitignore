@@ -1,20 +1,11 @@
 __pycache__/
 *.py[cod]
 .DS_Store
-# local tool state
-.brv/
 .pytest_cache/
 .venv/
 build/
 dist/
 *.egg-info/
-/target
-
-# local tool state
-toolstack-old/
-.claude/
-/.ordna/
-/tasks/
 
 # local dev secrets (never commit)
 secrets.toml
@@ -27,21 +18,12 @@ deploy/docker/data/
 .build/
 .swiftpm/
 
-# Per-tool agent skills are tied to private tools, not committed. (The tool
-# implementations themselves live outside this repo under
-# ~/.local/share/toolstack/tools and are never tracked here.) The generic client
-# skill at client/SKILL.md is unaffected.
+# Per-tool client skills ship with each tool, not with this repo. The generic
+# client skill at client/SKILL.md is tracked.
 client/skills/
-/toolstack-writeup
-/.agents
 
 # Per-tool runtime logs written by the toolyard process runner (<tool>/logs/tool.log).
 tools/*/logs/
-/.work
-
-# local tool state
-docs/plans/
-.worktrees/
 
 # Generated test and render output.
 admin/tests/evidence/

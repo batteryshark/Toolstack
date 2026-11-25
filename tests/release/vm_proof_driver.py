@@ -94,7 +94,7 @@ class GuestProof:
             return False
         if self.marker and tuple(argv) == self.command("remove", (self.marker["dev"], self.marker["ino"])):
             return self.pending is None and self.sync_inflight in (None, "remove")
-        if tuple(argv[:4]) != ("qm", "guest", "exec", "130"):
+        if tuple(argv[:4]) != ("qm", "guest", "exec", g.PROOF_VMID):
             return False
         try:
             g.rollback_command_allowed(tuple(argv), self.run)
@@ -116,7 +116,7 @@ class GuestProof:
             if action != "chunk":
                 raise g.GuardRefusal("stdin only for bounded archive chunks")
             options += ("--pass-stdin", "1")
-        return ("qm", "guest", "exec", "130", *options, "--", "python3", "-c", GUEST_CODE, self.run, action, *map(str, args))
+        return ("qm", "guest", "exec", g.PROOF_VMID, *options, "--", "python3", "-c", GUEST_CODE, self.run, action, *map(str, args))
 
     def call(self, argv, data=None, cleanup=False):
         with self.io.latch.lock:
@@ -195,7 +195,7 @@ class GuestProof:
             self.health()  # Full VM100/Nod/container health, not only host memory.
             if self.io.clock() >= deadline:
                 raise g.GuardRefusal("job deadline")
-            response = self.call(("qm", "guest", "exec-status", "130", str(reply["pid"])))
+            response = self.call(("qm", "guest", "exec-status", g.PROOF_VMID, str(reply["pid"])))
             if response.get("exited") in (False, 0) and "exited" in response:
                 if set(response) != {"exited"}:
                     raise g.GuardRefusal("unexpected pending QGA status")

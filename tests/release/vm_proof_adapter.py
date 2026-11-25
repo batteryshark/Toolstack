@@ -1,4 +1,4 @@
-"""Finite VM 130 state machine. CLI binds LinuxSubprocessIO; default is dry-run."""
+"""Finite proof-VM state machine. CLI binds LinuxSubprocessIO; default is dry-run."""
 
 from __future__ import annotations
 
@@ -302,12 +302,12 @@ def dry_run_plan(run_id: str) -> str:
         f"python3 vm_proof_adapter.py controller --execute --live --root {root} --run-id {run_id} --checkout discover --source-commit COMMIT40 --archive-sha256 SHA64 --archive /PRIVATE/source.tar --baseline nod:healthy",
         "guard never writes lease or admit; foreground controller owns both",
         "controller PID and Linux starttime must match; lease age over 90 seconds rolls back",
-        "ready acknowledgement and a fresh gate are required before qm set 130 --memory 4096",
-        "confirm stopped, memory 4096, cores 2, onboot 0, then qm start 130",
+        f"ready acknowledgement and a fresh gate are required before qm set {PROOF_VMID} --memory 4096",
+        f"confirm stopped, memory 4096, cores 2, onboot 0, then qm start {PROOF_VMID}",
         "guest agent /bin/true must answer within 6 samples or the helper rolls back",
-        "one qm shutdown 130 --timeout 90 with subprocess timeout 100; no qm stop or forceStop",
-        "qm set 130 --memory 8192 only after status stopped and cores/onboot are unchanged",
-        "payload: exact parent-supplied git commit/archive sha256, validated before boot and guest extraction",
+        f"one qm shutdown {PROOF_VMID} --timeout 90 with subprocess timeout 100; no qm stop or forceStop",
+        f"qm set {PROOF_VMID} --memory 8192 only after status stopped and cores/onboot are unchanged",
+        "payload: exact caller-supplied git commit/archive sha256, validated before boot and guest extraction",
         "fixed async build/create/start sequence only; no arbitrary commands or in-place owner updates",
     ))
 
@@ -432,8 +432,8 @@ def _safe_rollback(io, config: GuardConfig):
     if not getattr(io, "owned_resize", False):
         return RollbackReport(False, False, ("no-owned-transition",), ())
     try:
-        status = io.run(("qm", "status", "130"), 15)
-        current = io.run(("qm", "config", "130"), 15)
+        status = io.run(("qm", "status", PROOF_VMID), 15)
+        current = io.run(("qm", "config", PROOF_VMID), 15)
         shape = parse_allowlisted_config(current.stdout) if current.code == 0 else None
         state = parse_qm_status(status.stdout) if status.code == 0 else None
         if (shape is None or shape.memory_mib not in (4096, 8192)
