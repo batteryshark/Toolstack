@@ -1,7 +1,7 @@
 __pycache__/
 *.py[cod]
 .DS_Store
-# brv context-tool working state: local only (like .ordna / tasks), not repo content.
+# local tool state
 .brv/
 .pytest_cache/
 .venv/
@@ -10,13 +10,9 @@ dist/
 *.egg-info/
 /target
 
-# Local-only, not part of the deliverable: the previous build (porting
-# reference) and local Claude Code config/skills.
+# local tool state
 toolstack-old/
 .claude/
-
-# Ordna board for /orchestrate: local-only (Private visibility, chosen at init).
-# .claude/ above already covers .claude/worktrees/ used for orchestrate worktrees.
 /.ordna/
 /tasks/
 
@@ -43,6 +39,12 @@ client/skills/
 tools/*/logs/
 /.work
 
-# Don't commit plans or worktrees. That would make things messy too :).
+# local tool state
 docs/plans/
 .worktrees/
+
+# Generated test and render output.
+admin/tests/evidence/
+macapp/evidence/
+docs/ui-directions/evidence/
+tests/release/evidence/

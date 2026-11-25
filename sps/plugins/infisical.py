@@ -53,7 +53,7 @@ class InfisicalPlugin(SPSSecretsPlugin):
             "includeImports": "true",
             "type": "shared",
         }
-        # Official v4 getSecretByNameV4 contract (see handoff evidence).
+        # Official v4 getSecretByNameV4 contract.
         # References/import lookup stay server-side; never list the folder.
         body = self._http("GET", f"/api/v4/secrets/{urllib.parse.quote(field, safe='')}", params=params)
         secret = body.get("secret") if isinstance(body, dict) else None

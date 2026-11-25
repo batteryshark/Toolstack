@@ -11,8 +11,8 @@ from vm_proof_guard import (
     HEAVY_BUILD_ATTEMPTS,
     MEMORY_FLOOR_MIB,
     NOD_HEALTH_BODY,
-    PARENT_FREE_AVAILABLE_MIB,
-    PARENT_MEM_AVAILABLE_KIB,
+    BASELINE_FREE_AVAILABLE_MIB,
+    BASELINE_MEM_AVAILABLE_KIB,
     BaselineContainer,
     Completed,
     GuardConfig,
@@ -69,7 +69,7 @@ def config() -> GuardConfig:
 
 def sample(**overrides) -> Sample:
     values = dict(
-        mem_available_kib=PARENT_MEM_AVAILABLE_KIB,
+        mem_available_kib=BASELINE_MEM_AVAILABLE_KIB,
         pressure_readable=True,
         full_avg10=0.0,
         full_avg60=0.0,
@@ -238,9 +238,9 @@ class Assess(unittest.TestCase):
         self.assertIn("production-unknown", trip.reasons)
 
     def test_parent_meminfo_and_free_parsers(self):
-        self.assertEqual(parse_memavailable_kib("MemAvailable:    7194384 kB\n"), PARENT_MEM_AVAILABLE_KIB)
+        self.assertEqual(parse_memavailable_kib("MemAvailable:    7194384 kB\n"), BASELINE_MEM_AVAILABLE_KIB)
         text = "               total        used        free      shared  buff/cache   available\nMem:           7950        1000         500          10        2000        6952\n"
-        self.assertEqual(parse_free_available_mib(text), PARENT_FREE_AVAILABLE_MIB)
+        self.assertEqual(parse_free_available_mib(text), BASELINE_FREE_AVAILABLE_MIB)
         self.assertIsNone(parse_pressure("not pressure"))
 
 

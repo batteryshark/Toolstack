@@ -10,8 +10,9 @@ if not CHROME.exists():
     raise SystemExit('No installed renderer; use the standalone SVGs. Do not install one.')
 captures = ROOT / 'captures'
 captures.mkdir(exist_ok=True)
+(ROOT / 'evidence').mkdir(exist_ok=True)
 results = []
-with tempfile.TemporaryDirectory(prefix='toolstack-ui-', dir='/path/to/tmp') as profile:
+with tempfile.TemporaryDirectory(prefix='toolstack-ui-') as profile:
     base = [str(CHROME), '--headless', '--disable-gpu', '--no-first-run', '--use-mock-keychain', '--password-store=basic',
             '--no-default-browser-check', '--disable-background-networking',
             '--disable-component-update', '--disable-sync', '--hide-scrollbars',

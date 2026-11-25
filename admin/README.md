@@ -2,7 +2,7 @@
 
 The operator's control panel for the whole stack: **run the broker**, **manage
 clients** (callers, tokens, policies), **control tools**, and watch **requests and
-audit**. Built for local / homelab use; binds loopback only. See [../plan.md](../plan.md).
+audit**. Built for local / homelab use; binds loopback only. See [../docs/component-design.md](../docs/component-design.md).
 
 This is the one Toolstack component with runtime dependencies (FastAPI + uvicorn,
 plus PyYAML for YAML OpenAPI imports); the broker, toolyard, and client stay

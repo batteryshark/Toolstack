@@ -1,14 +1,15 @@
 # Local real-release vertical slice
 
-Run from this checkout with the already-cached Python 3.11.17 environment:
+Run from this checkout with a uv-managed Python 3.11.17 already installed
+(the variables are expanded by your shell before `env -i` clears the environment):
 
 ```sh
 env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin \
- HOME=/path/to/tmp \
- TMPDIR=/path/to/tmp \
- UV_CACHE_DIR=/path/to/home/.cache/uv UV_PYTHON_DOWNLOADS=never \
- /path/to/home/.local/bin/uv run --offline --no-project \
- --python /path/to/home/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/bin/python3.11 \
+ HOME="${TMPDIR:-/tmp}" \
+ TMPDIR="${TMPDIR:-/tmp}" \
+ UV_CACHE_DIR="$HOME/.cache/uv" UV_PYTHON_DOWNLOADS=never \
+ "$(command -v uv)" run --offline --no-project \
+ --python "$HOME/.local/share/uv/python/cpython-3.11.17-macos-aarch64-none/bin/python3.11" \
  --with cryptography==50.0.2 --with fastapi==0.137.1 --with uvicorn==0.49.0 \
  --with PyYAML==6.0.3 --with httpx==0.28.1 python scripts/check-vertical-slice.py
 ```
@@ -19,8 +20,8 @@ rejects links, special members, absolute/traversal archive paths before extracti
 It never invokes an installed Nod. It requires network access only for that
 published artifact; runtime calls use dynamic literal loopback ports.
 
-The launcher creates one private temporary directory under the approved OpenCode
-temporary root and constructs a fresh child environment. The fixture clears its
+The launcher creates one private temporary directory under the system temporary
+directory and constructs a fresh child environment. The fixture clears its
 own environment too. Certificates, fake SPS config/passphrase, encrypted vault,
 fake tokens, private runner state, channels.json, logs and Nod data stay there.
 No APNs configuration or push tokens are supplied. The enrolled software P-256

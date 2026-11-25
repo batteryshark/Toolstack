@@ -1,8 +1,8 @@
 # Toolstack operator — three design directions
 
-**Current: revision 02, chief feedback applied.** Start with [`overview.html`](overview.html), the self-contained three-direction comparison for the chief’s eventual single card, then open [`gallery.html`](gallery.html). No card is sent by this pack. Current screenshots are all under `captures/`; iteration 01 and its superseded evidence are archived in `iterations/01-superseded.zip`. Principal rejections remain **0**.
+**Revision 02.** Start with [`overview.html`](overview.html), the self-contained three-direction comparison, then open [`gallery.html`](gallery.html). Current screenshots are all under `captures/`.
 
-**Recommendation to chief: 01 · Clear desk.** It retains Toolstack’s navy navigation, blue action color and light form canvas, while making authority and state legible. It is the least disruptive reference for the web, thin desktop shell and native Mac adaptation. This is a recommendation, not a selection.
+**Recommendation: 01 · Clear desk.** It retains Toolstack’s navy navigation, blue action color and light form canvas, while making authority and state legible. It is the least disruptive reference for the web, thin desktop shell and native Mac adaptation. This is a recommendation, not a selection.
 
 Open **`gallery.html`** directly; no server, build or dependencies are needed. It is self-contained, with direction, surface, flow and frame selectors. The controls browse designs only; application controls are drawings. Default view is desktop-size, with optional fit-to-width. Hash links preserve a particular frame, for example `gallery.html#b-mac-recover-0`.
 
@@ -11,8 +11,7 @@ Open **`gallery.html`** directly; no server, build or dependencies are needed. I
 - Three directions, each across **admin web, desktop webview shell, and native Mac**.
 - Each surface has three primary flows with three frames each: **81 standalone 1440 × 900 SVGs**, all embedded in the gallery.
 - Nine representative 1440 × 900 PNGs in `captures/`: a web policy draft, a shell broker-registration confirmation and a native crash screen for **each** direction.
-- `acceptance.md`: source/mockup review, projected task paths, limitations and acceptance gates.
-- `evidence/`: bundled Norman collector output for each existing surface and the mockups; offscreen rendering results; structural verification.
+- `evidence/`: generated output of `build_gallery.py`, `capture.py` and `check_geometry.py`; not tracked.
 - `build_gallery.py`: deterministic stdlib design-artifact generator. `capture.py`: optional existing-Chrome offscreen evidence, with a disposable isolated profile. Neither imports or starts Toolstack.
 
 ## Directions
@@ -66,6 +65,4 @@ Assumptions: one trusted local admin, existing caller and tool, fake identifiers
 
 **Usable now:** a portable gallery for review, inspectable vector frames, representative offscreen captures, concise recommendation and bounded behavior requirements.
 
-**Left:** chief presents one selection card; principal chooses a direction; authorized construction and cross-surface contract/state repairs; live keyboard, focus, contrast, VoiceOver, resizing, draft persistence, startup and failure-recovery checks. None is a hidden implementation task in this design handoff.
-
-**Pending effects:** none on the running product. No product implementation, services, architecture, providers, credentials, external posts or cards. Revision-02 milestone is an owned-docs-only local commit, with explicit requested identity; no push. Native session cwd stays at `/path/to/toolstack`; every source-tool cwd/path used the registered `.worktrees/ui-design` checkout. Principal rejections **0**; at **2**, stop the project. Questions return to parent `ses_e933928afffeKukrMplyUQvz07`, not chief/principal.
+**Left:** choosing a direction; construction and cross-surface contract/state repairs; live keyboard, focus, contrast, VoiceOver, resizing, draft persistence, startup and failure-recovery checks.

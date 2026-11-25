@@ -40,7 +40,7 @@ do not use the historical notary script.
 
 ## Verification split (important)
 
-The parent recorded 69 passing native tests at `b0a175`, integrated as `162ca5f`,
+Recorded results show 69 passing native tests at `b0a175`, integrated as `162ca5f`,
 and an actual unsigned release build (14.74 seconds), then signing with an existing
 approved Apple Development identity and a separate strict/deep verification PASS.
 The app identifier is `com.toolstack.operator`. Native source is unchanged by the

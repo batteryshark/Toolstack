@@ -8,12 +8,12 @@ admin/.venv
 *.pyc
 *.egg-info
 .pytest_cache
-# local ordna board (gitignored): never bake into the image
+# local tool state
 tasks
 .ordna
 # the one-box's own runtime state + secrets
 deploy/docker/data
 deploy/docker/.env
-# the previous build, kept locally
+# local tool state
 toolstack-old
 .claude

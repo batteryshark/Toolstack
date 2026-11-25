@@ -258,16 +258,16 @@ not a real-vault migration procedure.
 
 Reported validation provenance (not rerun for this documentation correction).
 Production bytes at `7eac4f9` equal `78ea9049a3370688b721e7ff3bda31a8b3f184c3`;
-later changes affect test/release/fixture helpers, docs and handoffs only.
+later changes affect test/release/fixture helpers, and docs only.
 
 | Milestone | Bounded evidence | Limit |
 | --- | --- | --- |
 | Full tracked Python, `791159cb275ea50a7bafa3bff7b513b774c536a0` | Dynamically discovered 99 modules; 1,224 run, 1,208 pass, 16 skip, 0 fail in 113.824s; 628 Git-bytechecked files / 684 archive members | Not full `8e4bb2e` or future documentation-source qualification |
 | Product package, `78ea904` | Retained wheel; SHA-256 below | Packaging evidence; separate bounded installed-wheel result below |
-| Installed retained-wheel full stack, `7eac4f9` / production `78ea904` | PASS: 42 harness checks including lifecycle in 2.912s; fresh installed origins/90 package files bound to wheel; 27 loaded module files independently matched; admin restart/persisted recovery and owned cleanup verified | Bounded clean-install check achieved, not full `7eac4f9` qualification; fake Nod, no GUI, SPS restart or real human/signature proof; milestone reported, acceptance pending |
-| Native, `78ea904` | 75 tests pass; actual development signing and separate strict/deep verification | See [Mac evidence](mac-local-signing.md); no live hands acceptance |
+| Installed retained-wheel full stack, `7eac4f9` / production `78ea904` | PASS: 42 harness checks including lifecycle in 2.912s; fresh installed origins/90 package files bound to wheel; 27 loaded module files independently matched; admin restart/persisted recovery and owned cleanup verified | Bounded clean-install check achieved, not full `7eac4f9` qualification; fake Nod, no GUI, SPS restart or real human/signature proof |
+| Native, `78ea904` | 75 tests pass; actual development signing and separate strict/deep verification | See [Mac evidence](mac-local-signing.md); no manual UI acceptance |
 | Web, after `aa486b2` | Actual WebKit 48 assertions plus 104 Python web tests; prohibited activation policy, two unshown captures | No synthetic/live equivalence |
-| Current fixture delta through `8e4bb2e` | Independent 13 pure checks pass; actual isolated-copy sign and separate strict/deep verify while OFF | Helper repair, not full-suite or hands proof |
+| Current fixture delta through `8e4bb2e` | Independent 13 pure checks pass; actual isolated-copy sign and separate strict/deep verify while OFF | Helper repair, not full-suite or manual UI proof |
 | Linux, `78ea904` | Real Docker onebox/echo API/echo MCP build/create/start, all 19 process/SPS checks, admin HTTP 200 | Accepted functional witness only; failed cleanup and installation limits in [matrix](runtime-matrix.md) |
 
 Full tracked archive SHA-256:

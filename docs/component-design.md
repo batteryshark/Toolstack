@@ -2,7 +2,7 @@
 
 The component-by-component architecture reference for the system: the module
 seams, the security invariants, and the per-component design. Read
-[PROJECT.md](PROJECT.md) for the design notes and principles.
+[PROJECT.md](../PROJECT.md) for the design notes and principles.
 
 **Architecture direction:** collapse the logical decomposition to
 *deployment reality*. The fine-grained ownership rules from the earlier 9-service
@@ -66,7 +66,7 @@ vault; the broker never touches them."* If they can't, the diagram is wrong.
 ## Deployable components
 
 Four things you build, three things you deploy, plus the **agent client**
-([client/](client/)): a generic `toolstack` CLI + skill that discovers and calls
+([client/](../client/)): a generic `toolstack` CLI + skill that discovers and calls
 tools through the broker (lazy discovery, optional per-domain skills).
 
 ### You build these
@@ -345,7 +345,7 @@ Surface-native ids and option kinds are *metadata*, not authority.
   `decision.signature.verified == true` (nod signs decisions on-device).
 
 Full spec for writing another adapter:
-[docs/approval-surface-adapter.md](docs/approval-surface-adapter.md).
+[docs/approval-surface-adapter.md](approval-surface-adapter.md).
 
 ---
 
@@ -367,11 +367,11 @@ Deferred, not forgotten. Don't build these until a component actually needs them
 
 ## Related docs
 
-- [PROJECT.md](PROJECT.md): design notes and principles.
-- [docs/component-decomposition.md](docs/component-decomposition.md): physical
+- [PROJECT.md](../PROJECT.md): design notes and principles.
+- [docs/component-decomposition.md](component-decomposition.md): physical
   diagram, broker internals, and trust boundaries.
-- [docs/message-contracts.md](docs/message-contracts.md): boundary wire contracts,
+- [docs/message-contracts.md](message-contracts.md): boundary wire contracts,
   standard outcomes, audit taxonomy, and redaction rules.
-- [docs/approval-surface-adapter.md](docs/approval-surface-adapter.md): the
+- [docs/approval-surface-adapter.md](approval-surface-adapter.md): the
   contract for plugging in a different approval surface.
-- [docs/coding-standards.md](docs/coding-standards.md): clean-code expectations.
+- [docs/coding-standards.md](coding-standards.md): clean-code expectations.

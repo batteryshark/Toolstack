@@ -39,7 +39,7 @@ def archive(directory):
         'archive': output.name, 'format': 'ZIP/DEFLATE',
         'archive_sha256': hashlib.sha256(output.read_bytes()).hexdigest(),
         'verification': 'Every member byte-compared and SHA-256 checked against original before plaintext removal',
-        'secret_scan': 'Archive members MUST be included in the parent final secret scan; no exemption',
+        'secret_scan': 'Archive members MUST be included in the final secret scan; no exemption',
         'members': members,
     }, indent=2) + '\n')
     for path in files:

@@ -13,5 +13,5 @@ It reaches broker state two ways, because the broker has no admin API:
   * **lifecycle**: supervises the broker process via ``os.posix_spawn`` /
     ``killpg``, mirroring ``toolyard.runner``.
 
-Binds 127.0.0.1 only. See README.md and ../plan.md.
+Binds 127.0.0.1 only. See README.md and ../docs/component-design.md.
 """

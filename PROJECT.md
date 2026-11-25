@@ -43,7 +43,7 @@ matter only if the modules ever split across hosts.
 
 - [docs/walkthrough.md](docs/walkthrough.md): the system end to end.
 - [docs/component-decomposition.md](docs/component-decomposition.md): diagrams, broker internals, trust boundaries.
-- [plan.md](plan.md): component-by-component design and the cross-cutting invariants.
+- [docs/component-design.md](docs/component-design.md): component-by-component design and the cross-cutting invariants.
 - [docs/message-contracts.md](docs/message-contracts.md): boundary wire contracts.
 - [docs/approval-surface-adapter.md](docs/approval-surface-adapter.md): the approval-surface adapter contract.
 - [docs/coding-standards.md](docs/coding-standards.md): code conventions.

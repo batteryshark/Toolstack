@@ -1,7 +1,7 @@
 # Architecture
 
 How the system works, and why. Read [PROJECT.md](../PROJECT.md) for the summary
-and [plan.md](../plan.md) for the buildable, component-by-component plan.
+and [component-design.md](component-design.md) for the buildable, component-by-component plan.
 
 **Direction:** the system is *collapsed to deployment reality*, a few processes
 with trusted-host process seams, not enforced same-user isolation. The detailed
@@ -74,7 +74,7 @@ flowchart TB
 ```
 
 These are modules in one process, not services. Each keeps the ownership rule it
-had when it was a "service" (see the module table in [plan.md](../plan.md)). They
+had when it was a "service" (see the module table in [component-design.md](component-design.md)). They
 share one SQLite file and call each other in-process: **no network and no
 inter-module auth**, which is exactly the cost the collapse removes. Every module
 records to the Audit module.

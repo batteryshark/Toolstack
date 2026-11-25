@@ -1,6 +1,6 @@
 # Broker
 
-The authority boundary: the only address an agent can reach. See [../plan.md](../plan.md) and
+The authority boundary: the only address an agent can reach. See [../docs/component-design.md](../docs/component-design.md) and
 [../toolyard/README.md](../toolyard/README.md) for running tools, and
 [../client/SKILL.md](../client/SKILL.md) for how an agent calls in.
 
@@ -58,9 +58,8 @@ For an end-to-end run (start a tool, then the broker), see
 [../toolyard/README.md](../toolyard/README.md). In short, from the repo root:
 
 ```bash
-# 1. start a tool (toolyard resolves its secrets and runs it)
-cp secrets.example.toml secrets.toml
-python3 -m toolyard.cli up echo --secrets secrets.toml
+# 1. start a tool (toolyard runs it; secrets come from SPS, see ../docs/sps.md)
+python3 -m toolyard.cli up echo
 
 # 2. create a caller, then start the broker pointed at the tools root
 python3 -m broker.brokerctl create-caller --name hermes --allow echo.say

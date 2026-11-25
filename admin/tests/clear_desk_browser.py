@@ -12,7 +12,7 @@ from admin.views.callers import policy_view
 from admin.views.tools import tool_editor_view
 
 CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-TEMP = '/path/to/tmp'
+TEMP = tempfile.gettempdir()
 OUT = Path(__file__).parent / 'evidence' / 'clear-desk'
 
 POLICY = r"""

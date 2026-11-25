@@ -7,11 +7,15 @@ once and restores 8192 MiB only after that guest is stopped.
 
 Tripwires, any one of which rolls back: MemAvailable below 1.5 GiB, unreadable
 pressure, full-memory stall, VM 100 not running, Nod health not the exact
-parent body, baseline production container metadata missing or unhealthy,
+expected body, baseline production container metadata missing or unhealthy,
 unknown probe output, stale parent lease, or the resource window elapsing.
 Rollback stops only containers whose recorded id and unique label both match,
 shuts VM 130 down gracefully, and restores 8192 MiB only after it is stopped.
 It never poweroffs a guest, prunes, or signals an unverified PID.
+
+This harness targets one self-hosted Proxmox setup. The VM IDs, memory sizes and
+Nod health URL below are that setup's values (the URL is a documentation
+placeholder); set them for your own host before using it elsewhere.
 """
 
 from __future__ import annotations
@@ -40,9 +44,9 @@ GUEST_TIMEOUT = "30"
 PRODUCTION_TIMEOUT = "15"
 HEAVY_BUILD_ATTEMPTS = 1
 STATUS_CHECKS_AFTER_SHUTDOWN = 1
-# Parent read-only baseline, 2026-10-24. Not a live reading.
-PARENT_MEM_AVAILABLE_KIB = 7194384
-PARENT_FREE_AVAILABLE_MIB = 6952
+# Sample host memory readings used as test baselines. Not a live reading.
+BASELINE_MEM_AVAILABLE_KIB = 7194384
+BASELINE_FREE_AVAILABLE_MIB = 6952
 
 RUN_ID_RE = re.compile(r"^vmproof-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$")
 CONTAINER_ID_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -99,7 +103,7 @@ class Sample:
     production: tuple[tuple[str, str], ...] | None
     lease_age_seconds: float | None
     elapsed_seconds: float
-    free_available_mib: int | None = PARENT_FREE_AVAILABLE_MIB
+    free_available_mib: int | None = BASELINE_FREE_AVAILABLE_MIB
     full_avg60: float | None = None
     pressure_trip: Trip | None = None
 

@@ -8,14 +8,15 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMP = Path('/path/to/tmp')
+TEMP = Path(tempfile.gettempdir()).resolve()
 
 if __name__ == '__main__':
     os.umask(0o077)
     with tempfile.TemporaryDirectory(prefix='toolstack-e2e-', dir=TEMP) as directory:
         env = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'HOME': directory,
                'TMPDIR': directory, 'PYTHONPATH': str(ROOT),
-               'TOOLSTACK_E2E_ROOT': directory, 'PYTHONUNBUFFERED': '1',
+               'TOOLSTACK_E2E_ROOT': directory, 'TOOLSTACK_E2E_TEMP': str(TEMP),
+               'PYTHONUNBUFFERED': '1',
                'PYTHONNOUSERSITE': '1',
                **{key: str(Path(directory) / key.lower()) for key in
                   ('XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR')}}

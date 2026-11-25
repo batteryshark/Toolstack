@@ -17,6 +17,7 @@ import socket
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -25,7 +26,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[2]
 URL = 'https://github.com/batteryshark/nod/releases/download/v1.0.1/nod-server-v1.0.1-aarch64-apple-darwin.tar.gz'
 DIGEST = '43cf90c0043759f3ace7beb13c76878ada19efed9f9dbced536cf674556d4bf0'
-APPROVED = Path('/path/to/tmp')
+APPROVED = Path(os.environ.get('TOOLSTACK_E2E_TEMP', tempfile.gettempdir())).resolve()
 
 
 def free_port():

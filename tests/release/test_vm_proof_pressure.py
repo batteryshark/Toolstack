@@ -1,4 +1,4 @@
-"""Chief PSI rule: pure boundaries and real binding with fake PVE only."""
+"""Memory-pressure (PSI) rollback thresholds: pure boundaries and real binding with fake PVE only."""
 import dataclasses
 import json
 import unittest

@@ -1,13 +1,12 @@
 # Local development packaging
 
 The approved path is **LOCAL Apple Development signing**, not distribution.
-The approved Clear desk UI is built. A parent local build, Apple Development signing
+The approved Clear desk UI is built. A local build, Apple Development signing
 and separate strict/deep verification passed; see [bounded evidence](../../docs/mac-local-signing.md).
 An existing approved identity is required on the machine performing the recipe.
 Current evidence binds the product to `78ea904` (unchanged at `8e4bb2e`). The
 isolated-copy fixture's codesign-only HOME repair also passed real signing and
 separate verification while OFF; this does not establish live app acceptance.
-See the linked evidence for the first failed hands attempt and fresh readiness gate.
 
 From `macapp/`, build the existing bundle with
 `bash packaging/build-app.sh` (output: `build/Toolstack Operator.app`). Then use an

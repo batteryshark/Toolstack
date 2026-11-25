@@ -2,7 +2,7 @@
 
 The **execution boundary**. It reads `toolyard.toml`, resolves each tool's secrets,
 and starts the tool so the broker can forward approved calls to it on
-`127.0.0.1:<port>`. The broker is never on the secret path. See [../plan.md](../plan.md).
+`127.0.0.1:<port>`. The broker is never on the secret path. See [../docs/component-design.md](../docs/component-design.md).
 
 Zero dependencies: stdlib only (TOML via `tomllib`).
 
@@ -58,24 +58,9 @@ panel also exposes the parser and accepts YAML when `PyYAML` is installed.
 
 ## Secrets
 
-The toolyard resolves a tool's declared secrets through a pluggable backend and
-hands the values to the tool, never to the broker.
-
-- **Dev (shipped):** `FileBackend` reads a local TOML file shaped as
-  `[<tool_id>]  FIELD = "value"`. Copy [../secrets.example.toml](../secrets.example.toml)
-  to `secrets.toml` (gitignored) and fill it in.
-- **Local encrypted (shipped, opt-in):** `VaultBackend` keeps secrets in an scrypt+AEAD
-  encrypted file unlocked by `$TOOLSTACK_VAULT_PASSPHRASE` (`pip install '.[vault]'`).
-- **Production (shipped):** `InfisicalBackend` resolves each secret from Infisical
-  over its HTTP API (stdlib only, no added dependency). A `[[secrets]]` entry adds
-  `item` (secret path; defaults to the tool id) next to `field` (the secret key).
-  The Infisical project/vault comes only from `TOOLSTACK_INFISICAL_VAULT`.
-  Toolstack authenticates once with the deployment's machine identity
-  (`TOOLSTACK_INFISICAL_CLIENT_ID` / `_CLIENT_SECRET`, or the unprefixed Infisical
-  names). Configure with `TOOLSTACK_INFISICAL_HOST` / `_ENVIRONMENT` / `_VAULT`.
-- **Backend selection:** `get_backend(name)` picks `file` (default), `vault`, or `infisical`;
-  the CLI exposes `--secret-backend` and honors `$TOOLSTACK_SECRET_BACKEND`.
-- SOPS can follow behind the same `resolve()` interface.
+The toolyard registers a tool's declared secrets with SPS, which hands the values
+to the tool, never to the broker. Storage backends (encrypted local file,
+HashiCorp Vault, Infisical) are SPS plugins; see [../docs/sps.md](../docs/sps.md).
 
 ## Runners
 

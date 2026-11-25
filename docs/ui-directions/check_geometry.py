@@ -43,7 +43,7 @@ document.querySelector('#result').textContent=JSON.stringify({frames:results.len
 document.querySelector('#stage').remove();
 '''
 page='<html><meta charset="utf-8"><body><div id="stage"></div><pre id="result"></pre><script>'+JS.replace('FRAMES',json.dumps(screens).replace('</','<\\/'))+'</script></body></html>'
-with tempfile.TemporaryDirectory(prefix='toolstack-geometry-',dir='/path/to/tmp') as tmp:
+with tempfile.TemporaryDirectory(prefix='toolstack-geometry-') as tmp:
  p=Path(tmp);(p/'check.html').write_text(page)
  cmd=['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','--headless','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-component-update','--disable-sync',f'--user-data-dir={p/"profile"}','--dump-dom',(p/'check.html').as_uri()]
  run=subprocess.run(cmd,capture_output=True,text=True,timeout=40)

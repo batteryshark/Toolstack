@@ -16,13 +16,14 @@ import subprocess
 from pathlib import Path
 import socket
 import sys
+import tempfile
 import threading
 import time
 import uuid
 from unittest.mock import patch
 
 SOURCE = Path(__file__).resolve().parents[2]
-TEMP = Path('/path/to/tmp')
+TEMP = Path(tempfile.gettempdir()).resolve()
 PASSWORD = 'FAKE-live-ui-only-password'
 APP_HASH = '28cf9127f93d4ffd30fe7d91d120b862d4e2fc1c3a845b50210bd6a369b18600'
 
@@ -291,7 +292,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--prepare', action='store_true', help='report only; creates nothing')
-    mode.add_argument('--serve', action='store_true', help='future parent/chief hands admission ONLY')
+    mode.add_argument('--serve', action='store_true', help='start the backend for a supervised manual UI check')
     parser.add_argument('--root', help='absent approved-temp child; required for serve')
     parser.add_argument('--native-app', help='existing verified original; future private copy only')
     parser.add_argument('--sign-identity', help='explicit existing Apple Development identity')

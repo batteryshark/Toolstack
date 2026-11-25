@@ -5,5 +5,5 @@ One process with internal module seams: Gateway (ingress/egress), Identity (call
 Approval (orchestration + nod adapter), and Audit, over one SQLite file. It
 authenticates callers, decides policy, routes review-required operations to a human
 via nod, forwards approved calls to tools, and audits everything. The broker never
-sees a workload secret. See ../plan.md and README.md.
+sees a workload secret. See ../docs/component-design.md and README.md.
 """

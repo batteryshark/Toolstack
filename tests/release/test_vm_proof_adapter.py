@@ -25,7 +25,7 @@ from vm_proof_adapter import (
 from vm_proof_guard import (
     PROOF_PS_FORMAT,
     NOD_HEALTH_BODY,
-    PARENT_MEM_AVAILABLE_KIB,
+    BASELINE_MEM_AVAILABLE_KIB,
     BaselineContainer,
     Completed,
     GuardConfig,
@@ -134,7 +134,7 @@ class FakeIO:
 
     def read(self, path):
         if path == "/proc/meminfo":
-            kib = 1 if self.low_after_start and ("qm", "start", "130") in self.calls else PARENT_MEM_AVAILABLE_KIB
+            kib = 1 if self.low_after_start and ("qm", "start", "130") in self.calls else BASELINE_MEM_AVAILABLE_KIB
             return f"MemAvailable: {kib} kB\n"
         if path == "/proc/pressure/memory":
             return self.pressure
